@@ -49,7 +49,7 @@ Core principle: "The agent should NEVER do anything that isn't explicitly mentio
 
 ---
 
-## Current Status: MVP COMPLETE
+## Current Status: MVP COMPLETE + Tool Capabilities
 
 ### What's Working
 
@@ -74,12 +74,30 @@ Core principle: "The agent should NEVER do anything that isn't explicitly mentio
 - [x] Settings modal (API key, default model)
 - [x] Dark theme with custom color system
 - [x] Production build works clean
+- [x] **Agent tool capabilities** - Autonomous file operations with user approval
 
-### What's NOT Working Yet (Known Gaps from MVP)
+### Agent Tool Capabilities
 
-- [ ] `.paloma/` folder creation on project open (Phase 5, step 27)
-- [ ] `/` command trigger (shows nothing yet - intentionally minimal for MVP)
-- [ ] Stop streaming button (abort controller created but not wired to fetch)
+**Current Tools (Implemented):**
+- ✅ `readFile(path)` - Read any file in the project autonomously
+- ✅ `searchFiles(query)` - Fuzzy search file tree
+- ✅ `listDirectory(path)` - Browse directory structure
+- ✅ `fileExists(path)` - Check file existence
+- ✅ `createFile(path, content)` - Create new files
+- ✅ `deleteFile(path)` - Delete files
+- ✅ `moveFile(fromPath, toPath)` - Rename/move files
+
+**How Tools Work:**
+- Agent can call tools during conversation to research and understand codebase
+- Tool calls require user approval (shown in UI with confirmation modal)
+- Tool results are included in conversation context
+- Enables true autonomous research without manual file attachment
+
+### What's NOT Working Yet (Known Gaps)
+
+- [ ] `.paloma/` folder creation on project open
+- [ ] `/` command trigger (placeholder UI exists)
+- [ ] Stop streaming button (abort controller exists but not wired)
 - [ ] Model list from API (falls back to hardcoded popular models if fetch fails)
 
 ---
@@ -142,38 +160,142 @@ This file is read when a project is opened and included in every API call for th
 
 ---
 
-## TODO: Post-MVP Features
+## TODO: Next Features
 
-### Priority 1: File Editing + MCP Integration
-- [ ] MCP server integration architecture
-  - Global config: `~/.paloma/mcp-settings.json` (install MCP servers once)
-  - Per-project config: `.paloma/mcp.json` (controls which servers are available)
-  - Rationale: install once, scope per-project
-- [x] File writing/editing capability (via File System Access API `readwrite` mode + diff preview)
-- [ ] `.paloma/` folder creation inside each project directory (git-committable)
-  - `.paloma/settings.json` - project-level config
-  - `.paloma/plans/` - for generated plans
-  - `.paloma/mcp.json` - project-level MCP server access control
+### ~~Priority 1: Cost & Token Tracking~~ DONE
+- [x] Real-time cost display in top bar (session totals, clickable for details)
+- [x] Per-message cost annotation on assistant messages
+- [x] Token usage breakdown modal (prompt/completion/total + context bar)
+- [x] Context limit warnings (banner at 80%+ capacity)
+- [x] Cost tracking persisted on message objects in IndexedDB (no schema migration)
+- [x] Model pricing from OpenRouter `/api/v1/models` API
+- [x] Token counts captured from SSE stream `usage` field
+- [x] Project total cost aggregated across all sessions
 
-### Priority 2: Enhanced Chat
+### Priority 2: Phase-Based Document Workflow
+**Goal:** Automatic artifact management tied to development phases
+
+**Workflow:**
+1. **Plan Phase** → Agent creates `.paloma/plans/active/{timestamp}-{title}.md`
+2. **Implement Phase** → Plan file is referenced, progress tracked
+3. **Review Phase** → Plan stays active for reference
+4. **Commit Phase** → Plan file auto-moved to `plans/completed/`
+
+**Benefits:**
+- Searchable history of all plans
+- Plans are git-committable artifacts
+- Clean separation between active work and completed work
+- Agent can reference previous plans
+- Automatic cleanup on phase transitions
+
+**Auto-Management:**
+```
+.paloma/plans/
+├── active/
+│   └── 2024-01-15-auth-refactor.md     ← Current plan
+├── completed/
+│   └── 2024-01-10-dashboard-redesign.md
+└── archived/
+    └── 2024-01-05-initial-setup.md      ← Manual archival
+```
+
+### Priority 3: Search-and-Replace Formalization
+**Goal:** Make SEARCH/REPLACE blocks work automatically from agent responses
+
+**Current State:**
+- ✅ Manual SEARCH/REPLACE syntax works (tested successfully)
+- ❌ Not automatically parsed from agent responses yet
+
+**Requirements:**
+- [ ] Parse code blocks for `<<<<<<< SEARCH` / `>>>>>>> REPLACE` markers
+- [ ] Extract multiple SEARCH/REPLACE pairs per code block
+- [ ] Apply edits sequentially with unique matching validation
+- [ ] Show combined diff preview before applying
+- [ ] Graceful error handling (not found, multiple matches)
+- [ ] Fallback to full file replacement if no markers present
+
+**Error Messages:**
+- "Search block not found. Re-read the file and try again with more context."
+- "Search block matches multiple locations. Add more context to make it unique."
+
+### Priority 4: Undo/Rollback System
+- [ ] Track file edit history in IndexedDB (per-file versioning)
+- [ ] Keep last N versions per file (configurable, default N=10)
+- [ ] UI to rollback to previous version with timestamp
+- [ ] Diff view between versions
+- [ ] Persist history across sessions
+
+### Priority 5: Batch File Operations
+- [ ] Queue multiple file edits in a single operation
+- [ ] Show combined preview of all changes
+- [ ] Apply atomically (all or nothing)
+- [ ] Use case: "Refactor auth system across 5 files"
+
+### Priority 6: Model Switching as a Feature
+**Goal:** Seamless model switching with full context transfer
+
+**Current Behavior:**
+- ✅ Model can be switched mid-conversation
+- ❌ No onboarding for new model about Paloma's capabilities
+- ❌ No clear indication of which model said what
+
+**New Behavior:**
+- [ ] Inject system context transfer message when model switches
+- [ ] Show model attribution per message in UI
+- [ ] Keep full conversation history visible to new model
+- [ ] Auto-explain Paloma's tool capabilities to new model
+
+**Use Case Workflow:**
+1. Use GPT-4o for research (cheaper, good at analysis)
+2. Switch to Claude Opus for implementation (better at coding)
+3. Switch to GPT-4o-mini for commit messages (cheapest, good enough)
+4. Each model sees full context and knows how to use tools
+
+### Priority 7: MCP Server Integration
+**Goal:** Web search, git operations, terminal commands, external APIs
+
+**Architecture:**
+```
+~/.paloma/
+├── mcp-settings.json          # Global: all installed MCP servers
+└── servers/                   # npm installed MCP packages
+    ├── brave-search/
+    ├── git/
+    └── terminal/
+
+project/.paloma/
+└── mcp.json                   # Per-project: which servers are enabled
+```
+
+**Candidate MCP Servers:**
+- `@modelcontextprotocol/server-brave-search` - Web search capability
+- `@modelcontextprotocol/server-git` - Git operations
+- Custom terminal server - Command execution with approval
+- `@modelcontextprotocol/server-postgres` - Database operations (future)
+
+**Implementation Challenges:**
+- [ ] How to run MCP servers in browser context?
+- [ ] Local Node.js bridge process needed?
+- [ ] WebSocket connection to local MCP daemon?
+- [ ] Permission model for MCP tools (per-tool approval?)
+
+**Open Questions:**
+- Install MCP servers globally or per-project?
+- How to handle server lifecycle (start/stop)?
+- Security model for terminal access?
+
+### Priority 8: Enhanced Features
 - [ ] `/` commands system (extensible command palette)
-- [ ] System prompt customization per session
 - [ ] Message editing and regeneration
-- [ ] Conversation branching
-- [ ] Export/import sessions
-
-### Priority 3: Git Integration
-- [ ] Git status awareness
-- [ ] Auto-commit suggestions
-- [ ] Commit message generation from conversation context
-- [ ] Git log reading for agent context
-
-### Priority 4: Advanced Features
-- [ ] Parallel chat sessions (multiple AI chats simultaneously)
-- [ ] Sub-agent spawning from AI
-- [ ] Light mode / theme switching
-- [ ] Cost tracking per session (OpenRouter provides pricing data)
-- [ ] Token count display
+- [ ] Conversation branching (explore alternate paths)
+- [ ] Export/import sessions (share workflows)
+- [ ] Git integration (status, commit, log, branch awareness)
+- [ ] Sub-agent spawning for parallel work
+- [ ] Multi-file refactoring with automatic import updates
+- [ ] Side-by-side diff view (not just unified)
+- [ ] Keyboard shortcuts (Ctrl+K command palette, Ctrl+/ file search)
+- [ ] Session templates (pre-configured phase/model combos)
+- [ ] Light mode theme support
 
 ---
 
@@ -182,12 +304,30 @@ This file is read when a project is opened and included in every API call for th
 ```
 project/
 └── .paloma/
-    ├── instructions.md    # Project-specific agent instructions (Layer 2)
-    ├── settings.json      # Project-level config (future)
-    ├── mcp.json           # Which MCP servers this project can use (future)
-    ├── plans/             # Generated plans (future)
-    └── scripts/           # Automation scripts (future)
+    ├── instructions.md         # Project-specific agent instructions (Layer 2)
+    ├── settings.json           # Project-level config
+    ├── mcp.json                # MCP server access control
+    ├── plans/                  # Phase-managed plan documents
+    │   ├── active/             # Current work (Plan/Implement/Review phases)
+    │   ├── completed/          # Committed plans (moved on Commit phase)
+    │   └── archived/           # Old plans (manual archival)
+    ├── costs/                  # Cost tracking exports (future)
+    └── scripts/                # Automation scripts (future)
 ```
+
+**Phase-Based Document Lifecycle:**
+- **Research Phase** → No plan document yet, exploring and understanding
+- **Plan Phase** → Create `plans/active/{timestamp}-{title}.md`
+- **Implement Phase** → Reference active plan, track progress in real-time
+- **Review Phase** → Plan stays active for reference during review
+- **Commit Phase** → Move plan to `plans/completed/`, clean up workspace
+
+**Benefits:**
+- All plans are git-committable artifacts with full history
+- Searchable archive of development decisions and rationale
+- Agent can reference previous plans for consistency
+- Clean workspace separation (active vs completed vs archived)
+- Automatic lifecycle management tied to development phases
 
 ---
 
@@ -201,7 +341,7 @@ project/.paloma/
 └── mcp.json              # Per-project: which servers are enabled
 ```
 
-This ensures MCP servers are installed once globally but scoped per-project so agents don't get access to everything in every session.
+This ensures MCP servers are installed once globally but scoped per-project so agents don't get access to everything in every session. Security through explicit per-project enablement.
 
 ---
 
@@ -217,6 +357,7 @@ This ensures MCP servers are installed once globally but scoped per-project so a
 8. **Phase tracking**: Change phase → persists on the session
 9. **Model switching**: Change model mid-session → next message uses new model
 10. **Persistence**: Refresh page → re-grant directory access → sessions/messages restored
+11. **Tool usage**: Agent reads files autonomously → approval modal → results in context
 
 ---
 
@@ -228,6 +369,7 @@ paloma/
 ├── vite.config.js
 ├── package.json
 ├── PROJECT.md                          ← You are here
+├── WISHLIST.md                         ← Detailed feature wishlist
 ├── src/
 │   ├── main.js
 │   ├── App.vue
@@ -235,12 +377,14 @@ paloma/
 │   │   ├── layout/
 │   │   │   ├── AppLayout.vue          # Shell: sidebar + main
 │   │   │   ├── Sidebar.vue            # Chat sessions list
-│   │   │   └── TopBar.vue             # Project name, settings gear
+│   │   │   ├── TopBar.vue             # Project name, cost display, settings
+│   │   │   └── UsageModal.vue         # Token/cost breakdown modal
 │   │   ├── chat/
 │   │   │   ├── ChatView.vue           # Main chat container
 │   │   │   ├── MessageList.vue        # Scrollable message area
 │   │   │   ├── MessageItem.vue        # Single message (user/assistant)
-│   │   │   └── DiffPreview.vue        # Diff preview modal for file edits
+│   │   │   ├── DiffPreview.vue        # Diff preview modal for file edits
+│   │   │   └── ToolConfirmation.vue   # Tool approval modal
 │   │   ├── prompt/
 │   │   │   ├── PromptBuilder.vue      # THE star component
 │   │   │   ├── FileSearch.vue         # @ autocomplete dropdown
@@ -256,14 +400,17 @@ paloma/
 │   │   ├── useProject.js              # Project directory state
 │   │   ├── useFileIndex.js            # File tree indexing + Fuse.js search
 │   │   ├── useSessions.js            # Chat session CRUD (Dexie)
-│   │   ├── useChat.js                 # Active chat: messages, streaming
-│   │   └── useOpenRouter.js           # Model list, API key validation
+│   │   ├── useChat.js                 # Active chat: messages, streaming, tools
+│   │   ├── useOpenRouter.js           # Model list, API key validation
+│   │   └── useCostTracking.js         # Cost aggregation, formatting, project totals
 │   ├── prompts/
 │   │   ├── base.js                    # Layer 1: base agent instructions
 │   │   └── phases.js                  # Layer 3: per-phase instructions
 │   ├── services/
 │   │   ├── openrouter.js              # Raw API calls, streaming
 │   │   ├── filesystem.js              # File System Access API helpers
+│   │   ├── editing.js                 # SEARCH/REPLACE and diff logic
+│   │   ├── tools.js                   # Tool execution handlers
 │   │   └── db.js                      # Dexie database definition
 │   └── styles/
 │       └── main.css                   # Tailwind + highlight.js + custom

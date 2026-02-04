@@ -5,6 +5,21 @@
       <span v-if="projectName" class="text-text-muted text-sm">/</span>
       <span v-if="projectName" class="text-text-secondary text-sm">{{ projectName }}</span>
     </div>
+
+    <!-- Center: cost & token display -->
+    <button
+      v-if="hasUsageData"
+      @click="showUsageModal = true"
+      class="flex items-center gap-3 text-xs text-text-secondary hover:text-text-primary px-2 py-1 rounded hover:bg-bg-hover transition-colors"
+    >
+      <span>{{ formatCost(sessionCost) }}</span>
+      <span class="text-text-muted">|</span>
+      <span :class="contextWarningClass">{{ formatTokens(sessionTokens.total) }}<template v-if="contextUsage"> / {{ formatTokens(contextUsage.limit) }}</template></span>
+      <div v-if="contextUsage" class="w-16 h-1.5 bg-bg-tertiary rounded-full overflow-hidden">
+        <div class="h-full rounded-full transition-all" :class="contextBarClass" :style="{ width: Math.min(contextUsage.percentage, 100) + '%' }" />
+      </div>
+    </button>
+
     <div class="flex items-center gap-2">
       <button
         @click="$emit('open-project')"
@@ -24,11 +39,45 @@
       </button>
     </div>
   </div>
+
+  <UsageModal
+    v-if="showUsageModal"
+    :active-model="activeModel"
+    :project-path="projectName"
+    @close="showUsageModal = false"
+  />
 </template>
 
 <script setup>
-defineProps({
-  projectName: { type: String, default: '' }
+import { ref, computed } from 'vue'
+import UsageModal from './UsageModal.vue'
+import { useCostTracking } from '../../composables/useCostTracking.js'
+
+const props = defineProps({
+  projectName: { type: String, default: '' },
+  activeModel: { type: String, default: '' }
 })
 defineEmits(['open-settings', 'open-project'])
+
+const { sessionCost, sessionTokens, getContextUsage, formatCost, formatTokens } = useCostTracking()
+
+const showUsageModal = ref(false)
+
+const hasUsageData = computed(() => sessionTokens.value.total > 0)
+
+const contextUsage = computed(() => props.activeModel ? getContextUsage(props.activeModel) : null)
+
+const contextWarningClass = computed(() => {
+  if (!contextUsage.value) return ''
+  if (contextUsage.value.percentage >= 90) return 'text-error font-medium'
+  if (contextUsage.value.percentage >= 80) return 'text-warning font-medium'
+  return ''
+})
+
+const contextBarClass = computed(() => {
+  if (!contextUsage.value) return 'bg-accent'
+  if (contextUsage.value.percentage >= 90) return 'bg-error'
+  if (contextUsage.value.percentage >= 80) return 'bg-warning'
+  return 'bg-accent'
+})
 </script>

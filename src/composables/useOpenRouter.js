@@ -48,6 +48,10 @@ export function useOpenRouter() {
     return model?.name || id.split('/').pop()
   }
 
+  function getModelInfo(id) {
+    return models.value.find(m => m.id === id) || null
+  }
+
   return {
     models,
     loadingModels,
@@ -55,6 +59,7 @@ export function useOpenRouter() {
     loadModels,
     validateApiKey,
     getPopularModels,
-    getModelName
+    getModelName,
+    getModelInfo
   }
 }

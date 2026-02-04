@@ -2,6 +2,7 @@
   <div class="h-full flex flex-col">
     <TopBar
       :project-name="projectName"
+      :active-model="activeModel"
       @open-settings="$emit('open-settings')"
       @open-project="$emit('open-project')"
     />
@@ -27,7 +28,8 @@ import Sidebar from './Sidebar.vue'
 defineProps({
   projectName: { type: String, default: '' },
   sessions: { type: Array, default: () => [] },
-  activeSessionId: { type: Number, default: null }
+  activeSessionId: { type: Number, default: null },
+  activeModel: { type: String, default: '' }
 })
 
 defineEmits(['open-settings', 'open-project', 'new-chat', 'select-session', 'delete-session'])

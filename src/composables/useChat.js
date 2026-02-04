@@ -5,6 +5,7 @@ import { readFile } from '../services/filesystem.js'
 import { BASE_INSTRUCTIONS } from '../prompts/base.js'
 import { PHASE_INSTRUCTIONS } from '../prompts/phases.js'
 import { getAllTools, AUTO_EXECUTE_TOOLS, executeTool } from '../services/tools.js'
+import { useOpenRouter } from './useOpenRouter.js'
 
 const messages = ref([])
 const streaming = ref(false)
@@ -12,6 +13,7 @@ const streamingContent = ref('')
 const error = ref(null)
 const toolActivity = ref([])
 const pendingToolConfirmation = ref(null)
+const contextWarning = ref(null)
 let abortController = null
 
 const MAX_TOOL_ROUNDS = 25
@@ -113,6 +115,7 @@ export function useChat() {
         continueLoop = false
         let accumulatedContent = ''
         let toolCalls = null
+        let usage = null
 
         for await (const chunk of streamChat(apiKey, model, apiMessages,
           { tools: tools.length ? tools : undefined })) {
@@ -121,6 +124,8 @@ export function useChat() {
             streamingContent.value = accumulatedContent
           } else if (chunk.type === 'tool_calls') {
             toolCalls = chunk.calls
+          } else if (chunk.type === 'usage') {
+            usage = chunk.usage
           }
         }
 
@@ -131,6 +136,8 @@ export function useChat() {
             role: 'assistant',
             content: accumulatedContent || null,
             toolCalls,
+            usage,
+            model,
             files: [],
             timestamp: Date.now()
           }
@@ -201,12 +208,28 @@ export function useChat() {
             sessionId,
             role: 'assistant',
             content: accumulatedContent,
+            usage,
+            model,
             files: [],
             timestamp: Date.now()
           }
           const assistantMsgId = await db.messages.add(assistantMsg)
           assistantMsg.id = assistantMsgId
           messages.value.push(assistantMsg)
+
+          // Check context usage and set warning
+          if (usage) {
+            const { getModelInfo } = useOpenRouter()
+            const modelInfo = getModelInfo(model)
+            if (modelInfo?.context_length) {
+              const pct = (usage.totalTokens / modelInfo.context_length) * 100
+              if (pct >= 80) {
+                contextWarning.value = `Context ${Math.round(pct)}% full (${usage.totalTokens.toLocaleString()} / ${modelInfo.context_length.toLocaleString()} tokens). Consider starting a new session.`
+              } else {
+                contextWarning.value = null
+              }
+            }
+          }
 
           // Auto-generate title from first exchange
           if (messages.value.filter(m => m.role === 'user').length === 1) {
@@ -287,6 +310,7 @@ export function useChat() {
     toolActivity,
     error,
     pendingToolConfirmation,
+    contextWarning,
     loadMessages,
     sendMessage,
     stopStreaming,

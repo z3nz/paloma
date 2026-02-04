@@ -8,6 +8,9 @@
       :error="error"
       @apply-code="handleApplyCode"
     />
+    <div v-if="contextWarning" class="px-4 py-2 bg-warning/10 border-t border-warning/30 text-sm text-warning text-center">
+      {{ contextWarning }}
+    </div>
     <PromptBuilder
       :session="session"
       :streaming="streaming"
@@ -57,7 +60,7 @@ const emit = defineEmits(['update-session'])
 
 const {
   messages, streaming, streamingContent, toolActivity, error,
-  pendingToolConfirmation, loadMessages, sendMessage, stopStreaming,
+  pendingToolConfirmation, contextWarning, loadMessages, sendMessage, stopStreaming,
   resolveToolConfirmation, rejectToolConfirmation
 } = useChat()
 const { apiKey } = useSettings()

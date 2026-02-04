@@ -11,6 +11,7 @@
     :project-name="projectName"
     :sessions="sessions"
     :active-session-id="activeSessionId"
+    :active-model="activeSession?.model || ''"
     @open-settings="showSettings = true"
     @open-project="handleOpenProject"
     @new-chat="handleNewChat"

@@ -69,6 +69,12 @@
         v-html="renderedHtml"
         @click="handleContentClick"
       />
+
+      <!-- Token/cost annotation for assistant messages -->
+      <div v-if="message.role === 'assistant' && message.usage" class="mt-2 text-xs text-text-muted flex items-center gap-3">
+        <span>{{ formatTokens(message.usage.totalTokens) }} tokens</span>
+        <span>{{ formatCost(messageCost) }}</span>
+      </div>
     </div>
   </div>
 </template>
@@ -77,6 +83,7 @@
 import { computed, ref } from 'vue'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
+import { useCostTracking } from '../../composables/useCostTracking.js'
 
 const props = defineProps({
   message: { type: Object, required: true }
@@ -85,6 +92,9 @@ const props = defineProps({
 const emit = defineEmits(['apply-code'])
 
 const expanded = ref(false)
+
+const { formatCost, formatTokens, calculateMessageCost } = useCostTracking()
+const messageCost = computed(() => calculateMessageCost(props.message))
 
 // Format tool args for compact display
 const formatArgs = computed(() => {

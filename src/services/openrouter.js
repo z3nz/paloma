@@ -70,6 +70,18 @@ export async function* streamChat(apiKey, model, messages, options = {}) {
       if (trimmed.startsWith('data: ') && trimmed !== 'data: [DONE]') {
         try {
           const data = JSON.parse(trimmed.slice(6))
+
+          if (data.usage) {
+            yield {
+              type: 'usage',
+              usage: {
+                promptTokens: data.usage.prompt_tokens,
+                completionTokens: data.usage.completion_tokens,
+                totalTokens: data.usage.total_tokens
+              }
+            }
+          }
+
           const choice = data.choices?.[0]
           if (!choice) continue
 
