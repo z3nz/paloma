@@ -39,6 +39,7 @@ export function useSessions() {
   async function deleteSession(id) {
     await db.sessions.delete(id)
     await db.messages.where('sessionId').equals(id).delete()
+    await db.drafts.delete(id)
     const projectPath = sessions.value.find(s => s.id === id)?.projectPath
     if (activeSessionId.value === id) {
       activeSessionId.value = null

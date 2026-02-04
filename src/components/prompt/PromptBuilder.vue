@@ -80,13 +80,14 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import FileSearch from './FileSearch.vue'
 import FileChip from './FileChip.vue'
 import ModelSelector from './ModelSelector.vue'
 import PhaseSelector from './PhaseSelector.vue'
 import { useFileIndex } from '../../composables/useFileIndex.js'
 import { useOpenRouter } from '../../composables/useOpenRouter.js'
+import db from '../../services/db.js'
 
 const props = defineProps({
   session: { type: Object, default: null },
@@ -113,6 +114,69 @@ let atStartIndex = -1
 const currentModel = computed(() => props.session?.model || '')
 const currentPhase = computed(() => props.session?.phase || 'research')
 const canSend = computed(() => input.value.trim().length > 0 && !props.streaming)
+
+// --- Draft persistence ---
+let saveTimeout = null
+let suppressSave = false
+
+async function saveDraftNow(sessionId) {
+  if (!sessionId) return
+  try {
+    const existing = await db.drafts.get(sessionId)
+    await db.drafts.put({
+      sessionId,
+      ...existing,
+      content: input.value,
+      files: attachedFiles.value.map(f => ({ path: f.path, name: f.name })),
+      updatedAt: Date.now()
+    })
+  } catch {
+    // Best-effort persistence — UI continues working without storage
+  }
+}
+
+function scheduleDraftSave() {
+  if (suppressSave) return
+  clearTimeout(saveTimeout)
+  const sessionId = props.session?.id
+  if (!sessionId) return
+  saveTimeout = setTimeout(() => saveDraftNow(sessionId), 500)
+}
+
+watch([input, attachedFiles], scheduleDraftSave, { deep: true })
+
+// Load draft on session switch, save outgoing draft first
+watch(
+  () => props.session?.id,
+  async (sessionId, oldSessionId) => {
+    // Save draft for outgoing session
+    if (oldSessionId) {
+      clearTimeout(saveTimeout)
+      await saveDraftNow(oldSessionId)
+    }
+
+    // Load draft for incoming session
+    suppressSave = true
+    if (!sessionId) {
+      input.value = ''
+      attachedFiles.value = []
+    } else {
+      const draft = await db.drafts.get(sessionId)
+      input.value = draft?.content || ''
+      attachedFiles.value = draft?.files || []
+    }
+    await nextTick()
+    suppressSave = false
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(() => {
+  clearTimeout(saveTimeout)
+  // Flush on unmount
+  const sessionId = props.session?.id
+  if (sessionId) saveDraftNow(sessionId)
+})
 
 // Auto-grow textarea
 watch(input, () => {
@@ -192,6 +256,11 @@ function send() {
 
   input.value = ''
   attachedFiles.value = []
+
+  // Clear draft immediately (no debounce)
+  clearTimeout(saveTimeout)
+  const sessionId = props.session?.id
+  if (sessionId) saveDraftNow(sessionId)
 
   nextTick(() => {
     const el = textareaRef.value

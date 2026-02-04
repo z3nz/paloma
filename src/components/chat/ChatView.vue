@@ -45,6 +45,7 @@ import PromptBuilder from '../prompt/PromptBuilder.vue'
 import DiffPreview from './DiffPreview.vue'
 import ToolConfirmation from './ToolConfirmation.vue'
 import { useChat } from '../../composables/useChat.js'
+import { useChanges } from '../../composables/useChanges.js'
 import { useSettings } from '../../composables/useSettings.js'
 import { useProject } from '../../composables/useProject.js'
 import { useFileIndex } from '../../composables/useFileIndex.js'
@@ -63,6 +64,7 @@ const {
   pendingToolConfirmation, contextWarning, loadMessages, sendMessage, stopStreaming,
   resolveToolConfirmation, rejectToolConfirmation
 } = useChat()
+const { detectChanges, loadSessionChanges } = useChanges()
 const { apiKey } = useSettings()
 const { dirHandle, projectInstructions, activePlans, refreshActivePlans } = useProject()
 const { search: searchFiles, buildIndex } = useFileIndex()
@@ -73,9 +75,21 @@ const editError = ref(null)
 
 watch(
   () => props.session?.id,
-  (id) => { loadMessages(id) },
+  (id) => {
+    loadMessages(id)
+    loadSessionChanges(id)
+  },
   { immediate: true }
 )
+
+watch(streaming, (newVal, oldVal) => {
+  if (oldVal === true && newVal === false) {
+    const lastMsg = messages.value.findLast(m => m.role === 'assistant' && m.content)
+    if (lastMsg?.content && dirHandle.value) {
+      detectChanges(lastMsg.content, dirHandle.value)
+    }
+  }
+})
 
 async function handleSend({ content, files }) {
   if (!props.session || !content.trim()) return

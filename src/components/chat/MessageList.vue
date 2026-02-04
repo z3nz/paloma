@@ -44,7 +44,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { marked } from 'marked'
 import MessageItem from './MessageItem.vue'
 import ToolActivity from './ToolActivity.vue'
@@ -61,19 +61,55 @@ defineEmits(['apply-code'])
 
 const container = ref(null)
 const anchor = ref(null)
+const isNearBottom = ref(true)
+
+function checkScrollPosition() {
+  if (!container.value) return
+  const { scrollTop, scrollHeight, clientHeight } = container.value
+  isNearBottom.value = scrollHeight - scrollTop - clientHeight < 100
+}
+
+onMounted(() => {
+  container.value?.addEventListener('scroll', checkScrollPosition, { passive: true })
+})
+
+onBeforeUnmount(() => {
+  container.value?.removeEventListener('scroll', checkScrollPosition)
+})
+
+function scrollToBottom(behavior = 'smooth') {
+  nextTick(() => {
+    anchor.value?.scrollIntoView({ behavior })
+  })
+}
 
 const streamingHtml = computed(() => {
   if (!props.streamingContent) return '<span class="streaming-cursor"></span>'
   return marked.parse(props.streamingContent, { breaks: true }) + '<span class="streaming-cursor"></span>'
 })
 
-// Auto-scroll on new messages and streaming updates
+// Scroll to bottom on session switch (bulk load)
 watch(
-  () => [props.messages.length, props.streamingContent],
+  () => props.messages.length,
+  (newLen, oldLen) => {
+    if (oldLen === 0 && newLen > 0) {
+      scrollToBottom('instant')
+      isNearBottom.value = true
+      return
+    }
+    if (newLen > oldLen && isNearBottom.value) {
+      scrollToBottom()
+    }
+  }
+)
+
+// Scroll during streaming only if user is near bottom
+watch(
+  () => props.streamingContent,
   () => {
-    nextTick(() => {
-      anchor.value?.scrollIntoView({ behavior: 'smooth' })
-    })
+    if (isNearBottom.value) {
+      scrollToBottom()
+    }
   }
 )
 </script>

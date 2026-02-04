@@ -17,6 +17,7 @@
       <main class="flex-1 overflow-hidden">
         <slot />
       </main>
+      <slot name="right-sidebar" />
     </div>
   </div>
 </template>

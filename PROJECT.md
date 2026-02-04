@@ -182,26 +182,45 @@ This file is read when a project is opened and included in every API call for th
 
 ## TODO: Next Features
 
-### Priority 1: Search-and-Replace Formalization
-**Goal:** Make SEARCH/REPLACE blocks work automatically from agent responses
+### ~~Priority 1: Search-and-Replace Formalization~~ DONE
+- [x] SEARCH/REPLACE engine: `parseSearchReplace()`, `applySearchReplace()`, `resolveEdit()` in `editing.js`
+- [x] Error handling (not found, multiple matches, empty search, new file)
+- [x] Full-file fallback when no markers present
+- [x] Individual Apply buttons on annotated code blocks via `DiffPreview.vue` modal
+- [x] **Changes Panel** — Auto-detects annotated code blocks from completed agent responses
+- [x] Right sidebar (`ChangesPanel.vue`) with file list, unified diffs, per-file and batch apply/dismiss
+- [x] `codeBlockExtractor.js` extracts annotated blocks using `marked.lexer()`
+- [x] `useChanges.js` singleton composable manages pending changes state
+- [x] Resizable sidebar with drag handle
+- [x] "Full Diff" button opens existing `DiffPreview` modal from sidebar
+- [x] Multiple blocks for same file applied sequentially
+- [x] Streaming completion watcher triggers change detection automatically
 
-**Current State:**
-- Manual SEARCH/REPLACE syntax works (tested successfully)
-- Not automatically parsed from agent responses yet
+### Priority 2: Chat Performance & Scroll Behavior
+**Goal:** Fix re-rendering and scroll issues in long chat sessions
+
+**Known Issues:**
+- Applying a file change from Changes Panel causes the chat to re-render and scroll to top
+- Cannot scroll up while the agent is streaming a response (auto-scroll hijacks position)
+- Entire message log re-renders on every load — expensive for long conversations
 
 **Requirements:**
-- [ ] Parse code blocks for `<<<<<<< SEARCH` / `>>>>>>> REPLACE` markers
-- [ ] Extract multiple SEARCH/REPLACE pairs per code block
-- [ ] Apply edits sequentially with unique matching validation
-- [ ] Show combined diff preview before applying
-- [ ] Graceful error handling (not found, multiple matches)
-- [ ] Fallback to full file replacement if no markers present
+- [ ] Fix scroll-to-top on Changes Panel apply (likely reactivity trigger causing MessageList re-render)
+- [ ] Allow user to scroll up during streaming without being yanked back to bottom
+  - Auto-scroll only if user is already at/near bottom
+  - If user has scrolled up, pause auto-scroll; resume when they scroll back to bottom
+- [ ] Truncate or virtualize long message lists for performance
+  - Consider virtual scroll (e.g. `vue-virtual-scroller` or manual intersection observer)
+  - Or lazy-render: only render last N messages, load more on scroll-up
+  - Profile actual render cost to decide approach
+- [ ] Investigate whether MessageList re-renders can be reduced (component keys, v-memo, etc.)
+- [ ] Persist prompt draft in localStorage, keyed per session ID
+  - Save textarea content on every keystroke (debounced) to `localStorage` keyed by session ID (e.g. `paloma:draft:{sessionId}`)
+  - Restore draft when switching to a session or on page reload
+  - Clear draft after successful send
+  - Ensures in-progress prompts survive page reloads, accidental navigation, and Changes Panel applies
 
-**Error Messages:**
-- "Search block not found. Re-read the file and try again with more context."
-- "Search block matches multiple locations. Add more context to make it unique."
-
-### Priority 2: MCP Server Integration
+### Priority 3: MCP Server Integration (was Priority 2)
 **Goal:** Web search, git operations, terminal commands, external APIs
 
 **Architecture:**
@@ -234,7 +253,7 @@ project/.paloma/
 - How to handle server lifecycle (start/stop)?
 - Security model for terminal access?
 
-### Priority 3: URL-Based Project Routing
+### Priority 4: URL-Based Project Routing (was Priority 3)
 **Goal:** Encode the project folder path in the URL so you can navigate directly to a project
 
 **Requirements:**
@@ -244,7 +263,7 @@ project/.paloma/
 - [ ] Browser back/forward navigation works between projects/sessions
 - [ ] Bookmarkable URLs for frequently used projects
 
-### Priority 4: Known Gaps
+### Priority 5: Known Gaps (was Priority 4)
 **Goal:** Fix existing incomplete or broken functionality
 
 - [ ] `.paloma/` folder creation on project open
@@ -252,20 +271,21 @@ project/.paloma/
 - [ ] Stop streaming button (abort controller exists but not wired)
 - [ ] Model list from API (falls back to hardcoded popular models if fetch fails)
 
-### Priority 5: Undo/Rollback System
+### Priority 6: Undo/Rollback System (was Priority 5)
 - [ ] Track file edit history in IndexedDB (per-file versioning)
 - [ ] Keep last N versions per file (configurable, default N=10)
 - [ ] UI to rollback to previous version with timestamp
 - [ ] Diff view between versions
 - [ ] Persist history across sessions
 
-### Priority 6: Batch File Operations
-- [ ] Queue multiple file edits in a single operation
-- [ ] Show combined preview of all changes
-- [ ] Apply atomically (all or nothing)
-- [ ] Use case: "Refactor auth system across 5 files"
+### ~~Priority 6: Batch File Operations~~ DONE (via Changes Panel)
+- [x] Queue multiple file edits in Changes Panel sidebar
+- [x] Show combined preview of all changes with unified diffs
+- [x] Apply All button for batch apply
+- [x] Per-file apply/dismiss for granular control
+- [ ] Atomic apply (all or nothing) — currently best-effort, continues on individual failures
 
-### Priority 7: Model Switching as a Feature
+### Priority 8: Model Switching as a Feature (was Priority 7)
 **Goal:** Seamless model switching with full context transfer
 
 **Current Behavior:**
@@ -285,7 +305,7 @@ project/.paloma/
 3. Switch to GPT-4o-mini for commit messages (cheapest, good enough)
 4. Each model sees full context and knows how to use tools
 
-### Priority 8: Enhanced Features
+### Priority 9: Enhanced Features (was Priority 8)
 - [ ] `/` commands system (extensible command palette)
 - [ ] Message editing and regeneration
 - [ ] Conversation branching (explore alternate paths)
@@ -385,6 +405,7 @@ paloma/
 │   │   │   ├── MessageList.vue        # Scrollable message area
 │   │   │   ├── MessageItem.vue        # Single message (user/assistant)
 │   │   │   ├── DiffPreview.vue        # Diff preview modal for file edits
+│   │   │   ├── ChangesPanel.vue       # Right sidebar: batch changes with diffs
 │   │   │   └── ToolConfirmation.vue   # Tool approval modal
 │   │   ├── prompt/
 │   │   │   ├── PromptBuilder.vue      # THE star component
@@ -402,6 +423,7 @@ paloma/
 │   │   ├── useFileIndex.js            # File tree indexing + Fuse.js search
 │   │   ├── useSessions.js            # Chat session CRUD (Dexie)
 │   │   ├── useChat.js                 # Active chat: messages, streaming, tools
+│   │   ├── useChanges.js              # Pending changes state (Changes Panel)
 │   │   ├── useOpenRouter.js           # Model list, API key validation
 │   │   └── useCostTracking.js         # Cost aggregation, formatting, project totals
 │   ├── prompts/
@@ -411,6 +433,7 @@ paloma/
 │   │   ├── openrouter.js              # Raw API calls, streaming
 │   │   ├── filesystem.js              # File System Access API helpers
 │   │   ├── editing.js                 # SEARCH/REPLACE and diff logic
+│   │   ├── codeBlockExtractor.js      # Extract annotated code blocks from markdown
 │   │   ├── tools.js                   # Tool execution handlers
 │   │   └── db.js                      # Dexie database definition
 │   └── styles/
