@@ -109,11 +109,15 @@ Paloma uses a multi-layer system prompt architecture that gives the agent a cons
 │  (tech stack, coding standards,     │
 │   project-specific rules)           │
 ├─────────────────────────────────────┤
-│  LAYER 3: Phase Instructions        │  ← src/prompts/phases.js
+│  LAYER 3: Active Plans              │  ← .paloma/plans/active/*.md
+│  (plan documents for current work,  │
+│   auto-loaded on project open)      │
+├─────────────────────────────────────┤
+│  LAYER 4: Phase Instructions        │  ← src/prompts/phases.js
 │  (research/plan/implement/review/   │
 │   commit specific behaviors)        │
 ├─────────────────────────────────────┤
-│  LAYER 4: Context                   │  ← Built in useChat.js
+│  LAYER 5: Context                   │  ← Built in useChat.js
 │  (attached files, conversation      │
 │   history)                          │
 └─────────────────────────────────────┘
@@ -121,8 +125,9 @@ Paloma uses a multi-layer system prompt architecture that gives the agent a cons
 
 - **Layer 1** is hardcoded and included in every API call.
 - **Layer 2** is user-written per project. Place a `.paloma/instructions.md` file in your project root to add project-specific rules (tech stack, coding standards, etc.). If the file doesn't exist, this layer is skipped.
-- **Layer 3** changes based on the active phase pill (Research → Plan → Implement → Review → Commit).
-- **Layer 4** is the existing conversation history and attached file contents.
+- **Layer 3** is auto-loaded from `.paloma/plans/active/`. Plans are created in the Plan phase and archived in the Commit phase. If no active plans exist, this layer is skipped.
+- **Layer 4** changes based on the active phase pill (Research → Plan → Implement → Review → Commit).
+- **Layer 5** is the existing conversation history and attached file contents.
 
 ### Commit Standard
 
@@ -165,38 +170,19 @@ This file is read when a project is opened and included in every API call for th
 - [x] Token counts captured from SSE stream `usage` field
 - [x] Project total cost aggregated across all sessions
 
+### ~~Phase-Based Document Workflow~~ DONE
+- [x] `readActivePlans()` filesystem helper reads `.paloma/plans/active/*.md`
+- [x] Active plans loaded on project open, stored as reactive ref in `useProject`
+- [x] Active plan content injected into system prompt (between project instructions and phase instructions)
+- [x] Plan refresh after tool calls that touch `.paloma/plans/`
+- [x] Phase instructions guide agent through plan lifecycle (create → reference → archive)
+- [x] Agent creates plans via `createFile`, archives via `moveFile` (both require user approval)
+
 ---
 
 ## TODO: Next Features
 
-### Priority 1: Phase-Based Document Workflow
-**Goal:** Automatic artifact management tied to development phases
-
-**Workflow:**
-1. **Plan Phase** → Agent creates `.paloma/plans/active/{timestamp}-{title}.md`
-2. **Implement Phase** → Plan file is referenced, progress tracked
-3. **Review Phase** → Plan stays active for reference
-4. **Commit Phase** → Plan file auto-moved to `plans/completed/`
-
-**Benefits:**
-- Searchable history of all plans
-- Plans are git-committable artifacts
-- Clean separation between active work and completed work
-- Agent can reference previous plans
-- Automatic cleanup on phase transitions
-
-**Auto-Management:**
-```
-.paloma/plans/
-├── active/
-│   └── 2024-01-15-auth-refactor.md     ← Current plan
-├── completed/
-│   └── 2024-01-10-dashboard-redesign.md
-└── archived/
-    └── 2024-01-05-initial-setup.md      ← Manual archival
-```
-
-### Priority 2: Search-and-Replace Formalization
+### Priority 1: Search-and-Replace Formalization
 **Goal:** Make SEARCH/REPLACE blocks work automatically from agent responses
 
 **Current State:**
@@ -215,7 +201,7 @@ This file is read when a project is opened and included in every API call for th
 - "Search block not found. Re-read the file and try again with more context."
 - "Search block matches multiple locations. Add more context to make it unique."
 
-### Priority 3: MCP Server Integration
+### Priority 2: MCP Server Integration
 **Goal:** Web search, git operations, terminal commands, external APIs
 
 **Architecture:**
@@ -248,7 +234,7 @@ project/.paloma/
 - How to handle server lifecycle (start/stop)?
 - Security model for terminal access?
 
-### Priority 4: URL-Based Project Routing
+### Priority 3: URL-Based Project Routing
 **Goal:** Encode the project folder path in the URL so you can navigate directly to a project
 
 **Requirements:**
@@ -258,7 +244,7 @@ project/.paloma/
 - [ ] Browser back/forward navigation works between projects/sessions
 - [ ] Bookmarkable URLs for frequently used projects
 
-### Priority 5: Known Gaps
+### Priority 4: Known Gaps
 **Goal:** Fix existing incomplete or broken functionality
 
 - [ ] `.paloma/` folder creation on project open
@@ -266,20 +252,20 @@ project/.paloma/
 - [ ] Stop streaming button (abort controller exists but not wired)
 - [ ] Model list from API (falls back to hardcoded popular models if fetch fails)
 
-### Priority 6: Undo/Rollback System
+### Priority 5: Undo/Rollback System
 - [ ] Track file edit history in IndexedDB (per-file versioning)
 - [ ] Keep last N versions per file (configurable, default N=10)
 - [ ] UI to rollback to previous version with timestamp
 - [ ] Diff view between versions
 - [ ] Persist history across sessions
 
-### Priority 7: Batch File Operations
+### Priority 6: Batch File Operations
 - [ ] Queue multiple file edits in a single operation
 - [ ] Show combined preview of all changes
 - [ ] Apply atomically (all or nothing)
 - [ ] Use case: "Refactor auth system across 5 files"
 
-### Priority 8: Model Switching as a Feature
+### Priority 7: Model Switching as a Feature
 **Goal:** Seamless model switching with full context transfer
 
 **Current Behavior:**
@@ -299,7 +285,7 @@ project/.paloma/
 3. Switch to GPT-4o-mini for commit messages (cheapest, good enough)
 4. Each model sees full context and knows how to use tools
 
-### Priority 9: Enhanced Features
+### Priority 8: Enhanced Features
 - [ ] `/` commands system (extensible command palette)
 - [ ] Message editing and regeneration
 - [ ] Conversation branching (explore alternate paths)

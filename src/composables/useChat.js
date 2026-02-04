@@ -31,7 +31,7 @@ export function useChat() {
     messages.value = result
   }
 
-  async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions, searchFn) {
+  async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions, activePlans, searchFn) {
     error.value = null
     toolActivity.value = []
 
@@ -76,7 +76,7 @@ export function useChat() {
     // Layered system prompt: base + project + phase
     apiMessages.push({
       role: 'system',
-      content: buildSystemPrompt(phase, projectInstructions)
+      content: buildSystemPrompt(phase, projectInstructions, activePlans)
     })
 
     // Add conversation history (including tool messages)
@@ -282,11 +282,18 @@ export function useChat() {
     streaming.value = false
   }
 
-  function buildSystemPrompt(phase, projectInstructions) {
+  function buildSystemPrompt(phase, projectInstructions, activePlans) {
     let prompt = BASE_INSTRUCTIONS
 
     if (projectInstructions) {
       prompt += '\n\n## Project Instructions\n\n' + projectInstructions
+    }
+
+    if (activePlans?.length > 0) {
+      prompt += '\n\n## Active Plans\n\n'
+      prompt += activePlans.map(p =>
+        `<plan name="${p.name}">\n${p.content}\n</plan>`
+      ).join('\n\n')
     }
 
     const activePhase = phase || 'research'

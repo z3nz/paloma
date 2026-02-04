@@ -64,7 +64,7 @@ const {
   resolveToolConfirmation, rejectToolConfirmation
 } = useChat()
 const { apiKey } = useSettings()
-const { dirHandle, projectInstructions } = useProject()
+const { dirHandle, projectInstructions, activePlans, refreshActivePlans } = useProject()
 const { search: searchFiles, buildIndex } = useFileIndex()
 
 const showDiff = ref(false)
@@ -89,6 +89,7 @@ async function handleSend({ content, files }) {
     dirHandle.value,
     props.session.phase,
     projectInstructions.value,
+    activePlans.value,
     searchFiles
   )
 
@@ -151,6 +152,11 @@ async function handleToolAllow() {
     resolveToolConfirmation(result)
     // Refresh file index after write operations
     await buildIndex(dirHandle.value)
+    // Refresh active plans if a plan file was touched
+    const affectedPath = args.path || args.fromPath || args.toPath || ''
+    if (affectedPath.startsWith('.paloma/plans/')) {
+      await refreshActivePlans()
+    }
   } catch (err) {
     resolveToolConfirmation(JSON.stringify({ error: err.message }))
   }

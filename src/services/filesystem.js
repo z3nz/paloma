@@ -46,6 +46,26 @@ export async function readProjectInstructions(dirHandle) {
   }
 }
 
+export async function readActivePlans(dirHandle) {
+  try {
+    const palomaDir = await dirHandle.getDirectoryHandle('.paloma')
+    const plansDir = await palomaDir.getDirectoryHandle('plans')
+    const activeDir = await plansDir.getDirectoryHandle('active')
+    const plans = []
+    for await (const entry of activeDir.values()) {
+      if (entry.kind === 'file' && entry.name.endsWith('.md')) {
+        const file = await entry.getFile()
+        const content = await file.text()
+        plans.push({ name: entry.name, content })
+      }
+    }
+    plans.sort((a, b) => a.name.localeCompare(b.name))
+    return plans
+  } catch {
+    return []
+  }
+}
+
 export async function requestWritePermission(dirHandle) {
   const status = await dirHandle.queryPermission({ mode: 'readwrite' })
   if (status === 'granted') return true
