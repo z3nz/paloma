@@ -21,12 +21,14 @@ Paloma is a local-first web UI that connects to OpenRouter for model access, use
 | Markdown | marked + highlight.js |
 | Gitignore | `ignore` npm package |
 | Diffing | `diff` (jsdiff) for line-level diffs |
+| MCP Bridge | Node.js + `ws` + `@modelcontextprotocol/sdk` |
+| Process Mgmt | `concurrently` (runs Vite + bridge together) |
 
 ---
 
 ## Architecture Decisions
 
-- **No backend** - runs entirely in the browser
+- **No backend** - browser app runs entirely client-side; optional Node.js bridge for MCP servers
 - **Singleton composables** for shared state (no Pinia)
 - **Async generators** for file tree walking and SSE streaming
 - **File System Access API** for local directory reading
@@ -196,62 +198,58 @@ This file is read when a project is opened and included in every API call for th
 - [x] Multiple blocks for same file applied sequentially
 - [x] Streaming completion watcher triggers change detection automatically
 
-### Priority 2: Chat Performance & Scroll Behavior
-**Goal:** Fix re-rendering and scroll issues in long chat sessions
+### Priority 2: Chat Performance & UI Stability
+**Goal:** Fix page refreshes on apply, long-chat sluggishness, and Changes Panel UX gaps
 
-**Known Issues:**
-- Applying a file change from Changes Panel causes the chat to re-render and scroll to top
-- Cannot scroll up while the agent is streaming a response (auto-scroll hijacks position)
-- Entire message log re-renders on every load — expensive for long conversations
+**Known Issues — Apply triggers page refresh:**
+- Clicking "Apply" or "Apply All" in the Changes Panel causes a full page refresh (Vite HMR detects the written file and reloads the page)
+- This loses scroll position, collapses the sidebar state, and disrupts the workflow
+- Root cause: `writeFile` writes to project files that Vite's dev server is watching — any .js/.vue file write triggers HMR, which can cascade into a full page reload
+- Need to investigate: does this happen in production builds too, or only during `npm run dev`?
+- Potential fixes:
+  - [ ] Configure Vite to ignore writes from the app (custom watcher exclude?)
+  - [ ] Debounce or batch file writes to reduce HMR churn
+  - [ ] Preserve and restore scroll position across HMR reloads
+  - [ ] Or accept HMR reload but ensure state fully restores (drafts + changes already persist via Dexie, but scroll position and expanded states do not)
 
-**Requirements:**
-- [ ] Fix scroll-to-top on Changes Panel apply (likely reactivity trigger causing MessageList re-render)
-- [ ] Allow user to scroll up during streaming without being yanked back to bottom
-  - Auto-scroll only if user is already at/near bottom
-  - If user has scrolled up, pause auto-scroll; resume when they scroll back to bottom
-- [ ] Truncate or virtualize long message lists for performance
-  - Consider virtual scroll (e.g. `vue-virtual-scroller` or manual intersection observer)
-  - Or lazy-render: only render last N messages, load more on scroll-up
-  - Profile actual render cost to decide approach
-- [ ] Investigate whether MessageList re-renders can be reduced (component keys, v-memo, etc.)
-- [ ] Persist prompt draft in localStorage, keyed per session ID
-  - Save textarea content on every keystroke (debounced) to `localStorage` keyed by session ID (e.g. `paloma:draft:{sessionId}`)
-  - Restore draft when switching to a session or on page reload
-  - Clear draft after successful send
-  - Ensures in-progress prompts survive page reloads, accidental navigation, and Changes Panel applies
+**Known Issues — Changes Panel doesn't auto-close:**
+- [ ] After "Apply All" completes (all files applied), the sidebar stays open showing all files as "Applied" — should auto-close or auto-dismiss once everything is applied
+- [ ] After applying individual files one by one until none are pending, sidebar still shows — same issue
+- Desired behavior: once no pending changes remain, either auto-dismiss after a short delay or collapse the panel
 
-### Priority 3: MCP Server Integration (was Priority 2)
-**Goal:** Web search, git operations, terminal commands, external APIs
+**Known Issues — Long chat performance:**
+- Long conversations (50+ messages) cause noticeable UI sluggishness
+- Entire message log re-renders on every load — expensive with markdown parsing + syntax highlighting per message
+- Page becomes slow to interact with during and after long streaming responses
+- Requirements:
+  - [ ] Virtualize or lazy-render the message list for large conversations
+    - Consider `vue-virtual-scroller` or manual intersection observer approach
+    - Or lazy-render: only render last N messages, load more on scroll-up
+    - Profile actual render cost to decide approach
+  - [ ] Investigate whether MessageList re-renders can be reduced (component keys, `v-memo`, `shallowRef` for messages array, etc.)
+  - [ ] Consider memoizing or caching rendered markdown HTML so re-renders don't re-parse
+  - [ ] Test with 100+ message sessions to find the breaking point and set a target
 
-**Architecture:**
-```
-~/.paloma/
-├── mcp-settings.json          # Global: all installed MCP servers
-└── servers/                   # npm installed MCP packages
-    ├── brave-search/
-    ├── git/
-    └── terminal/
+**Completed (this sprint):**
+- [x] ~~Allow user to scroll up during streaming without being yanked back to bottom~~ (smart auto-scroll, isNearBottom check)
+- [x] ~~Persist prompt draft~~ (Dexie drafts table, per-session, debounced save)
+- [x] ~~Persist Changes Panel state~~ (Dexie drafts table, per-session, survives reload)
 
-project/.paloma/
-└── mcp.json                   # Per-project: which servers are enabled
-```
-
-**Candidate MCP Servers:**
-- `@modelcontextprotocol/server-brave-search` - Web search capability
-- `@modelcontextprotocol/server-git` - Git operations
-- Custom terminal server - Command execution with approval
-- `@modelcontextprotocol/server-postgres` - Database operations (future)
-
-**Implementation Challenges:**
-- [ ] How to run MCP servers in browser context?
-- [ ] Local Node.js bridge process needed?
-- [ ] WebSocket connection to local MCP daemon?
-- [ ] Permission model for MCP tools (per-tool approval?)
-
-**Open Questions:**
-- Install MCP servers globally or per-project?
-- How to handle server lifecycle (start/stop)?
-- Security model for terminal access?
+### ~~Priority 3: MCP Server Integration~~ DONE
+- [x] Node.js bridge process (`bridge/`) manages MCP server lifecycles via stdio
+- [x] WebSocket server on `localhost:19191` connects bridge to browser
+- [x] Browser WebSocket client (`mcpBridge.js`) with auto-reconnect and exponential backoff
+- [x] `useMCP.js` composable — reactive connection state, tool discovery, schema conversion
+- [x] Tool namespacing: `mcp__server__tool` (e.g., `mcp__brave-search__brave_web_search`)
+- [x] MCP tools converted to OpenRouter function calling format automatically
+- [x] Per-project enablement via `.paloma/mcp.json` (`enabled` + `autoExecute` arrays)
+- [x] Global server config via `~/.paloma/mcp-settings.json` (Claude Desktop format)
+- [x] Tool confirmation modal supports MCP tools (purple badge, shows server/tool/args)
+- [x] MCP tool descriptions dynamically injected into system prompt
+- [x] TopBar connection indicator (green/gray dot with server count)
+- [x] Settings modal MCP section (URL, connect/disconnect, auto-connect, server list)
+- [x] Graceful degradation — everything works without the bridge running
+- [x] `npm start` runs both Vite and bridge via `concurrently`
 
 ### Priority 4: URL-Based Project Routing (was Priority 3)
 **Goal:** Encode the project folder path in the URL so you can navigate directly to a project
@@ -352,17 +350,43 @@ project/
 
 ---
 
-## MCP Server Architecture (Future)
+## MCP Server Architecture
 
+```
+┌──────────────────────────────────┐
+│  Browser (Paloma Vue App)        │
+│                                  │
+│  useMCP.js ←→ mcpBridge.js       │
+│       ↕              ↕           │
+│  useChat.js      WebSocket       │
+│       ↕          (localhost)     │
+│  tools.js                        │
+└──────────┬───────────────────────┘
+           │
+┌──────────▼───────────────────────┐
+│  bridge/ (Node.js process)       │
+│                                  │
+│  index.js (WebSocket server)     │
+│  mcp-manager.js (MCP clients)    │
+│  config.js (reads settings)      │
+└──────────┬───────────────────────┘
+           │ stdio
+┌──────────▼───────────────────────┐
+│  MCP Servers (child processes)   │
+│  - brave-search, git, etc.       │
+└──────────────────────────────────┘
+```
+
+**Configuration:**
 ```
 ~/.paloma/
-└── mcp-settings.json     # Global: all installed MCP servers
+└── mcp-settings.json     # Global: all installed MCP servers (Claude Desktop format)
 
 project/.paloma/
-└── mcp.json              # Per-project: which servers are enabled
+└── mcp.json              # Per-project: which servers are enabled + autoExecute
 ```
 
-This ensures MCP servers are installed once globally but scoped per-project so agents don't get access to everything in every session. Security through explicit per-project enablement.
+MCP servers are configured once globally but scoped per-project. If `.paloma/mcp.json` doesn't exist in a project, no MCP tools are enabled (safe default). The `autoExecute` array lets specific servers skip the confirmation modal.
 
 ---
 
@@ -379,6 +403,9 @@ This ensures MCP servers are installed once globally but scoped per-project so a
 9. **Model switching**: Change model mid-session → next message uses new model
 10. **Persistence**: Refresh page → re-grant directory access → sessions/messages restored
 11. **Tool usage**: Agent reads files autonomously → approval modal → results in context
+12. **MCP bridge**: `npm start` → bridge + vite both running → TopBar shows green MCP dot
+13. **MCP tools**: Enable server in `.paloma/mcp.json` → agent can call MCP tools → results flow back
+14. **MCP graceful degradation**: Stop bridge → gray dot → chat still works with built-in tools
 
 ---
 
@@ -391,6 +418,11 @@ paloma/
 ├── package.json
 ├── PROJECT.md                          ← You are here
 ├── WISHLIST.md                         ← Detailed feature wishlist
+├── bridge/                             # MCP bridge server (Node.js)
+│   ├── package.json                   # Dependencies: ws, @modelcontextprotocol/sdk
+│   ├── index.js                       # WebSocket server on localhost:19191
+│   ├── mcp-manager.js                 # MCP client lifecycle management
+│   └── config.js                      # Reads ~/.paloma/mcp-settings.json
 ├── src/
 │   ├── main.js
 │   ├── App.vue
@@ -423,6 +455,7 @@ paloma/
 │   │   ├── useFileIndex.js            # File tree indexing + Fuse.js search
 │   │   ├── useSessions.js            # Chat session CRUD (Dexie)
 │   │   ├── useChat.js                 # Active chat: messages, streaming, tools
+│   │   ├── useMCP.js                  # MCP connection state, tool discovery, bridge calls
 │   │   ├── useChanges.js              # Pending changes state (Changes Panel)
 │   │   ├── useOpenRouter.js           # Model list, API key validation
 │   │   └── useCostTracking.js         # Cost aggregation, formatting, project totals
@@ -435,6 +468,7 @@ paloma/
 │   │   ├── editing.js                 # SEARCH/REPLACE and diff logic
 │   │   ├── codeBlockExtractor.js      # Extract annotated code blocks from markdown
 │   │   ├── tools.js                   # Tool execution handlers
+│   │   ├── mcpBridge.js               # WebSocket client for MCP bridge
 │   │   └── db.js                      # Dexie database definition
 │   └── styles/
 │       └── main.css                   # Tailwind + highlight.js + custom

@@ -49,6 +49,7 @@ import { useChanges } from '../../composables/useChanges.js'
 import { useSettings } from '../../composables/useSettings.js'
 import { useProject } from '../../composables/useProject.js'
 import { useFileIndex } from '../../composables/useFileIndex.js'
+import { useMCP, isMcpTool } from '../../composables/useMCP.js'
 import { readFileSafe, requestWritePermission, writeFile } from '../../services/filesystem.js'
 import { resolveEdit } from '../../services/editing.js'
 import { executeWriteTool } from '../../services/tools.js'
@@ -66,8 +67,9 @@ const {
 } = useChat()
 const { detectChanges, loadSessionChanges } = useChanges()
 const { apiKey } = useSettings()
-const { dirHandle, projectInstructions, activePlans, refreshActivePlans } = useProject()
+const { dirHandle, projectInstructions, activePlans, mcpConfig, refreshActivePlans } = useProject()
 const { search: searchFiles, updatePaths } = useFileIndex()
+const { callMcpTool } = useMCP()
 
 const showDiff = ref(false)
 const pendingEdit = ref({ path: '', code: '', originalContent: null })
@@ -108,7 +110,8 @@ async function handleSend({ content, files }) {
     props.session.phase,
     projectInstructions.value,
     activePlans.value,
-    searchFiles
+    searchFiles,
+    mcpConfig.value
   )
 
   if (title) {
@@ -172,8 +175,20 @@ function getPathUpdatesForTool(toolName, args) {
 }
 
 async function handleToolAllow() {
-  if (!pendingToolConfirmation.value || !dirHandle.value) return
+  if (!pendingToolConfirmation.value) return
   const { toolName, args } = pendingToolConfirmation.value
+
+  if (isMcpTool(toolName)) {
+    try {
+      const result = await callMcpTool(toolName, args)
+      resolveToolConfirmation(result)
+    } catch (err) {
+      resolveToolConfirmation(JSON.stringify({ error: err.message }))
+    }
+    return
+  }
+
+  if (!dirHandle.value) return
   try {
     const result = await executeWriteTool(toolName, args, dirHandle.value)
     resolveToolConfirmation(result)

@@ -66,6 +66,18 @@ export async function readActivePlans(dirHandle) {
   }
 }
 
+export async function readMcpConfig(dirHandle) {
+  try {
+    const palomaDir = await dirHandle.getDirectoryHandle('.paloma')
+    const fileHandle = await palomaDir.getFileHandle('mcp.json')
+    const file = await fileHandle.getFile()
+    const text = await file.text()
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
 export async function requestWritePermission(dirHandle) {
   const status = await dirHandle.queryPermission({ mode: 'readwrite' })
   if (status === 'granted') return true

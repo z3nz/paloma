@@ -53,6 +53,7 @@
           class="px-4 py-2 text-sm text-white rounded-md transition-colors"
           :class="confirmation.toolName === 'deleteFile'
             ? 'bg-danger/90 hover:bg-danger'
+            : isMcp ? 'bg-purple-600/90 hover:bg-purple-600'
             : 'bg-success/90 hover:bg-success'"
         >
           Allow
@@ -71,7 +72,16 @@ const props = defineProps({
 
 defineEmits(['allow', 'deny'])
 
+const isMcp = computed(() => props.confirmation.toolName.startsWith('mcp__'))
+
+const mcpDisplayName = computed(() => {
+  if (!isMcp.value) return ''
+  const parts = props.confirmation.toolName.split('__')
+  return `${parts[1]} / ${parts.slice(2).join('__')}`
+})
+
 const actionLabel = computed(() => {
+  if (isMcp.value) return 'MCP'
   switch (props.confirmation.toolName) {
     case 'createFile': return 'Create'
     case 'deleteFile': return 'Delete'
@@ -81,6 +91,7 @@ const actionLabel = computed(() => {
 })
 
 const actionBadgeClass = computed(() => {
+  if (isMcp.value) return 'bg-purple-500/20 text-purple-400'
   switch (props.confirmation.toolName) {
     case 'createFile': return 'bg-success/20 text-success'
     case 'deleteFile': return 'bg-danger/20 text-danger'
@@ -90,11 +101,17 @@ const actionBadgeClass = computed(() => {
 })
 
 const primaryPath = computed(() => {
+  if (isMcp.value) return mcpDisplayName.value
   const args = props.confirmation.args
   return args.path || args.fromPath || ''
 })
 
 const description = computed(() => {
+  if (isMcp.value) {
+    const args = props.confirmation.args
+    const argSummary = Object.entries(args).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')
+    return `The assistant wants to call MCP tool "${mcpDisplayName.value}" with: ${argSummary || 'no arguments'}`
+  }
   const args = props.confirmation.args
   switch (props.confirmation.toolName) {
     case 'createFile':

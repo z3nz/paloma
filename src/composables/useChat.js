@@ -6,6 +6,7 @@ import { BASE_INSTRUCTIONS } from '../prompts/base.js'
 import { PHASE_INSTRUCTIONS } from '../prompts/phases.js'
 import { getAllTools, AUTO_EXECUTE_TOOLS, executeTool } from '../services/tools.js'
 import { useOpenRouter } from './useOpenRouter.js'
+import { useMCP, isMcpTool, parseMcpToolName } from './useMCP.js'
 
 const _saved = import.meta.hot ? window.__PALOMA_CHAT__ : undefined
 
@@ -52,7 +53,7 @@ export function useChat() {
     messages.value = result
   }
 
-  async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions, activePlans, searchFn) {
+  async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions, activePlans, searchFn, mcpConfig) {
     error.value = null
     toolActivity.value = []
 
@@ -91,13 +92,18 @@ export function useChat() {
     userMsg.id = userMsgId
     messages.value.push(userMsg)
 
+    // Resolve MCP tools early so they're available for system prompt + tool list
+    const { getEnabledTools, getAutoExecuteServers, callMcpTool } = useMCP()
+    const enabledMcpTools = mcpConfig ? getEnabledTools(mcpConfig) : []
+    const mcpAutoExec = mcpConfig ? getAutoExecuteServers(mcpConfig) : new Set()
+
     // Build messages array for API
     const apiMessages = []
 
     // Layered system prompt: base + project + phase
     apiMessages.push({
       role: 'system',
-      content: buildSystemPrompt(phase, projectInstructions, activePlans)
+      content: buildSystemPrompt(phase, projectInstructions, activePlans, enabledMcpTools)
     })
 
     // Add conversation history (including tool messages)
@@ -122,8 +128,7 @@ export function useChat() {
     streaming.value = true
     streamingContent.value = ''
     abortController = new AbortController()
-
-    const tools = dirHandle ? getAllTools() : []
+    const tools = dirHandle ? getAllTools(enabledMcpTools) : enabledMcpTools.length ? getAllTools(enabledMcpTools) : []
     let continueLoop = true
     let round = 0
 
@@ -186,7 +191,18 @@ export function useChat() {
             const activityEntry = { name: toolName, args, status: 'running' }
             toolActivity.value = [...toolActivity.value, activityEntry]
 
-            if (AUTO_EXECUTE_TOOLS.has(toolName)) {
+            if (isMcpTool(toolName)) {
+              const { server } = parseMcpToolName(toolName)
+              if (mcpAutoExec.has(server)) {
+                try {
+                  result = await callMcpTool(toolName, args)
+                } catch (e) {
+                  result = JSON.stringify({ error: e.message })
+                }
+              } else {
+                result = await requestToolConfirmation(toolName, args, dirHandle)
+              }
+            } else if (AUTO_EXECUTE_TOOLS.has(toolName)) {
               try {
                 result = await executeTool(toolName, args, dirHandle, searchFn)
               } catch (e) {
@@ -303,8 +319,17 @@ export function useChat() {
     streaming.value = false
   }
 
-  function buildSystemPrompt(phase, projectInstructions, activePlans) {
+  function buildSystemPrompt(phase, projectInstructions, activePlans, enabledMcpTools = []) {
     let prompt = BASE_INSTRUCTIONS
+
+    if (enabledMcpTools.length > 0) {
+      prompt += '\n\n## MCP Tools\n\nYou also have access to these tools provided by external MCP servers:\n'
+      for (const tool of enabledMcpTools) {
+        const fn = tool.function
+        const serverName = fn.name.split('__')[1]
+        prompt += `- ${fn.name} (server: ${serverName}) — ${fn.description}\n`
+      }
+    }
 
     if (projectInstructions) {
       prompt += '\n\n## Project Instructions\n\n' + projectInstructions

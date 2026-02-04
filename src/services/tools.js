@@ -113,8 +113,8 @@ export const AUTO_EXECUTE_TOOLS = new Set([
   'readFile', 'listDirectory', 'searchFiles', 'fileExists'
 ])
 
-export function getAllTools() {
-  return [...READ_TOOLS, ...WRITE_TOOLS]
+export function getAllTools(mcpTools = []) {
+  return [...READ_TOOLS, ...WRITE_TOOLS, ...mcpTools]
 }
 
 export async function executeTool(name, args, dirHandle, searchFn) {

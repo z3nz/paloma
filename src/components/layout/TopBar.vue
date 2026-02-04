@@ -21,6 +21,21 @@
     </button>
 
     <div class="flex items-center gap-2">
+      <!-- MCP indicator -->
+      <div
+        v-if="mcpVisible"
+        class="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+        :class="mcpConnected ? 'text-text-secondary' : 'text-text-muted'"
+        :title="mcpTooltip"
+      >
+        <span
+          class="w-2 h-2 rounded-full"
+          :class="mcpConnected ? 'bg-success' : 'bg-text-muted'"
+        />
+        <span>MCP</span>
+        <span v-if="mcpConnected && mcpServerCount > 0" class="text-text-muted">({{ mcpServerCount }})</span>
+      </div>
+
       <button
         @click="$emit('open-project')"
         class="text-text-secondary hover:text-text-primary text-sm px-2 py-1 rounded hover:bg-bg-hover transition-colors"
@@ -52,6 +67,7 @@
 import { ref, computed } from 'vue'
 import UsageModal from './UsageModal.vue'
 import { useCostTracking } from '../../composables/useCostTracking.js'
+import { useMCP } from '../../composables/useMCP.js'
 
 const props = defineProps({
   projectName: { type: String, default: '' },
@@ -60,8 +76,23 @@ const props = defineProps({
 defineEmits(['open-settings', 'open-project'])
 
 const { sessionCost, sessionTokens, getContextUsage, formatCost, formatTokens } = useCostTracking()
+const { connected: mcpConnected, servers: mcpServers, autoConnect: mcpAutoConnect } = useMCP()
 
 const showUsageModal = ref(false)
+
+const mcpVisible = computed(() => mcpAutoConnect.value || mcpConnected.value)
+
+const mcpServerCount = computed(() => {
+  return Object.values(mcpServers.value).filter(s => s.status === 'connected').length
+})
+
+const mcpTooltip = computed(() => {
+  if (!mcpConnected.value) return 'MCP Bridge: disconnected'
+  const names = Object.entries(mcpServers.value)
+    .filter(([, s]) => s.status === 'connected')
+    .map(([name]) => name)
+  return `MCP Bridge: connected\nServers: ${names.join(', ') || 'none'}`
+})
 
 const hasUsageData = computed(() => sessionTokens.value.total > 0)
 

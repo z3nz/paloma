@@ -56,6 +56,51 @@
             {{ projectName }}
           </div>
         </div>
+
+        <!-- MCP Bridge -->
+        <div>
+          <label class="block text-sm text-text-secondary mb-1.5">MCP Bridge</label>
+          <div class="space-y-2">
+            <div class="flex gap-2">
+              <input
+                v-model="localBridgeUrl"
+                placeholder="ws://localhost:19191"
+                class="flex-1 bg-bg-primary border border-border rounded-md px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
+              />
+              <button
+                @click="toggleMcpConnection"
+                class="px-3 py-2 border border-border rounded-md text-sm transition-colors"
+                :class="mcpConnected ? 'bg-danger/20 text-danger hover:bg-danger/30' : 'bg-bg-primary text-text-secondary hover:text-text-primary'"
+              >
+                {{ mcpConnected ? 'Disconnect' : 'Connect' }}
+              </button>
+            </div>
+            <div class="flex items-center gap-2">
+              <span
+                class="w-2 h-2 rounded-full"
+                :class="mcpConnected ? 'bg-success' : mcpConnectionState === 'connecting' ? 'bg-warning' : 'bg-text-muted'"
+              />
+              <span class="text-xs text-text-muted">{{ mcpConnectionState }}</span>
+            </div>
+            <label class="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+              <input type="checkbox" v-model="localAutoConnect" class="rounded" />
+              Auto-connect on startup
+            </label>
+            <div v-if="mcpConnected && Object.keys(mcpServerList).length > 0" class="mt-2 space-y-1.5">
+              <p class="text-xs text-text-muted uppercase tracking-wider">Servers</p>
+              <div v-for="(info, name) in mcpServerList" :key="name" class="flex items-center justify-between bg-bg-primary border border-border rounded-md px-3 py-2">
+                <div class="flex items-center gap-2">
+                  <span
+                    class="w-1.5 h-1.5 rounded-full"
+                    :class="info.status === 'connected' ? 'bg-success' : 'bg-danger'"
+                  />
+                  <span class="text-sm text-text-primary">{{ name }}</span>
+                </div>
+                <span class="text-xs text-text-muted">{{ info.tools?.length || 0 }} tools</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Footer -->
@@ -80,6 +125,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useSettings } from '../../composables/useSettings.js'
+import { useMCP } from '../../composables/useMCP.js'
 
 const props = defineProps({
   projectName: { type: String, default: '' }
@@ -87,10 +133,13 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const { apiKey, defaultModel } = useSettings()
+const { connected: mcpConnected, connectionState: mcpConnectionState, servers: mcpServerList, bridgeUrl, autoConnect: mcpAutoConnect, connect: mcpConnect, disconnect: mcpDisconnect } = useMCP()
 
 const localKey = ref(apiKey.value)
 const localModel = ref(defaultModel.value)
 const showKey = ref(false)
+const localBridgeUrl = ref(bridgeUrl.value)
+const localAutoConnect = ref(mcpAutoConnect.value)
 
 const popularModels = [
   'anthropic/claude-sonnet-4',
@@ -103,9 +152,19 @@ const popularModels = [
   'meta-llama/llama-3.3-70b-instruct'
 ]
 
+function toggleMcpConnection() {
+  if (mcpConnected.value) {
+    mcpDisconnect()
+  } else {
+    mcpConnect(localBridgeUrl.value)
+  }
+}
+
 function save() {
   apiKey.value = localKey.value
   defaultModel.value = localModel.value
+  bridgeUrl.value = localBridgeUrl.value
+  mcpAutoConnect.value = localAutoConnect.value
   emit('close')
 }
 </script>
