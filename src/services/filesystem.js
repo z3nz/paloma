@@ -72,3 +72,27 @@ export async function readFileSafe(dirHandle, filePath) {
     return null
   }
 }
+
+export async function deleteFile(dirHandle, filePath) {
+  const parts = filePath.split('/')
+  let current = dirHandle
+  for (const part of parts.slice(0, -1)) {
+    current = await current.getDirectoryHandle(part)
+  }
+  await current.removeEntry(parts.at(-1))
+}
+
+export async function moveFile(dirHandle, fromPath, toPath) {
+  const content = await readFile(dirHandle, fromPath)
+  await writeFile(dirHandle, toPath, content)
+  await deleteFile(dirHandle, fromPath)
+}
+
+export async function fileExists(dirHandle, filePath) {
+  try {
+    await readFile(dirHandle, filePath)
+    return true
+  } catch {
+    return false
+  }
+}

@@ -29,6 +29,9 @@
       </div>
     </div>
 
+    <!-- Tool activity -->
+    <ToolActivity v-if="toolActivity.length" :activities="toolActivity" />
+
     <!-- Error -->
     <div v-if="error" class="px-6 py-4">
       <div class="max-w-3xl mx-auto bg-danger/10 border border-danger/30 rounded-md px-4 py-3 text-sm text-danger">
@@ -44,11 +47,13 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { marked } from 'marked'
 import MessageItem from './MessageItem.vue'
+import ToolActivity from './ToolActivity.vue'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
   streaming: { type: Boolean, default: false },
   streamingContent: { type: String, default: '' },
+  toolActivity: { type: Array, default: () => [] },
   error: { type: String, default: null }
 })
 

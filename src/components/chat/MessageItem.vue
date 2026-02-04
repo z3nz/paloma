@@ -1,5 +1,38 @@
 <template>
+  <!-- Tool message -->
   <div
+    v-if="message.role === 'tool'"
+    class="px-6 py-1.5"
+  >
+    <div class="max-w-3xl mx-auto flex items-start gap-2 text-xs text-text-muted">
+      <span class="uppercase tracking-wider text-warning font-medium shrink-0">Tool</span>
+      <button
+        @click="expanded = !expanded"
+        class="font-mono hover:text-text-secondary text-left"
+      >
+        {{ message.toolName }}({{ formatArgs }}) {{ expanded ? '▾' : '▸' }}
+      </button>
+    </div>
+    <div v-if="expanded" class="max-w-3xl mx-auto mt-1 ml-10">
+      <pre class="text-xs text-text-muted font-mono whitespace-pre-wrap bg-bg-primary border border-border rounded-md p-2 max-h-48 overflow-y-auto">{{ truncatedResult }}</pre>
+    </div>
+  </div>
+
+  <!-- Assistant message with tool calls but no content -->
+  <div
+    v-else-if="message.role === 'assistant' && message.toolCalls && !message.content"
+    class="px-6 py-1.5"
+  >
+    <div class="max-w-3xl mx-auto">
+      <span class="text-xs text-text-muted italic">
+        Used {{ message.toolCalls.length }} tool{{ message.toolCalls.length === 1 ? '' : 's' }}
+      </span>
+    </div>
+  </div>
+
+  <!-- Normal user/assistant message -->
+  <div
+    v-else
     class="px-6 py-4"
     :class="message.role === 'user' ? 'bg-bg-primary' : 'bg-bg-secondary/50'"
   >
@@ -51,6 +84,28 @@ const props = defineProps({
 
 const emit = defineEmits(['apply-code'])
 
+const expanded = ref(false)
+
+// Format tool args for compact display
+const formatArgs = computed(() => {
+  if (props.message.role !== 'tool') return ''
+  const args = props.message.toolArgs
+  if (!args) return ''
+  const values = Object.values(args)
+  if (values.length === 1) return JSON.stringify(values[0])
+  return Object.entries(args).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')
+})
+
+// Truncate tool result for display
+const truncatedResult = computed(() => {
+  if (props.message.role !== 'tool') return ''
+  const content = props.message.content || ''
+  if (content.length > 2000) {
+    return content.slice(0, 2000) + '\n\n[Truncated...]'
+  }
+  return content
+})
+
 // For user messages, strip <file> tags from display
 const displayContent = computed(() => {
   if (props.message.role !== 'user') return props.message.content
@@ -69,6 +124,7 @@ const codeBlocks = ref([])
 
 const renderedHtml = computed(() => {
   if (props.message.role !== 'assistant') return ''
+  if (!props.message.content) return ''
 
   const blocks = []
   const html = marked.parse(props.message.content, { breaks: true })

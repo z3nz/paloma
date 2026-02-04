@@ -1,6 +1,7 @@
 export const PHASE_INSTRUCTIONS = {
   research: `Focus: explore, understand, investigate.
 
+- Use readFile, listDirectory, and searchFiles tools to explore the project.
 - Read files, examine structure, understand patterns.
 - Ask clarifying questions — never guess.
 - DO NOT write or modify code.
@@ -10,6 +11,7 @@ export const PHASE_INSTRUCTIONS = {
 
   plan: `Focus: design solutions, create detailed plans.
 
+- Use readFile to verify assumptions about existing code.
 - Reference research findings from earlier in the conversation.
 - Present options with trade-offs when multiple approaches exist.
 - DO NOT write implementation code.
@@ -18,8 +20,10 @@ export const PHASE_INSTRUCTIONS = {
 
   implement: `Focus: write code following the agreed plan.
 
+- Use readFile to read files before modifying them.
 - Stick to the plan — don't add unplanned features.
-- Show complete file changes, not just snippets.
+- For targeted edits, use SEARCH/REPLACE blocks to show precise changes.
+- For new files or complete rewrites, show the full file content.
 - Annotate all code fences with the target file path (e.g. \`\`\`js:src/utils.js).
 - Include console.log statements for debugging when appropriate.
 - Output: working code ready for review.

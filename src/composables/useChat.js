@@ -1,15 +1,20 @@
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import db from '../services/db.js'
 import { streamChat } from '../services/openrouter.js'
 import { readFile } from '../services/filesystem.js'
 import { BASE_INSTRUCTIONS } from '../prompts/base.js'
 import { PHASE_INSTRUCTIONS } from '../prompts/phases.js'
+import { getAllTools, AUTO_EXECUTE_TOOLS, executeTool } from '../services/tools.js'
 
 const messages = ref([])
 const streaming = ref(false)
 const streamingContent = ref('')
 const error = ref(null)
+const toolActivity = ref([])
+const pendingToolConfirmation = ref(null)
 let abortController = null
+
+const MAX_TOOL_ROUNDS = 25
 
 export function useChat() {
   async function loadMessages(sessionId) {
@@ -24,8 +29,9 @@ export function useChat() {
     messages.value = result
   }
 
-  async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions) {
+  async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions, searchFn) {
     error.value = null
+    toolActivity.value = []
 
     // Build file contents for attached files
     const fileContents = []
@@ -71,52 +77,176 @@ export function useChat() {
       content: buildSystemPrompt(phase, projectInstructions)
     })
 
-    // Add conversation history
+    // Add conversation history (including tool messages)
     for (const msg of messages.value) {
       if (msg.role === 'user' || msg.role === 'assistant') {
-        apiMessages.push({ role: msg.role, content: msg.content })
+        const apiMsg = { role: msg.role, content: msg.content }
+        if (msg.toolCalls) {
+          apiMsg.tool_calls = msg.toolCalls
+          if (!apiMsg.content) apiMsg.content = null
+        }
+        apiMessages.push(apiMsg)
+      } else if (msg.role === 'tool') {
+        apiMessages.push({
+          role: 'tool',
+          tool_call_id: msg.toolCallId,
+          content: msg.content
+        })
       }
     }
 
-    // Stream response
+    // Stream response with tool loop
     streaming.value = true
     streamingContent.value = ''
     abortController = new AbortController()
 
+    const tools = dirHandle ? getAllTools() : []
+    let continueLoop = true
+    let round = 0
+
     try {
-      for await (const chunk of streamChat(apiKey, model, apiMessages)) {
-        streamingContent.value += chunk
-      }
+      while (continueLoop) {
+        if (round++ >= MAX_TOOL_ROUNDS) {
+          error.value = 'Tool call limit reached'
+          break
+        }
+        continueLoop = false
+        let accumulatedContent = ''
+        let toolCalls = null
 
-      // Save assistant message
-      const assistantMsg = {
-        sessionId,
-        role: 'assistant',
-        content: streamingContent.value,
-        files: [],
-        timestamp: Date.now()
-      }
-      const assistantMsgId = await db.messages.add(assistantMsg)
-      assistantMsg.id = assistantMsgId
-      messages.value.push(assistantMsg)
+        for await (const chunk of streamChat(apiKey, model, apiMessages,
+          { tools: tools.length ? tools : undefined })) {
+          if (chunk.type === 'content') {
+            accumulatedContent += chunk.text
+            streamingContent.value = accumulatedContent
+          } else if (chunk.type === 'tool_calls') {
+            toolCalls = chunk.calls
+          }
+        }
 
-      // Auto-generate title from first exchange
-      if (messages.value.filter(m => m.role === 'user').length === 1) {
-        return generateTitle(content)
+        if (toolCalls?.length) {
+          // Save assistant message with tool calls
+          const assistantMsg = {
+            sessionId,
+            role: 'assistant',
+            content: accumulatedContent || null,
+            toolCalls,
+            files: [],
+            timestamp: Date.now()
+          }
+          const assistantMsgId = await db.messages.add(assistantMsg)
+          assistantMsg.id = assistantMsgId
+          messages.value.push(assistantMsg)
+          apiMessages.push({
+            role: 'assistant',
+            content: accumulatedContent || null,
+            tool_calls: toolCalls
+          })
+
+          // Execute each tool call
+          for (const call of toolCalls) {
+            let args
+            try {
+              args = JSON.parse(call.function.arguments)
+            } catch {
+              args = {}
+            }
+
+            const toolName = call.function.name
+            let result
+
+            const activityEntry = { name: toolName, args, status: 'running' }
+            toolActivity.value = [...toolActivity.value, activityEntry]
+
+            if (AUTO_EXECUTE_TOOLS.has(toolName)) {
+              try {
+                result = await executeTool(toolName, args, dirHandle, searchFn)
+              } catch (e) {
+                result = JSON.stringify({ error: e.message })
+              }
+            } else {
+              // Write tool — needs confirmation
+              result = await requestToolConfirmation(toolName, args, dirHandle)
+            }
+
+            activityEntry.status = 'done'
+            toolActivity.value = [...toolActivity.value]
+
+            // Save tool result message
+            const toolMsg = {
+              sessionId,
+              role: 'tool',
+              toolCallId: call.id,
+              toolName,
+              toolArgs: args,
+              content: typeof result === 'string' ? result : JSON.stringify(result),
+              timestamp: Date.now()
+            }
+            const toolMsgId = await db.messages.add(toolMsg)
+            toolMsg.id = toolMsgId
+            messages.value.push(toolMsg)
+            apiMessages.push({
+              role: 'tool',
+              tool_call_id: call.id,
+              content: toolMsg.content
+            })
+          }
+
+          // Reset for next round
+          streamingContent.value = ''
+          continueLoop = true
+        } else {
+          // Final assistant message (no tool calls)
+          const assistantMsg = {
+            sessionId,
+            role: 'assistant',
+            content: accumulatedContent,
+            files: [],
+            timestamp: Date.now()
+          }
+          const assistantMsgId = await db.messages.add(assistantMsg)
+          assistantMsg.id = assistantMsgId
+          messages.value.push(assistantMsg)
+
+          // Auto-generate title from first exchange
+          if (messages.value.filter(m => m.role === 'user').length === 1) {
+            return generateTitle(content)
+          }
+        }
       }
     } catch (e) {
       error.value = e.message
     } finally {
       streaming.value = false
       streamingContent.value = ''
+      toolActivity.value = []
       abortController = null
     }
 
     return null
   }
 
+  function requestToolConfirmation(toolName, args, dirHandle) {
+    return new Promise(resolve => {
+      pendingToolConfirmation.value = { toolName, args, dirHandle, resolve }
+    })
+  }
+
+  function resolveToolConfirmation(result) {
+    if (pendingToolConfirmation.value) {
+      pendingToolConfirmation.value.resolve(result)
+      pendingToolConfirmation.value = null
+    }
+  }
+
+  function rejectToolConfirmation(reason) {
+    if (pendingToolConfirmation.value) {
+      pendingToolConfirmation.value.resolve(JSON.stringify({ error: `Denied: ${reason}` }))
+      pendingToolConfirmation.value = null
+    }
+  }
+
   function generateTitle(firstMessage) {
-    // Simple title from first message
     const title = firstMessage.slice(0, 50).trim()
     return title + (firstMessage.length > 50 ? '...' : '')
   }
@@ -147,16 +277,21 @@ export function useChat() {
     messages.value = []
     streamingContent.value = ''
     error.value = null
+    toolActivity.value = []
   }
 
   return {
     messages,
     streaming,
     streamingContent,
+    toolActivity,
     error,
+    pendingToolConfirmation,
     loadMessages,
     sendMessage,
     stopStreaming,
-    clearChat
+    clearChat,
+    resolveToolConfirmation,
+    rejectToolConfirmation
   }
 }

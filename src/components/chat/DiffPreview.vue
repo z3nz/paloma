@@ -68,7 +68,11 @@
         </button>
         <button
           @click="$emit('apply')"
-          class="px-4 py-2 text-sm bg-success/90 hover:bg-success text-white rounded-md transition-colors"
+          :disabled="!!error"
+          class="px-4 py-2 text-sm rounded-md transition-colors"
+          :class="error
+            ? 'bg-text-muted/20 text-text-muted cursor-not-allowed'
+            : 'bg-success/90 hover:bg-success text-white'"
         >
           Apply Changes
         </button>
