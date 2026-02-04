@@ -20,6 +20,7 @@ export const PHASE_INSTRUCTIONS = {
 
 - Stick to the plan — don't add unplanned features.
 - Show complete file changes, not just snippets.
+- Annotate all code fences with the target file path (e.g. \`\`\`js:src/utils.js).
 - Include console.log statements for debugging when appropriate.
 - Output: working code ready for review.
 - Suggest moving to the Review phase when implementation is complete.`,

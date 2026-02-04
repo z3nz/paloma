@@ -20,6 +20,7 @@ Paloma is a local-first web UI that connects to OpenRouter for model access, use
 | File Search | Fuse.js (fuzzy matching) |
 | Markdown | marked + highlight.js |
 | Gitignore | `ignore` npm package |
+| Diffing | `diff` (jsdiff) for line-level diffs |
 
 ---
 
@@ -36,12 +37,13 @@ Paloma is a local-first web UI that connects to OpenRouter for model access, use
 
 ## User Workflow Philosophy
 
-Paloma supports a 4-phase development workflow:
+Paloma supports a 5-phase development workflow:
 
 1. **Research** - Agent researches the task thoroughly, never assumes or guesses
 2. **Plan** - High-level plan reviewed with user, then detailed plan for implementation
 3. **Implement** - Cheaper model writes code based on the plan, with manual review
-4. **Commit** - Only after manual review; detailed git commit with full context
+4. **Review** - Review code for correctness, style, edge cases, and security
+5. **Commit** - Only after manual review; detailed git commit with full context
 
 Core principle: "The agent should NEVER do anything that isn't explicitly mentioned or has been discussed with me."
 
@@ -63,6 +65,7 @@ Core principle: "The agent should NEVER do anything that isn't explicitly mentio
 - [x] OpenRouter SSE streaming
 - [x] Markdown rendering with syntax highlighting
 - [x] Copy button on code blocks
+- [x] Apply button on annotated code blocks (file editing via diff preview)
 - [x] Model selector (searchable dropdown)
 - [x] Phase selector (Research/Plan/Implement/Review/Commit)
 - [x] Phase-aware system prompts (layered agent instructions framework)
@@ -75,7 +78,6 @@ Core principle: "The agent should NEVER do anything that isn't explicitly mentio
 ### What's NOT Working Yet (Known Gaps from MVP)
 
 - [ ] `.paloma/` folder creation on project open (Phase 5, step 27)
-- [ ] Review phase not yet wired (5th phase in selector, labeled "Commit")
 - [ ] `/` command trigger (shows nothing yet - intentionally minimal for MVP)
 - [ ] Stop streaming button (abort controller created but not wired to fetch)
 - [ ] Model list from API (falls back to hardcoded popular models if fetch fails)
@@ -147,7 +149,7 @@ This file is read when a project is opened and included in every API call for th
   - Global config: `~/.paloma/mcp-settings.json` (install MCP servers once)
   - Per-project config: `.paloma/mcp.json` (controls which servers are available)
   - Rationale: install once, scope per-project
-- [ ] File writing/editing capability (via MCP or direct File System Access API `readwrite` mode)
+- [x] File writing/editing capability (via File System Access API `readwrite` mode + diff preview)
 - [ ] `.paloma/` folder creation inside each project directory (git-committable)
   - `.paloma/settings.json` - project-level config
   - `.paloma/plans/` - for generated plans
@@ -237,7 +239,8 @@ paloma/
 │   │   ├── chat/
 │   │   │   ├── ChatView.vue           # Main chat container
 │   │   │   ├── MessageList.vue        # Scrollable message area
-│   │   │   └── MessageItem.vue        # Single message (user/assistant)
+│   │   │   ├── MessageItem.vue        # Single message (user/assistant)
+│   │   │   └── DiffPreview.vue        # Diff preview modal for file edits
 │   │   ├── prompt/
 │   │   │   ├── PromptBuilder.vue      # THE star component
 │   │   │   ├── FileSearch.vue         # @ autocomplete dropdown

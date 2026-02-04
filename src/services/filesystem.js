@@ -45,3 +45,30 @@ export async function readProjectInstructions(dirHandle) {
     return null
   }
 }
+
+export async function requestWritePermission(dirHandle) {
+  const status = await dirHandle.queryPermission({ mode: 'readwrite' })
+  if (status === 'granted') return true
+  const result = await dirHandle.requestPermission({ mode: 'readwrite' })
+  return result === 'granted'
+}
+
+export async function writeFile(dirHandle, filePath, content) {
+  const parts = filePath.split('/')
+  let current = dirHandle
+  for (const part of parts.slice(0, -1)) {
+    current = await current.getDirectoryHandle(part, { create: true })
+  }
+  const fileHandle = await current.getFileHandle(parts.at(-1), { create: true })
+  const writable = await fileHandle.createWritable()
+  await writable.write(content)
+  await writable.close()
+}
+
+export async function readFileSafe(dirHandle, filePath) {
+  try {
+    return await readFile(dirHandle, filePath)
+  } catch {
+    return null
+  }
+}

@@ -12,6 +12,7 @@
       v-for="msg in messages"
       :key="msg.id"
       :message="msg"
+      @apply-code="payload => $emit('apply-code', payload)"
     />
 
     <!-- Streaming message -->
@@ -50,6 +51,8 @@ const props = defineProps({
   streamingContent: { type: String, default: '' },
   error: { type: String, default: null }
 })
+
+defineEmits(['apply-code'])
 
 const container = ref(null)
 const anchor = ref(null)

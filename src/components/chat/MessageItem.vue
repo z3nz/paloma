@@ -34,13 +34,14 @@
         v-else
         class="message-content text-sm text-text-primary"
         v-html="renderedHtml"
+        @click="handleContentClick"
       />
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, nextTick } from 'vue'
+import { computed, ref } from 'vue'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
 
@@ -48,26 +49,75 @@ const props = defineProps({
   message: { type: Object, required: true }
 })
 
+const emit = defineEmits(['apply-code'])
+
 // For user messages, strip <file> tags from display
 const displayContent = computed(() => {
   if (props.message.role !== 'user') return props.message.content
   return props.message.content.replace(/<file path="[^"]*">[\s\S]*?<\/file>\n*/g, '').trim()
 })
 
+// Decode HTML entities to get raw code text
+function decodeEntities(html) {
+  const el = document.createElement('textarea')
+  el.innerHTML = html
+  return el.value
+}
+
+// Store code block metadata for event delegation
+const codeBlocks = ref([])
+
 const renderedHtml = computed(() => {
   if (props.message.role !== 'assistant') return ''
 
+  const blocks = []
   const html = marked.parse(props.message.content, { breaks: true })
 
-  // Wrap code blocks for copy button
-  return html.replace(
-    /<pre><code(?: class="language-(\w+)")?>([\s\S]*?)<\/code><\/pre>/g,
-    (match, lang, code) => {
+  const result = html.replace(
+    /<pre><code(?: class="language-([^"]+)")?>([\s\S]*?)<\/code><\/pre>/g,
+    (match, infoString, code) => {
+      let lang = infoString || ''
+      let filePath = ''
+
+      // Parse info string: "js:src/utils.js" -> lang="js", filePath="src/utils.js"
+      if (lang.includes(':')) {
+        const colonIdx = lang.indexOf(':')
+        filePath = lang.slice(colonIdx + 1)
+        lang = lang.slice(0, colonIdx)
+      }
+
+      const index = blocks.length
+      blocks.push({ path: filePath, code: decodeEntities(code) })
+
       const highlighted = lang && hljs.getLanguage(lang)
-        ? hljs.highlight(code, { language: lang }).value
-        : hljs.highlightAuto(code).value
-      return `<div class="code-block-wrapper"><pre><code class="hljs${lang ? ` language-${lang}` : ''}">${highlighted}</code></pre><button class="copy-btn" onclick="navigator.clipboard.writeText(this.parentElement.querySelector('code').textContent).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)})">Copy</button></div>`
+        ? hljs.highlight(decodeEntities(code), { language: lang }).value
+        : hljs.highlightAuto(decodeEntities(code)).value
+
+      const headerHtml = filePath
+        ? `<div class="code-block-header"><span class="code-block-path">${filePath}</span></div>`
+        : ''
+
+      const applyBtnHtml = filePath
+        ? `<button class="apply-btn" data-code-index="${index}">Apply</button>`
+        : ''
+
+      const copyOnclick = `navigator.clipboard.writeText(this.closest('.code-block-wrapper').querySelector('code').textContent).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)})`
+
+      return `<div class="code-block-wrapper">${headerHtml}<pre><code class="hljs${lang ? ` language-${lang}` : ''}">${highlighted}</code></pre><div class="code-block-actions"><button class="copy-btn" onclick="${copyOnclick}">Copy</button>${applyBtnHtml}</div></div>`
     }
   )
+
+  codeBlocks.value = blocks
+  return result
 })
+
+function handleContentClick(e) {
+  const btn = e.target.closest('.apply-btn')
+  if (!btn) return
+  const index = parseInt(btn.dataset.codeIndex, 10)
+  const block = codeBlocks.value[index]
+  if (block?.path) {
+    emit('apply-code', { path: block.path, code: block.code })
+  }
+}
 </script>
