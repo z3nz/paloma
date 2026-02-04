@@ -42,8 +42,8 @@
         :pending-changes="pendingChanges"
         :has-pending-changes="hasPendingChanges"
         :pending-count="pendingCount"
-        @apply-change="index => applyChange(index, dirHandle)"
-        @apply-all="() => applyAll(dirHandle)"
+        @apply-change="handleApplyChange"
+        @apply-all="handleApplyAll"
         @dismiss-change="dismissChange"
         @dismiss-all="dismissAll"
         @view-diff="handleViewDiff"
@@ -86,9 +86,9 @@ import { useChanges } from './composables/useChanges.js'
 
 const { apiKey, defaultModel } = useSettings()
 const { dirHandle, projectName, openProject } = useProject()
-const { files, buildIndex } = useFileIndex()
+const { files, buildIndex, updatePaths } = useFileIndex()
 const { sessions, activeSessionId, loadSessions, createSession, updateSession, deleteSession, setActiveSession } = useSessions()
-const { loadModels } = useOpenRouter()
+const { models, loadModels } = useOpenRouter()
 const {
   pendingChanges, hasPendingChanges, pendingCount,
   applyChange, applyAll, dismissChange, dismissAll
@@ -103,6 +103,10 @@ const activeSession = computed(() =>
 
 // Load models when API key is available
 watch(apiKey, (key) => {
+  if (import.meta.hot && models.value.length > 0) {
+    console.log('[HMR] App.vue — skipping redundant loadModels')
+    return
+  }
   if (key) loadModels(key)
 }, { immediate: true })
 
@@ -142,6 +146,25 @@ async function handleUpdateSession(id, updates) {
   await updateSession(id, updates)
 }
 
+async function handleApplyChange(index) {
+  const change = pendingChanges.value[index]
+  const path = change?.path
+  await applyChange(index, dirHandle.value)
+  if (path && dirHandle.value) {
+    await updatePaths(dirHandle.value, [{ action: 'update', path }])
+  }
+}
+
+async function handleApplyAll() {
+  const pathUpdates = pendingChanges.value
+    .filter(c => c.status === 'pending' && c.path)
+    .map(c => ({ action: 'update', path: c.path }))
+  await applyAll(dirHandle.value)
+  if (pathUpdates.length > 0 && dirHandle.value) {
+    await updatePaths(dirHandle.value, pathUpdates)
+  }
+}
+
 function handleViewDiff(index) {
   const change = pendingChanges.value[index]
   if (change?.newContent !== null) {
@@ -151,7 +174,7 @@ function handleViewDiff(index) {
 
 async function handleDiffModalApply() {
   if (!diffModalChange.value) return
-  await applyChange(diffModalChange.value._index, dirHandle.value)
+  await handleApplyChange(diffModalChange.value._index)
   diffModalChange.value = null
 }
 </script>

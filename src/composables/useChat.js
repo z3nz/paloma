@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import db from '../services/db.js'
 import { streamChat } from '../services/openrouter.js'
 import { readFile } from '../services/filesystem.js'
@@ -7,14 +7,33 @@ import { PHASE_INSTRUCTIONS } from '../prompts/phases.js'
 import { getAllTools, AUTO_EXECUTE_TOOLS, executeTool } from '../services/tools.js'
 import { useOpenRouter } from './useOpenRouter.js'
 
-const messages = ref([])
-const streaming = ref(false)
-const streamingContent = ref('')
-const error = ref(null)
-const toolActivity = ref([])
-const pendingToolConfirmation = ref(null)
-const contextWarning = ref(null)
-let abortController = null
+const _saved = import.meta.hot ? window.__PALOMA_CHAT__ : undefined
+
+const messages = ref(_saved?.messages ?? [])
+const streaming = ref(_saved?.streaming ?? false)
+const streamingContent = ref(_saved?.streamingContent ?? '')
+const error = ref(_saved?.error ?? null)
+const toolActivity = ref(_saved?.toolActivity ?? [])
+const pendingToolConfirmation = ref(_saved?.pendingToolConfirmation ?? null)
+const contextWarning = ref(_saved?.contextWarning ?? null)
+let abortController = _saved?.abortController ?? null
+
+if (import.meta.hot) {
+  const save = () => {
+    window.__PALOMA_CHAT__ = {
+      messages: messages.value,
+      streaming: streaming.value,
+      streamingContent: streamingContent.value,
+      error: error.value,
+      toolActivity: toolActivity.value,
+      pendingToolConfirmation: pendingToolConfirmation.value,
+      contextWarning: contextWarning.value,
+      abortController
+    }
+  }
+  save()
+  watch([messages, streaming, streamingContent, error, toolActivity, pendingToolConfirmation, contextWarning], save, { flush: 'sync' })
+}
 
 const MAX_TOOL_ROUNDS = 25
 
@@ -24,10 +43,12 @@ export function useChat() {
       messages.value = []
       return
     }
+    console.time('[perf] loadMessages:db')
     const result = await db.messages
       .where('sessionId')
       .equals(sessionId)
       .sortBy('timestamp')
+    console.timeEnd('[perf] loadMessages:db')
     messages.value = result
   }
 

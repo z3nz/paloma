@@ -67,7 +67,7 @@ const {
 const { detectChanges, loadSessionChanges } = useChanges()
 const { apiKey } = useSettings()
 const { dirHandle, projectInstructions, activePlans, refreshActivePlans } = useProject()
-const { search: searchFiles, buildIndex } = useFileIndex()
+const { search: searchFiles, updatePaths } = useFileIndex()
 
 const showDiff = ref(false)
 const pendingEdit = ref({ path: '', code: '', originalContent: null })
@@ -76,7 +76,11 @@ const editError = ref(null)
 watch(
   () => props.session?.id,
   (id) => {
-    loadMessages(id)
+    if (import.meta.hot && id && messages.value.length > 0 && messages.value[0]?.sessionId === id) {
+      console.log('[HMR] ChatView — skipping redundant loadMessages')
+    } else {
+      loadMessages(id)
+    }
     loadSessionChanges(id)
   },
   { immediate: true }
@@ -158,14 +162,26 @@ function handleCancelEdit() {
   editError.value = null
 }
 
+function getPathUpdatesForTool(toolName, args) {
+  switch (toolName) {
+    case 'createFile': return [{ action: 'add', path: args.path }]
+    case 'deleteFile': return [{ action: 'remove', path: args.path }]
+    case 'moveFile': return [{ action: 'move', fromPath: args.fromPath, toPath: args.toPath }]
+    default: return args.path ? [{ action: 'update', path: args.path }] : []
+  }
+}
+
 async function handleToolAllow() {
   if (!pendingToolConfirmation.value || !dirHandle.value) return
   const { toolName, args } = pendingToolConfirmation.value
   try {
     const result = await executeWriteTool(toolName, args, dirHandle.value)
     resolveToolConfirmation(result)
-    // Refresh file index after write operations
-    await buildIndex(dirHandle.value)
+    // Incrementally update file index after write operations
+    const pathUpdates = getPathUpdatesForTool(toolName, args)
+    if (pathUpdates.length > 0) {
+      await updatePaths(dirHandle.value, pathUpdates)
+    }
     // Refresh active plans if a plan file was touched
     const affectedPath = args.path || args.fromPath || args.toPath || ''
     if (affectedPath.startsWith('.paloma/plans/')) {

@@ -1,9 +1,23 @@
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { fetchModels as fetchModelsApi, validateApiKey as validateApi } from '../services/openrouter.js'
 
-const models = ref([])
-const loadingModels = ref(false)
-const modelsError = ref(null)
+const _saved = import.meta.hot ? window.__PALOMA_OPENROUTER__ : undefined
+
+const models = ref(_saved?.models ?? [])
+const loadingModels = ref(_saved?.loadingModels ?? false)
+const modelsError = ref(_saved?.modelsError ?? null)
+
+if (import.meta.hot) {
+  const save = () => {
+    window.__PALOMA_OPENROUTER__ = {
+      models: models.value,
+      loadingModels: loadingModels.value,
+      modelsError: modelsError.value
+    }
+  }
+  save()
+  watch([models, loadingModels, modelsError], save, { flush: 'sync' })
+}
 
 // Curated popular models shown at top
 const POPULAR_MODEL_IDS = [
@@ -24,7 +38,9 @@ export function useOpenRouter() {
     modelsError.value = null
 
     try {
+      console.time('[perf] loadModels:fetch')
       const all = await fetchModelsApi(apiKey)
+      console.timeEnd('[perf] loadModels:fetch')
       models.value = all
     } catch (e) {
       modelsError.value = e.message
