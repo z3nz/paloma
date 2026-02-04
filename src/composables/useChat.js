@@ -2,6 +2,8 @@ import { ref, watch } from 'vue'
 import db from '../services/db.js'
 import { streamChat } from '../services/openrouter.js'
 import { readFile } from '../services/filesystem.js'
+import { BASE_INSTRUCTIONS } from '../prompts/base.js'
+import { PHASE_INSTRUCTIONS } from '../prompts/phases.js'
 
 const messages = ref([])
 const streaming = ref(false)
@@ -22,7 +24,7 @@ export function useChat() {
     messages.value = result
   }
 
-  async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase) {
+  async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions) {
     error.value = null
 
     // Build file contents for attached files
@@ -63,18 +65,10 @@ export function useChat() {
     // Build messages array for API
     const apiMessages = []
 
-    // System prompt based on phase
-    const phasePrompts = {
-      research: 'You are a helpful AI assistant. The user is in the research phase - help them explore, understand, and investigate.',
-      plan: 'You are a helpful AI assistant. The user is in the planning phase - help them design solutions, create plans, and think through architecture.',
-      implement: 'You are a helpful AI assistant. The user is in the implementation phase - help them write code, implement features, and build solutions.',
-      review: 'You are a helpful AI assistant. The user is in the review phase - help them review code, find issues, and suggest improvements.',
-      commit: 'You are a helpful AI assistant. The user is in the commit phase - help them write commit messages, changelogs, and documentation.'
-    }
-
+    // Layered system prompt: base + project + phase
     apiMessages.push({
       role: 'system',
-      content: phasePrompts[phase] || phasePrompts.research
+      content: buildSystemPrompt(phase, projectInstructions)
     })
 
     // Add conversation history
@@ -133,6 +127,20 @@ export function useChat() {
       abortController = null
     }
     streaming.value = false
+  }
+
+  function buildSystemPrompt(phase, projectInstructions) {
+    let prompt = BASE_INSTRUCTIONS
+
+    if (projectInstructions) {
+      prompt += '\n\n## Project Instructions\n\n' + projectInstructions
+    }
+
+    const activePhase = phase || 'research'
+    prompt += '\n\n## Current Phase: ' + activePhase.charAt(0).toUpperCase() + activePhase.slice(1) + '\n\n'
+    prompt += PHASE_INSTRUCTIONS[activePhase] || PHASE_INSTRUCTIONS.research
+
+    return prompt
   }
 
   function clearChat() {

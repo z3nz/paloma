@@ -65,7 +65,7 @@ Core principle: "The agent should NEVER do anything that isn't explicitly mentio
 - [x] Copy button on code blocks
 - [x] Model selector (searchable dropdown)
 - [x] Phase selector (Research/Plan/Implement/Review/Commit)
-- [x] Phase-aware system prompts
+- [x] Phase-aware system prompts (layered agent instructions framework)
 - [x] Auto-growing textarea with Ctrl+Enter send
 - [x] Session auto-titling from first message
 - [x] Settings modal (API key, default model)
@@ -79,6 +79,64 @@ Core principle: "The agent should NEVER do anything that isn't explicitly mentio
 - [ ] `/` command trigger (shows nothing yet - intentionally minimal for MVP)
 - [ ] Stop streaming button (abort controller created but not wired to fetch)
 - [ ] Model list from API (falls back to hardcoded popular models if fetch fails)
+
+---
+
+## Agent Instructions Framework
+
+Paloma uses a multi-layer system prompt architecture that gives the agent a consistent personality and phase-aware behavior. Every message sent to OpenRouter includes a system prompt assembled from these layers:
+
+```
+┌─────────────────────────────────────┐
+│  LAYER 1: Base Instructions         │  ← src/prompts/base.js
+│  (identity, behavioral rules,       │
+│   commit standards, conventions)    │
+├─────────────────────────────────────┤
+│  LAYER 2: Project Instructions      │  ← .paloma/instructions.md
+│  (tech stack, coding standards,     │
+│   project-specific rules)           │
+├─────────────────────────────────────┤
+│  LAYER 3: Phase Instructions        │  ← src/prompts/phases.js
+│  (research/plan/implement/review/   │
+│   commit specific behaviors)        │
+├─────────────────────────────────────┤
+│  LAYER 4: Context                   │  ← Built in useChat.js
+│  (attached files, conversation      │
+│   history)                          │
+└─────────────────────────────────────┘
+```
+
+- **Layer 1** is hardcoded and included in every API call.
+- **Layer 2** is user-written per project. Place a `.paloma/instructions.md` file in your project root to add project-specific rules (tech stack, coding standards, etc.). If the file doesn't exist, this layer is skipped.
+- **Layer 3** changes based on the active phase pill (Research → Plan → Implement → Review → Commit).
+- **Layer 4** is the existing conversation history and attached file contents.
+
+### Commit Standard
+
+Paloma's base instructions enforce a commit message format:
+
+- Conventional commit prefixes: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`
+- Subject line under 72 chars describing the *what*
+- Body with `##` sections explaining the *why* and *how*
+- Commits designed to be searchable via `git log --grep`
+
+### `.paloma/instructions.md`
+
+Users can create this file in any project directory to provide project-specific instructions to the agent. Example:
+
+```markdown
+## Tech Stack
+- Vue 3 Composition API, no TypeScript
+- Tailwind CSS v4
+- Vite 5
+
+## Coding Standards
+- Use singleton composables for shared state
+- Prefer async generators for streaming patterns
+- No Pinia — use composables with module-level refs
+```
+
+This file is read when a project is opened and included in every API call for that project.
 
 ---
 
@@ -117,15 +175,16 @@ Core principle: "The agent should NEVER do anything that isn't explicitly mentio
 
 ---
 
-## `.paloma/` Folder Structure (Future)
+## `.paloma/` Folder Structure
 
 ```
 project/
 └── .paloma/
-    ├── settings.json      # Project-level config
-    ├── mcp.json           # Which MCP servers this project can use
-    ├── plans/             # Generated plans
-    └── scripts/           # Future: automation scripts
+    ├── instructions.md    # Project-specific agent instructions (Layer 2)
+    ├── settings.json      # Project-level config (future)
+    ├── mcp.json           # Which MCP servers this project can use (future)
+    ├── plans/             # Generated plans (future)
+    └── scripts/           # Automation scripts (future)
 ```
 
 ---
@@ -196,6 +255,9 @@ paloma/
 │   │   ├── useSessions.js            # Chat session CRUD (Dexie)
 │   │   ├── useChat.js                 # Active chat: messages, streaming
 │   │   └── useOpenRouter.js           # Model list, API key validation
+│   ├── prompts/
+│   │   ├── base.js                    # Layer 1: base agent instructions
+│   │   └── phases.js                  # Layer 3: per-phase instructions
 │   ├── services/
 │   │   ├── openrouter.js              # Raw API calls, streaming
 │   │   ├── filesystem.js              # File System Access API helpers

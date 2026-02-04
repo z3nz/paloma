@@ -34,3 +34,14 @@ export async function readGitignore(dirHandle) {
     return null
   }
 }
+
+export async function readProjectInstructions(dirHandle) {
+  try {
+    const palomaDir = await dirHandle.getDirectoryHandle('.paloma')
+    const fileHandle = await palomaDir.getFileHandle('instructions.md')
+    const file = await fileHandle.getFile()
+    return await file.text()
+  } catch {
+    return null
+  }
+}

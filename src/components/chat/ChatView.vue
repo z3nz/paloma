@@ -32,7 +32,7 @@ const emit = defineEmits(['update-session'])
 
 const { messages, streaming, streamingContent, error, loadMessages, sendMessage, stopStreaming } = useChat()
 const { apiKey } = useSettings()
-const { dirHandle } = useProject()
+const { dirHandle, projectInstructions } = useProject()
 
 watch(
   () => props.session?.id,
@@ -50,7 +50,8 @@ async function handleSend({ content, files }) {
     apiKey.value,
     props.session.model,
     dirHandle.value,
-    props.session.phase
+    props.session.phase,
+    projectInstructions.value
   )
 
   if (title) {
