@@ -93,13 +93,6 @@ Core principle: "The agent should NEVER do anything that isn't explicitly mentio
 - Tool results are included in conversation context
 - Enables true autonomous research without manual file attachment
 
-### What's NOT Working Yet (Known Gaps)
-
-- [ ] `.paloma/` folder creation on project open
-- [ ] `/` command trigger (placeholder UI exists)
-- [ ] Stop streaming button (abort controller exists but not wired)
-- [ ] Model list from API (falls back to hardcoded popular models if fetch fails)
-
 ---
 
 ## Agent Instructions Framework
@@ -160,9 +153,9 @@ This file is read when a project is opened and included in every API call for th
 
 ---
 
-## TODO: Next Features
+## Completed Features
 
-### ~~Priority 1: Cost & Token Tracking~~ DONE
+### ~~Cost & Token Tracking~~ DONE
 - [x] Real-time cost display in top bar (session totals, clickable for details)
 - [x] Per-message cost annotation on assistant messages
 - [x] Token usage breakdown modal (prompt/completion/total + context bar)
@@ -172,7 +165,11 @@ This file is read when a project is opened and included in every API call for th
 - [x] Token counts captured from SSE stream `usage` field
 - [x] Project total cost aggregated across all sessions
 
-### Priority 2: Phase-Based Document Workflow
+---
+
+## TODO: Next Features
+
+### Priority 1: Phase-Based Document Workflow
 **Goal:** Automatic artifact management tied to development phases
 
 **Workflow:**
@@ -199,12 +196,12 @@ This file is read when a project is opened and included in every API call for th
     └── 2024-01-05-initial-setup.md      ← Manual archival
 ```
 
-### Priority 3: Search-and-Replace Formalization
+### Priority 2: Search-and-Replace Formalization
 **Goal:** Make SEARCH/REPLACE blocks work automatically from agent responses
 
 **Current State:**
-- ✅ Manual SEARCH/REPLACE syntax works (tested successfully)
-- ❌ Not automatically parsed from agent responses yet
+- Manual SEARCH/REPLACE syntax works (tested successfully)
+- Not automatically parsed from agent responses yet
 
 **Requirements:**
 - [ ] Parse code blocks for `<<<<<<< SEARCH` / `>>>>>>> REPLACE` markers
@@ -218,40 +215,7 @@ This file is read when a project is opened and included in every API call for th
 - "Search block not found. Re-read the file and try again with more context."
 - "Search block matches multiple locations. Add more context to make it unique."
 
-### Priority 4: Undo/Rollback System
-- [ ] Track file edit history in IndexedDB (per-file versioning)
-- [ ] Keep last N versions per file (configurable, default N=10)
-- [ ] UI to rollback to previous version with timestamp
-- [ ] Diff view between versions
-- [ ] Persist history across sessions
-
-### Priority 5: Batch File Operations
-- [ ] Queue multiple file edits in a single operation
-- [ ] Show combined preview of all changes
-- [ ] Apply atomically (all or nothing)
-- [ ] Use case: "Refactor auth system across 5 files"
-
-### Priority 6: Model Switching as a Feature
-**Goal:** Seamless model switching with full context transfer
-
-**Current Behavior:**
-- ✅ Model can be switched mid-conversation
-- ❌ No onboarding for new model about Paloma's capabilities
-- ❌ No clear indication of which model said what
-
-**New Behavior:**
-- [ ] Inject system context transfer message when model switches
-- [ ] Show model attribution per message in UI
-- [ ] Keep full conversation history visible to new model
-- [ ] Auto-explain Paloma's tool capabilities to new model
-
-**Use Case Workflow:**
-1. Use GPT-4o for research (cheaper, good at analysis)
-2. Switch to Claude Opus for implementation (better at coding)
-3. Switch to GPT-4o-mini for commit messages (cheapest, good enough)
-4. Each model sees full context and knows how to use tools
-
-### Priority 7: MCP Server Integration
+### Priority 3: MCP Server Integration
 **Goal:** Web search, git operations, terminal commands, external APIs
 
 **Architecture:**
@@ -284,7 +248,58 @@ project/.paloma/
 - How to handle server lifecycle (start/stop)?
 - Security model for terminal access?
 
-### Priority 8: Enhanced Features
+### Priority 4: URL-Based Project Routing
+**Goal:** Encode the project folder path in the URL so you can navigate directly to a project
+
+**Requirements:**
+- [ ] Project path encoded in URL (e.g. `/#/project/path/to/folder`)
+- [ ] Opening a URL with a project path auto-opens that project
+- [ ] Session ID in URL for direct linking to conversations
+- [ ] Browser back/forward navigation works between projects/sessions
+- [ ] Bookmarkable URLs for frequently used projects
+
+### Priority 5: Known Gaps
+**Goal:** Fix existing incomplete or broken functionality
+
+- [ ] `.paloma/` folder creation on project open
+- [ ] `/` command trigger (placeholder UI exists)
+- [ ] Stop streaming button (abort controller exists but not wired)
+- [ ] Model list from API (falls back to hardcoded popular models if fetch fails)
+
+### Priority 6: Undo/Rollback System
+- [ ] Track file edit history in IndexedDB (per-file versioning)
+- [ ] Keep last N versions per file (configurable, default N=10)
+- [ ] UI to rollback to previous version with timestamp
+- [ ] Diff view between versions
+- [ ] Persist history across sessions
+
+### Priority 7: Batch File Operations
+- [ ] Queue multiple file edits in a single operation
+- [ ] Show combined preview of all changes
+- [ ] Apply atomically (all or nothing)
+- [ ] Use case: "Refactor auth system across 5 files"
+
+### Priority 8: Model Switching as a Feature
+**Goal:** Seamless model switching with full context transfer
+
+**Current Behavior:**
+- Model can be switched mid-conversation
+- No onboarding for new model about Paloma's capabilities
+- No clear indication of which model said what
+
+**New Behavior:**
+- [ ] Inject system context transfer message when model switches
+- [ ] Show model attribution per message in UI
+- [ ] Keep full conversation history visible to new model
+- [ ] Auto-explain Paloma's tool capabilities to new model
+
+**Use Case Workflow:**
+1. Use GPT-4o for research (cheaper, good at analysis)
+2. Switch to Claude Opus for implementation (better at coding)
+3. Switch to GPT-4o-mini for commit messages (cheapest, good enough)
+4. Each model sees full context and knows how to use tools
+
+### Priority 9: Enhanced Features
 - [ ] `/` commands system (extensible command palette)
 - [ ] Message editing and regeneration
 - [ ] Conversation branching (explore alternate paths)
