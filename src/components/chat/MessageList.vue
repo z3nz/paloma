@@ -7,9 +7,19 @@
       </div>
     </div>
 
+    <!-- Load earlier messages button -->
+    <div v-if="hasHiddenMessages" class="px-6 py-3 text-center border-b border-border-light">
+      <button
+        @click="showAll = true"
+        class="text-xs text-accent hover:text-accent/80 transition-colors"
+      >
+        Load {{ messages.length - VISIBLE_LIMIT }} earlier messages
+      </button>
+    </div>
+
     <!-- Messages -->
     <MessageItem
-      v-for="msg in messages"
+      v-for="msg in visibleMessages"
       :key="msg.id"
       :message="msg"
       @apply-code="payload => $emit('apply-code', payload)"
@@ -24,7 +34,7 @@
         <div
           class="message-content text-sm text-text-primary"
           :class="{ 'streaming-cursor': !streamingContent }"
-          v-html="streamingHtml"
+          v-html="streamingHtmlThrottled"
         />
       </div>
     </div>
@@ -63,14 +73,38 @@ const container = ref(null)
 const anchor = ref(null)
 const isNearBottom = ref(true)
 
+// --- Lazy message rendering ---
+const VISIBLE_LIMIT = 30
+const showAll = ref(false)
+
+const hasHiddenMessages = computed(() =>
+  !showAll.value && props.messages.length > VISIBLE_LIMIT
+)
+
+const visibleMessages = computed(() => {
+  if (showAll.value || props.messages.length <= VISIBLE_LIMIT) return props.messages
+  return props.messages.slice(-VISIBLE_LIMIT)
+})
+
+// --- Scroll position ---
+const SCROLL_KEY = 'paloma:scrollTop'
+
 function checkScrollPosition() {
   if (!container.value) return
   const { scrollTop, scrollHeight, clientHeight } = container.value
   isNearBottom.value = scrollHeight - scrollTop - clientHeight < 100
+  sessionStorage.setItem(SCROLL_KEY, String(scrollTop))
 }
 
 onMounted(() => {
   container.value?.addEventListener('scroll', checkScrollPosition, { passive: true })
+  // Restore saved scroll position
+  const saved = sessionStorage.getItem(SCROLL_KEY)
+  if (saved != null && container.value) {
+    nextTick(() => {
+      container.value.scrollTop = Number(saved)
+    })
+  }
 })
 
 onBeforeUnmount(() => {
@@ -83,16 +117,45 @@ function scrollToBottom(behavior = 'smooth') {
   })
 }
 
-const streamingHtml = computed(() => {
-  if (!props.streamingContent) return '<span class="streaming-cursor"></span>'
-  return marked.parse(props.streamingContent, { breaks: true }) + '<span class="streaming-cursor"></span>'
-})
+// --- Throttled streaming HTML ---
+const streamingHtmlThrottled = ref('<span class="streaming-cursor"></span>')
+let throttleTimer = null
 
-// Scroll to bottom on session switch (bulk load)
+watch(
+  () => props.streamingContent,
+  (content) => {
+    if (!content) {
+      streamingHtmlThrottled.value = '<span class="streaming-cursor"></span>'
+      return
+    }
+    if (throttleTimer) return
+    throttleTimer = setTimeout(() => {
+      throttleTimer = null
+      streamingHtmlThrottled.value = marked.parse(props.streamingContent, { breaks: true }) + '<span class="streaming-cursor"></span>'
+    }, 150)
+  }
+)
+
+// Flush on stream end to ensure final content is rendered
+watch(
+  () => props.streaming,
+  (val) => {
+    if (!val && props.streamingContent) {
+      if (throttleTimer) {
+        clearTimeout(throttleTimer)
+        throttleTimer = null
+      }
+      streamingHtmlThrottled.value = marked.parse(props.streamingContent, { breaks: true }) + '<span class="streaming-cursor"></span>'
+    }
+  }
+)
+
+// Reset showAll on session switch (bulk load)
 watch(
   () => props.messages.length,
   (newLen, oldLen) => {
     if (oldLen === 0 && newLen > 0) {
+      showAll.value = false
       scrollToBottom('instant')
       isNearBottom.value = true
       return

@@ -1,9 +1,11 @@
 import { ref, watch } from 'vue'
 
-const apiKey = ref(localStorage.getItem('paloma:apiKey') || '')
-const defaultModel = ref(localStorage.getItem('paloma:defaultModel') || 'anthropic/claude-sonnet-4')
+const _saved = import.meta.hot ? window.__PALOMA_SETTINGS__ : undefined
 
-const preferences = ref(JSON.parse(localStorage.getItem('paloma:preferences') || '{}'))
+const apiKey = ref(_saved?.apiKey ?? (localStorage.getItem('paloma:apiKey') || ''))
+const defaultModel = ref(_saved?.defaultModel ?? (localStorage.getItem('paloma:defaultModel') || 'anthropic/claude-sonnet-4'))
+
+const preferences = ref(_saved?.preferences ?? JSON.parse(localStorage.getItem('paloma:preferences') || '{}'))
 
 watch(apiKey, (val) => {
   if (val) localStorage.setItem('paloma:apiKey', val)
@@ -17,6 +19,18 @@ watch(defaultModel, (val) => {
 watch(preferences, (val) => {
   localStorage.setItem('paloma:preferences', JSON.stringify(val))
 }, { deep: true })
+
+if (import.meta.hot) {
+  const save = () => {
+    window.__PALOMA_SETTINGS__ = {
+      apiKey: apiKey.value,
+      defaultModel: defaultModel.value,
+      preferences: preferences.value
+    }
+  }
+  save()
+  watch([apiKey, defaultModel, preferences], save, { flush: 'sync' })
+}
 
 export function useSettings() {
   return {

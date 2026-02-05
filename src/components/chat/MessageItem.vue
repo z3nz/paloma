@@ -91,6 +91,8 @@ const props = defineProps({
 
 const emit = defineEmits(['apply-code'])
 
+const htmlCache = new Map()
+
 const expanded = ref(false)
 
 const { formatCost, formatTokens, calculateMessageCost } = useCostTracking()
@@ -136,6 +138,12 @@ const renderedHtml = computed(() => {
   if (props.message.role !== 'assistant') return ''
   if (!props.message.content) return ''
 
+  const cached = htmlCache.get(props.message.content)
+  if (cached) {
+    codeBlocks.value = cached.blocks
+    return cached.html
+  }
+
   const blocks = []
   const html = marked.parse(props.message.content, { breaks: true })
 
@@ -174,6 +182,7 @@ const renderedHtml = computed(() => {
   )
 
   codeBlocks.value = blocks
+  htmlCache.set(props.message.content, { html: result, blocks })
   return result
 })
 

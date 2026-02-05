@@ -1,8 +1,21 @@
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import db from '../services/db.js'
 
-const sessions = ref([])
-const activeSessionId = ref(null)
+const _saved = import.meta.hot ? window.__PALOMA_SESSIONS__ : undefined
+
+const sessions = ref(_saved?.sessions ?? [])
+const activeSessionId = ref(_saved?.activeSessionId ?? (Number(sessionStorage.getItem('paloma:activeSessionId')) || null))
+
+if (import.meta.hot) {
+  const save = () => {
+    window.__PALOMA_SESSIONS__ = {
+      sessions: sessions.value,
+      activeSessionId: activeSessionId.value
+    }
+  }
+  save()
+  watch([sessions, activeSessionId], save, { flush: 'sync' })
+}
 
 export function useSessions() {
   async function loadSessions(projectPath) {
@@ -25,6 +38,7 @@ export function useSessions() {
     })
     await loadSessions(projectPath)
     activeSessionId.value = id
+    sessionStorage.setItem('paloma:activeSessionId', id)
     return id
   }
 
@@ -43,12 +57,18 @@ export function useSessions() {
     const projectPath = sessions.value.find(s => s.id === id)?.projectPath
     if (activeSessionId.value === id) {
       activeSessionId.value = null
+      sessionStorage.removeItem('paloma:activeSessionId')
     }
     if (projectPath) await loadSessions(projectPath)
   }
 
   function setActiveSession(id) {
     activeSessionId.value = id
+    if (id != null) {
+      sessionStorage.setItem('paloma:activeSessionId', id)
+    } else {
+      sessionStorage.removeItem('paloma:activeSessionId')
+    }
   }
 
   return {

@@ -4,4 +4,9 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
+  server: {
+    watch: {
+      ignored: ['**/node_modules/**', '**/.git/**']
+    }
+  }
 })

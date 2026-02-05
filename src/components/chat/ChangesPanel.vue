@@ -145,16 +145,24 @@
 </template>
 
 <script setup>
-import { ref, onBeforeUnmount } from 'vue'
+import { ref, watch, onBeforeUnmount } from 'vue'
 import { diffLines as computeDiff } from 'diff'
 
-defineProps({
+const props = defineProps({
   pendingChanges: { type: Array, required: true },
   hasPendingChanges: { type: Boolean, required: true },
   pendingCount: { type: Number, required: true }
 })
 
 defineEmits(['apply-change', 'apply-all', 'dismiss-change', 'dismiss-all', 'view-diff'])
+
+const diffCache = new Map()
+
+watch(
+  () => props.pendingChanges,
+  () => { diffCache.clear() },
+  { flush: 'sync' }
+)
 
 const expanded = ref(new Set([0]))
 const panelWidth = ref(320)
@@ -210,6 +218,10 @@ function fileName(path) {
 }
 
 function getDiffLines(change) {
+  const cacheKey = `${change.path}:${(change.originalContent ?? '').length}:${(change.newContent ?? '').length}`
+  const cached = diffCache.get(cacheKey)
+  if (cached) return cached
+
   const original = change.originalContent ?? ''
   const updated = change.newContent ?? ''
   const changes = computeDiff(original, updated)
@@ -230,6 +242,7 @@ function getDiffLines(change) {
     }
   }
 
+  diffCache.set(cacheKey, lines)
   return lines
 }
 

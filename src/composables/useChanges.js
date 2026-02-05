@@ -1,11 +1,24 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { extractAnnotatedCodeBlocks } from '../services/codeBlockExtractor.js'
 import { readFileSafe, requestWritePermission, writeFile } from '../services/filesystem.js'
 import { resolveEdit } from '../services/editing.js'
 import db from '../services/db.js'
 
-const pendingChanges = ref([])
-const currentSessionId = ref(null)
+const _saved = import.meta.hot ? window.__PALOMA_CHANGES__ : undefined
+
+const pendingChanges = ref(_saved?.pendingChanges ?? [])
+const currentSessionId = ref(_saved?.currentSessionId ?? null)
+
+if (import.meta.hot) {
+  const save = () => {
+    window.__PALOMA_CHANGES__ = {
+      pendingChanges: pendingChanges.value,
+      currentSessionId: currentSessionId.value
+    }
+  }
+  save()
+  watch([pendingChanges, currentSessionId], save, { flush: 'sync' })
+}
 
 async function persistChanges() {
   const sessionId = currentSessionId.value
@@ -27,6 +40,16 @@ async function persistChanges() {
   } catch {
     // Best-effort persistence — UI continues working without storage
   }
+}
+
+function autoRemoveApplied() {
+  setTimeout(async () => {
+    const remaining = pendingChanges.value.filter(c => c.status !== 'applied')
+    if (remaining.length !== pendingChanges.value.length) {
+      pendingChanges.value = remaining
+      await persistChanges()
+    }
+  }, 1500)
 }
 
 export function useChanges() {
@@ -113,6 +136,7 @@ export function useChanges() {
       change.status = 'applied'
       pendingChanges.value = [...pendingChanges.value]
       await persistChanges()
+      autoRemoveApplied()
     } catch (err) {
       change.error = `Failed to write file: ${err.message}`
       change.status = 'error'
@@ -143,6 +167,7 @@ export function useChanges() {
     }
     pendingChanges.value = [...pendingChanges.value]
     await persistChanges()
+    autoRemoveApplied()
   }
 
   async function dismissChange(index) {
