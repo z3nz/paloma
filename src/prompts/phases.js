@@ -59,3 +59,6 @@ Plan Archival:
   Use moveFile from .paloma/plans/active/{plan-file} to .paloma/plans/completed/{plan-file}
 - This keeps the workspace clean for the next task.`
 }
+
+// Enable HMR boundary — errors here don't cascade to full reload
+if (import.meta.hot) import.meta.hot.accept()

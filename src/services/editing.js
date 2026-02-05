@@ -87,3 +87,6 @@ export function resolveEdit(code, originalContent) {
   const { result } = applySearchReplace(originalContent, pairs)
   return { newContent: result, mode: 'search-replace' }
 }
+
+// Enable HMR boundary — errors here don't cascade to full reload
+if (import.meta.hot) import.meta.hot.accept()

@@ -119,3 +119,6 @@ export async function* streamChat(apiKey, model, messages, options = {}) {
     }
   }
 }
+
+// Enable HMR boundary — errors here don't cascade to full reload
+if (import.meta.hot) import.meta.hot.accept()

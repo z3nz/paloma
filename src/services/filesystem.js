@@ -128,3 +128,6 @@ export async function fileExists(dirHandle, filePath) {
     return false
   }
 }
+
+// Enable HMR boundary — errors here don't cascade to full reload
+if (import.meta.hot) import.meta.hot.accept()

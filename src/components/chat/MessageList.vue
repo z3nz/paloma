@@ -86,25 +86,14 @@ const visibleMessages = computed(() => {
   return props.messages.slice(-VISIBLE_LIMIT)
 })
 
-// --- Scroll position ---
-const SCROLL_KEY = 'paloma:scrollTop'
-
 function checkScrollPosition() {
   if (!container.value) return
   const { scrollTop, scrollHeight, clientHeight } = container.value
   isNearBottom.value = scrollHeight - scrollTop - clientHeight < 100
-  sessionStorage.setItem(SCROLL_KEY, String(scrollTop))
 }
 
 onMounted(() => {
   container.value?.addEventListener('scroll', checkScrollPosition, { passive: true })
-  // Restore saved scroll position
-  const saved = sessionStorage.getItem(SCROLL_KEY)
-  if (saved != null && container.value) {
-    nextTick(() => {
-      container.value.scrollTop = Number(saved)
-    })
-  }
 })
 
 onBeforeUnmount(() => {

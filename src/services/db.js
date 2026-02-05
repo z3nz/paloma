@@ -14,3 +14,6 @@ db.version(2).stores({
 })
 
 export default db
+
+// Enable HMR boundary — errors here don't cascade to full reload
+if (import.meta.hot) import.meta.hot.accept()

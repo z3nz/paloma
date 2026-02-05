@@ -86,3 +86,6 @@ And these tools for modifying the project (require user approval):
 - moveFile(fromPath, toPath) — Move or rename a file
 
 Use tools proactively to understand the codebase before suggesting changes.`
+
+// Enable HMR boundary — errors here don't cascade to full reload
+if (import.meta.hot) import.meta.hot.accept()

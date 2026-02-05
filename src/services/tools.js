@@ -214,3 +214,6 @@ export async function executeWriteTool(name, args, dirHandle) {
       return JSON.stringify({ error: `Unknown write tool: ${name}` })
   }
 }
+
+// Enable HMR boundary — errors here don't cascade to full reload
+if (import.meta.hot) import.meta.hot.accept()

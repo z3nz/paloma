@@ -1,9 +1,26 @@
 <template>
-  <!-- Welcome / Setup -->
+  <!-- Welcome / Setup (only if no API key OR no dirHandle and no need to reconnect) -->
   <WelcomeScreen
-    v-if="!apiKey || !dirHandle"
+    v-if="!apiKey || (!dirHandle && !needsReconnect)"
     @open-project="handleOpenProject"
   />
+
+  <!-- Reconnect prompt (full reload recovery) -->
+  <div
+    v-else-if="needsReconnect"
+    class="h-screen flex items-center justify-center bg-bg-primary"
+  >
+    <div class="text-center">
+      <h2 class="text-xl font-semibold text-text-primary mb-2">Reconnect to {{ projectName }}</h2>
+      <p class="text-text-muted text-sm mb-4">Page was reloaded. Click to reconnect.</p>
+      <button
+        @click="handleOpenProject"
+        class="px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm font-medium rounded-md transition-colors"
+      >
+        Reconnect
+      </button>
+    </div>
+  </div>
 
   <!-- Main App -->
   <AppLayout
@@ -85,7 +102,7 @@ import { useOpenRouter } from './composables/useOpenRouter.js'
 import { useChanges } from './composables/useChanges.js'
 
 const { apiKey, defaultModel } = useSettings()
-const { dirHandle, projectName, openProject } = useProject()
+const { dirHandle, projectName, needsReconnect, openProject } = useProject()
 const { files, buildIndex, updatePaths } = useFileIndex()
 const { sessions, activeSessionId, loadSessions, createSession, updateSession, deleteSession, setActiveSession } = useSessions()
 const { models, loadModels } = useOpenRouter()
@@ -120,7 +137,8 @@ watch(projectName, async (name) => {
 async function handleOpenProject() {
   try {
     const handle = await openProject()
-    await buildIndex(handle)
+    // File indexing runs in background — don't block chat loading
+    buildIndex(handle)
     await loadSessions(handle.name)
   } catch (e) {
     if (e.name !== 'AbortError') {

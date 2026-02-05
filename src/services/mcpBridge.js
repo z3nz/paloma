@@ -133,3 +133,6 @@ export function createMcpBridge() {
 
   return { connect, disconnect, discover, callTool, getState }
 }
+
+// Enable HMR boundary — errors here don't cascade to full reload
+if (import.meta.hot) import.meta.hot.accept()

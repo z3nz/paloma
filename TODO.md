@@ -1,12 +1,85 @@
 # Paloma TODO List
 
 > Living document of tasks, bugs, and improvements. Organized by priority.
+> Last updated: Testing HMR behavior
 
 ---
 
-## 💡 BREAKTHROUGH: Chat Phase Discovery
+## 💡 BREAKTHROUGH DISCOVERIES
 
-**STATUS: JUST DISCOVERED - NEEDS IMMEDIATE DOCUMENTATION & IMPLEMENTATION**
+### 1. Chat Phase Discovery
+**STATUS: DOCUMENTED - DEPRIORITIZED FOR QUALITY FIRST**
+
+**Decision:** Pause Chat phase implementation. Focus on making existing workflow flawless before adding new phases.
+
+### 2. CLI-Based Sub-Agent Architecture (GAME CHANGER)
+**STATUS: JUST DISCOVERED - EXTREMELY HIGH PRIORITY**
+
+**The Insight:**
+Instead of running everything through expensive OpenRouter APIs, we can harness CLI tools like Claude CLI, Codeium, Continue.dev, etc. for sub-processes and sub-agents.
+
+**Why This Changes Everything:**
+
+**Cost Model Revolution:**
+- Current: Every message = OpenRouter API cost ($$ at scale)
+- With Claude CLI: $20/month unlimited for Haiku/Sonnet
+- Sub-agents: Run parallel tasks practically free!
+- Reserve expensive models (Opus) for critical decisions only
+
+**Architecture:**
+```
+Main Paloma (Browser UI - Opus for critical thinking)
+  ↓
+MCP Shell Server
+  ↓
+Claude CLI / Codeium CLI / Continue.dev / Aider
+  ↓
+Sub-agents (Haiku/Sonnet for grunt work)
+```
+
+**Example Workflow:**
+```
+You: "Refactor the auth system"
+
+Paloma (Opus): "Let me spawn some helpers..."
+
+Sub-Agent 1 (Haiku via CLI): Research current auth patterns
+Sub-Agent 2 (Haiku via CLI): Find similar implementations  
+Sub-Agent 3 (Sonnet via CLI): Draft test cases
+
+Paloma (Opus): Synthesizes results, proposes refactor
+```
+
+**Capabilities Unlocked:**
+- Spawn sub-agents for parallel research
+- Use cheaper models for repetitive tasks
+- Run background tasks without API limits
+- Massive cost savings at scale
+- Can run 10+ sub-agents simultaneously on $20/month!
+
+**Implementation Requirements:**
+- [ ] Research Claude CLI capabilities and API
+- [ ] Design sub-agent spawning architecture
+- [ ] Create sub-agent communication protocol
+- [ ] Build sub-agent orchestration system
+- [ ] UI to show active sub-agents and their progress
+- [ ] Cost tracking that accounts for CLI vs API usage
+- [ ] Error handling for CLI failures
+- [ ] Sub-agent result aggregation and synthesis
+
+**Other CLI Tools to Integrate:**
+- Claude CLI (Anthropic - $20/month unlimited)
+- Codeium CLI (free tier available)
+- Continue.dev (open source)
+- Aider (open source)
+- GitHub Copilot CLI
+- Any tool with programmatic CLI access!
+
+**Priority:** EXTREMELY HIGH - This fundamentally changes our cost structure and capabilities
+
+---
+
+### Chat Phase Discovery (DEPRIORITIZED)
 
 ### The Problem We Just Solved
 The current 5-phase workflow (Research → Plan → Implement → Review → Commit) is too rigid for collaborative discovery and brainstorming. This session proved we need a freeform "Chat" mode where ideas emerge organically through conversation.

@@ -44,6 +44,7 @@ export function useChat() {
       messages.value = []
       return
     }
+
     console.time('[perf] loadMessages:db')
     const result = await db.messages
       .where('sessionId')
