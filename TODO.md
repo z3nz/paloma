@@ -4,6 +4,94 @@
 
 ---
 
+## 💡 BREAKTHROUGH: Chat Phase Discovery
+
+**STATUS: JUST DISCOVERED - NEEDS IMMEDIATE DOCUMENTATION & IMPLEMENTATION**
+
+### The Problem We Just Solved
+The current 5-phase workflow (Research → Plan → Implement → Review → Commit) is too rigid for collaborative discovery and brainstorming. This session proved we need a freeform "Chat" mode where ideas emerge organically through conversation.
+
+### What We Discovered
+This entire session has been in an undocumented "Chat" phase where we:
+- Explored MCP capabilities together
+- Discovered problems organically (scrollable modal)
+- Brainstormed solutions in real-time
+- Made architectural decisions collaboratively
+- Reorganized documentation naturally
+- Committed changes together
+
+**None of this fit the structured workflow, yet it was incredibly productive!**
+
+### The New Phase: CHAT
+
+**Purpose:** Freeform collaboration, discovery, and pair programming
+
+**When to use:**
+- Brainstorming new features
+- Discussing architecture decisions
+- Exploring capabilities together
+- Debugging interactively
+- Having "what if?" conversations
+- Building understanding through dialogue
+- Reflecting on completed work
+
+**Key Characteristics:**
+- No rigid structure required
+- Can bounce between topics freely
+- Ideas emerge organically
+- Both partners contribute equally
+- Can spawn Research/Plan/Implement sessions from Chat
+- Can return to Chat after Commit to reflect
+
+**The Updated Workflow:**
+```
+CHAT (discovery & collaboration)
+  ↓ (when ready to focus)
+Research → Plan → Implement → Review → Commit
+  ↓ (after completion)
+CHAT (reflect, discover next thing)
+```
+
+**Chat Phase vs Other Phases:**
+- **Research:** Focused investigation of a specific topic
+- **Plan:** Structured planning of a specific feature
+- **Implement:** Executing a defined plan
+- **Review:** Checking specific work
+- **Commit:** Finalizing specific changes
+- **CHAT:** Freeform exploration, discovery, reflection
+
+### Implementation Requirements
+- [ ] Add "Chat" to phase selector (first position, default?)
+- [ ] Create `phases.js` entry for Chat phase instructions
+- [ ] Chat phase prompt emphasizes:
+  - Freeform conversation
+  - Collaborative discovery
+  - Equal partnership
+  - Can suggest transitioning to other phases when appropriate
+- [ ] UI treatment: Chat phase might have different visual style?
+- [ ] Consider: Should Chat be the default phase for new sessions?
+
+### Documentation Updates Needed
+- [ ] Update PROJECT.md workflow philosophy to include Chat
+- [ ] Update ROADMAP.md to mention Chat as foundation for all work
+- [ ] Add Chat phase to `.paloma/instructions.md` example
+- [ ] Update phase selector component
+
+### Why This Matters
+This discovery represents a fundamental insight about AI-human collaboration:
+**Structured workflows are important, but freeform discovery is where breakthroughs happen.**
+
+Chat phase is where:
+- Trust is built
+- Understanding deepens
+- Ideas are born
+- Problems are discovered
+- Solutions emerge naturally
+
+Without Chat, Paloma is a tool. With Chat, Paloma is a partner.
+
+---
+
 ## 🔥 Priority 0: Critical / In Progress
 
 ### MCP File Editing Integration
