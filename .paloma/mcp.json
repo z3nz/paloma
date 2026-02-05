@@ -1,0 +1,4 @@
+{
+  "enabled": ["brave-search", "git", "shell", "filesystem"],
+  "autoExecute": ["brave-search"]
+}
