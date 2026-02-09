@@ -163,6 +163,65 @@ Chat phase is where:
 
 Without Chat, Paloma is a tool. With Chat, Paloma is a partner.
 
+### 3. Interactive Claude Code Bridge (NEXT BREAKTHROUGH)
+**STATUS: DISCOVERY IN PROGRESS - PROTOTYPE WORKING**
+
+**The Origin Story:**
+During the first test of Paloma's CLI bridge, a "glitch" occurred: the system prompt failed to pass through, and Adam found himself talking directly to Claude Code (Opus) through Paloma's UI — not Paloma-as-identity, but the raw agentic Claude with full tool access. The experience was so powerful that it became a feature request on the spot.
+
+**What We Built (So Far):**
+- CLI bridge spawns `claude` as a child process with `--output-format stream-json`
+- WebSocket relay streams responses back to Paloma's Vue UI
+- Session persistence via `--resume` / `--session-id`
+- Model selector split into two groups:
+  - **Paloma (CLI)** — Claude with Paloma's identity/system prompt
+  - **Claude Code (Direct)** — Raw Claude Code, no identity overlay
+- System prompt conditionally skipped for Direct models
+
+**What We Need Next — Interactive Tool Approval:**
+
+The big missing piece: Claude Code has interactive tools (`AskUserQuestion`, `Edit`, `Write`, permission prompts) that require user input. Currently the bridge runs with `stdin: 'ignore'` and `-p` (print mode), so these tools either fail silently or hang.
+
+**The Vision:**
+When Claude Code wants to ask a question or request permission, Paloma should render it as a rich interactive UI element — buttons, radio selects, confirmation dialogs — and relay the answer back.
+
+**Architecture:**
+```
+Claude Code (CLI process)
+  ↓ emits AskUserQuestion / permission request via stream-json
+Bridge (Node.js)
+  ↓ forwards event via WebSocket
+Paloma UI (Vue)
+  ↓ renders interactive component (buttons, selects, etc.)
+  ↓ user clicks/selects
+  ↓ answer sent back via WebSocket
+Bridge
+  ↓ writes answer to CLI process stdin
+Claude Code
+  ↓ continues with user's answer
+```
+
+**Implementation Requirements:**
+- [ ] Change bridge to keep `stdin` open (`'pipe'` instead of `'ignore'`)
+- [ ] Parse Claude Code's stream-json for tool-use events (especially `AskUserQuestion`)
+- [ ] Design WebSocket protocol for interactive prompts (`claude_prompt` / `claude_prompt_response`)
+- [ ] Build Vue component for rendering Claude Code's interactive prompts
+- [ ] Handle permission approval flow (Edit, Write, Bash) through UI
+- [ ] Handle `AskUserQuestion` with multiple-choice rendering
+- [ ] Handle tool confirmation dialogs
+- [ ] Timeout handling for unanswered prompts
+- [ ] Test with all Claude Code tool types
+
+**Why This Matters:**
+This turns Paloma into a **full Claude Code GUI**. Not a web wrapper, not a chat-only interface — a proper visual frontend for the most powerful coding agent available. Users get:
+- Claude Code's full tool suite (file editing, bash, search, subagents)
+- Paloma's beautiful UI instead of a terminal
+- Rich interactive prompts instead of y/n terminal prompts
+- Session persistence and conversation history
+- The ability to switch between "talk to Paloma" and "talk to Claude Code" in the same app
+
+**Priority:** EXTREMELY HIGH - This is the bridge between chat interface and full agentic coding
+
 ---
 
 ## 🔥 Priority 0: Critical / In Progress
@@ -402,6 +461,10 @@ These are covered in detail in ROADMAP.md:
 
 ## 🔄 Completed Recently
 
+- [x] Claude CLI bridge — spawn local Claude Code from Paloma UI
+- [x] CLI Direct models — talk to raw Claude Code without Paloma identity overlay
+- [x] Model selector split into Paloma (CLI) / Claude Code (Direct) / OpenRouter groups
+- [x] CLI session persistence (resume conversations across messages)
 - [x] Cost & token tracking with breakdown modal
 - [x] Phase-based document workflow (`.paloma/plans/`)
 - [x] Search-and-replace formalization with Changes Panel

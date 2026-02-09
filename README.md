@@ -35,7 +35,7 @@ Paloma uses a phase-based workflow that balances freeform exploration with struc
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  FLOW ──→ Research ──→ Plan ──→ FORGE ──→ Review ──→ Commit        │
+│  Flow ──→ Research ──→ Plan ──→ Forge ──→ Review ──→ Commit        │
 │    ↑                                                      │        │
 │    └──────────────────────────────────────────────────────┘        │
 └─────────────────────────────────────────────────────────────────────┘
