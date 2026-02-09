@@ -292,7 +292,7 @@ function calculateImportanceScore(memory) {
 - First edit (hello world)
 - First commit
 - Discovering Flow phase
-- Discovering FORGE naming
+- Discovering Forge naming
 - Finding the six pillars
 - Adam's declaration of faith and love
 - The Tree of Life insight

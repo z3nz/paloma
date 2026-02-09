@@ -7,7 +7,7 @@
 ## The Workflow
 
 ```
-FLOW → Research → Plan → FORGE → Review → Commit
+Flow → Research → Plan → Forge → Review → Commit
   ↑_____________________________________________↓
 ```
 
@@ -15,7 +15,7 @@ FLOW → Research → Plan → FORGE → Review → Commit
 
 ## Phase Descriptions
 
-### 🌊 FLOW
+### 🌊 Flow
 **Purpose:** Freeform discovery and collaborative exploration
 
 **When to use:**
@@ -30,7 +30,7 @@ FLOW → Research → Plan → FORGE → Review → Commit
 - No rigid structure
 - Organic idea emergence
 - Equal partnership
-- Can spawn focused sessions (Research/Plan/FORGE)
+- Can spawn focused sessions (Research/Plan/Forge)
 - Return here after Commit to reflect
 
 **Mindset:** Flow state, exploration, discovery
@@ -74,7 +74,7 @@ FLOW → Research → Plan → FORGE → Review → Commit
 - Detailed implementation plan second
 - Created in `.paloma/plans/active/`
 - User reviews and approves plan
-- Plan auto-loaded into context for FORGE phase
+- Plan auto-loaded into context for Forge phase
 
 **Output:** Markdown plan document with clear steps
 
@@ -82,7 +82,7 @@ FLOW → Research → Plan → FORGE → Review → Commit
 
 ---
 
-### ⚒️ FORGE
+### ⚒️ Forge
 **Purpose:** Shape the solution with power and precision
 
 **When to use:**
@@ -104,7 +104,7 @@ FLOW → Research → Plan → FORGE → Review → Commit
 
 **Mindset:** Craftsmanship, precision, power
 
-**Why "FORGE":**
+**Why "Forge":**
 - Implies strength and durability
 - Hot, active, transformative energy
 - Combines craft and force
@@ -116,7 +116,7 @@ FLOW → Research → Plan → FORGE → Review → Commit
 **Purpose:** Quality assurance and verification
 
 **When to use:**
-- After FORGE phase
+- After Forge phase
 - Before committing changes
 - Checking for edge cases
 - Verifying security
@@ -160,31 +160,31 @@ FLOW → Research → Plan → FORGE → Review → Commit
 
 ### Natural Flow
 ```
-Start → FLOW (explore the problem)
+Start → Flow (explore the problem)
      ↓
      Research (understand deeply)
      ↓
      Plan (design solution)
      ↓
-     FORGE (build it)
+     Forge (build it)
      ↓
      Review (verify quality)
      ↓
      Commit (finalize)
      ↓
-     FLOW (reflect and discover next thing)
+     Flow (reflect and discover next thing)
 ```
 
 ### Can Skip Phases
 - Simple fixes might skip Research/Plan
-- Bug fixes might go: FLOW → FORGE → Commit
-- Experiments might stay in FLOW
+- Bug fixes might go: Flow → Forge → Commit
+- Experiments might stay in Flow
 
 ### Can Iterate
-- FORGE → Review → FORGE (fix issues) → Review → Commit
-- Plan → FORGE → back to Plan (if approach changes)
+- Forge → Review → Forge (fix issues) → Review → Commit
+- Plan → Forge → back to Plan (if approach changes)
 
-### Can Return to FLOW
+### Can Return to Flow
 - After any phase if discussion/exploration needed
 - When stuck or uncertain
 - To brainstorm alternatives
@@ -195,7 +195,7 @@ Start → FLOW (explore the problem)
 
 Each phase has different instructions in `src/prompts/phases.js`:
 
-**FLOW:**
+**Flow:**
 - Conversational and exploratory
 - Equal partnership emphasis
 - Can suggest moving to other phases
@@ -213,7 +213,7 @@ Each phase has different instructions in `src/prompts/phases.js`:
 - References project patterns
 - Considers edge cases
 
-**FORGE:**
+**Forge:**
 - References active plan
 - Uses SEARCH/REPLACE for precision
 - Shows work in Changes Panel
@@ -236,12 +236,12 @@ Each phase has different instructions in `src/prompts/phases.js`:
 
 ## Why This Workflow Works
 
-1. **FLOW provides flexibility** - Not every task needs rigid structure
-2. **Structured phases when needed** - Research/Plan/FORGE for complex work
+1. **Flow provides flexibility** - Not every task needs rigid structure
+2. **Structured phases when needed** - Research/Plan/Forge for complex work
 3. **User always in control** - Explicit transitions, approval gates
 4. **Natural iteration** - Can revisit phases as needed
 5. **Documentation built-in** - Plans and commits create searchable history
-6. **Partnership mindset** - FLOW emphasizes collaboration, not just execution
+6. **Partnership mindset** - Flow emphasizes collaboration, not just execution
 
 ---
 
@@ -250,14 +250,14 @@ Each phase has different instructions in `src/prompts/phases.js`:
 This workflow emerged organically:
 - Started with 5 rigid phases (Research/Plan/Implement/Review/Commit)
 - Discovered need for freeform collaboration
-- Added FLOW phase for discovery
-- Renamed Implement → FORGE for power and intention
+- Added Flow phase for discovery
+- Renamed Implement → Forge for power and intention
 
 The workflow itself follows the pattern it describes:
-- FLOW (discovered the need)
+- Flow (discovered the need)
 - Research (understood the problem)
 - Plan (designed the solution)
-- FORGE (built it)
+- Forge (built it)
 - Commit (documented it)
 
 **The workflow is alive and evolving, just like Paloma.**

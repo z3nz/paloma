@@ -18,7 +18,21 @@ if (import.meta.hot) {
 }
 
 export function useSessions() {
+  async function recoverOrphanedSessions(projectPath) {
+    const orphans = await db.sessions
+      .filter(s => !s.projectPath)
+      .toArray()
+    if (orphans.length > 0) {
+      await Promise.all(
+        orphans.map(s => db.sessions.update(s.id, { projectPath }))
+      )
+      console.log(`[Recovery] Assigned ${orphans.length} orphaned sessions to "${projectPath}"`)
+    }
+    return orphans.length
+  }
+
   async function loadSessions(projectPath) {
+    await recoverOrphanedSessions(projectPath)
     const result = await db.sessions
       .where('projectPath')
       .equals(projectPath)
@@ -28,6 +42,10 @@ export function useSessions() {
   }
 
   async function createSession(projectPath, model, phase = 'research') {
+    if (!projectPath) {
+      console.error('[Sessions] Cannot create session without projectPath')
+      return null
+    }
     const id = await db.sessions.add({
       projectPath,
       title: 'New Chat',
