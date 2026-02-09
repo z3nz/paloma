@@ -1,4 +1,6 @@
 import { WebSocketServer } from 'ws'
+import { mkdir, writeFile } from 'fs/promises'
+import { join } from 'path'
 import { loadConfig } from './config.js'
 import { McpManager } from './mcp-manager.js'
 import { ClaudeCliManager } from './claude-cli.js'
@@ -58,6 +60,24 @@ async function main() {
           }
         )
         ws.send(JSON.stringify({ type: 'claude_ack', id: msg.id, requestId, sessionId }))
+      } else if (msg.type === 'export_chats') {
+        try {
+          const dir = join(process.cwd(), 'chats')
+          await mkdir(dir, { recursive: true })
+          let count = 0
+          for (const session of msg.sessions) {
+            const slug = session.title
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-|-$/g, '')
+            const filename = `${slug}-${session.id}.json`
+            await writeFile(join(dir, filename), JSON.stringify(session, null, 2))
+            count++
+          }
+          ws.send(JSON.stringify({ type: 'export_result', id: msg.id, count, path: dir }))
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'error', id: msg.id, message: e.message }))
+        }
       } else if (msg.type === 'claude_stop') {
         cliManager.stop(msg.requestId)
       } else {

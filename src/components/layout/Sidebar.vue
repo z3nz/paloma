@@ -14,7 +14,7 @@
     </div>
 
     <!-- Session list -->
-    <div class="flex-1 overflow-y-auto px-2 pb-2">
+    <div class="flex-1 overflow-y-auto px-2">
       <div v-if="sessions.length === 0" class="text-text-muted text-sm text-center py-8 px-4">
         No chats yet. Start a new conversation.
       </div>
@@ -51,16 +51,56 @@
         </button>
       </div>
     </div>
+
+    <!-- Export chats -->
+    <div class="p-3 border-t border-border">
+      <button
+        @click="handleExport"
+        :disabled="exporting"
+        class="w-full px-3 py-1.5 text-text-muted hover:text-text-primary text-xs font-medium rounded-md transition-colors flex items-center justify-center gap-1.5 hover:bg-bg-tertiary disabled:opacity-50"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        {{ exportLabel }}
+      </button>
+    </div>
   </div>
 </template>
 
 <script setup>
-defineProps({
+import { ref } from 'vue'
+import { useMCP } from '../../composables/useMCP.js'
+
+const props = defineProps({
   sessions: { type: Array, default: () => [] },
-  activeSessionId: { type: Number, default: null }
+  activeSessionId: { type: Number, default: null },
+  projectPath: { type: String, default: '' }
 })
 
 defineEmits(['new-chat', 'select-session', 'delete-session'])
+
+const { exportChats, connected } = useMCP()
+const exporting = ref(false)
+const exportLabel = ref('Export Chats')
+
+async function handleExport() {
+  if (!props.projectPath || !connected.value) return
+  exporting.value = true
+  exportLabel.value = 'Exporting...'
+  try {
+    const result = await exportChats(props.projectPath)
+    exportLabel.value = `Exported ${result.count} chats`
+  } catch (e) {
+    exportLabel.value = 'Export failed'
+    console.error('[Export]', e)
+  } finally {
+    setTimeout(() => {
+      exporting.value = false
+      exportLabel.value = 'Export Chats'
+    }, 3000)
+  }
+}
 
 function phaseColor(phase) {
   const colors = {

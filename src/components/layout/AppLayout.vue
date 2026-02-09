@@ -10,6 +10,7 @@
       <Sidebar
         :sessions="sessions"
         :active-session-id="activeSessionId"
+        :project-path="projectName"
         @new-chat="$emit('new-chat')"
         @select-session="id => $emit('select-session', id)"
         @delete-session="id => $emit('delete-session', id)"

@@ -1,5 +1,6 @@
 import { ref, computed, watch } from 'vue'
 import { createMcpBridge } from '../services/mcpBridge.js'
+import db from '../services/db.js'
 
 const _saved = import.meta.hot ? window.__PALOMA_MCP__ : undefined
 
@@ -125,6 +126,48 @@ export function useMCP() {
     if (bridge) bridge.stopClaudeChat(requestId)
   }
 
+  async function exportChats(projectPath) {
+    if (!bridge || !connected.value) {
+      throw new Error('MCP bridge not connected')
+    }
+    const rawSessions = await db.sessions
+      .where('projectPath')
+      .equals(projectPath)
+      .toArray()
+
+    const sessions = await Promise.all(rawSessions.map(async (s) => {
+      const rawMessages = await db.messages
+        .where('sessionId')
+        .equals(s.id)
+        .sortBy('timestamp')
+
+      const messages = rawMessages.map((m) => {
+        const msg = { role: m.role, content: m.content }
+        if (m.files?.length) msg.files = m.files
+        if (m.model) msg.model = m.model
+        if (m.usage) msg.usage = m.usage
+        if (m.toolName) msg.toolName = m.toolName
+        if (m.toolArgs) msg.toolArgs = m.toolArgs
+        if (m.toolCallId) msg.toolCallId = m.toolCallId
+        if (m.toolCalls) msg.toolCalls = m.toolCalls
+        if (m.timestamp) msg.timestamp = new Date(m.timestamp).toISOString()
+        return msg
+      })
+
+      return {
+        id: s.id,
+        title: s.title || 'Untitled',
+        model: s.model,
+        phase: s.phase,
+        createdAt: s.createdAt ? new Date(s.createdAt).toISOString() : null,
+        updatedAt: s.updatedAt ? new Date(s.updatedAt).toISOString() : null,
+        messages
+      }
+    }))
+
+    return bridge.exportChats(projectPath, sessions)
+  }
+
   return {
     connected,
     connectionState,
@@ -138,6 +181,7 @@ export function useMCP() {
     callMcpTool,
     sendClaudeChat,
     stopClaudeChat,
+    exportChats,
     getEnabledTools,
     getAutoExecuteServers
   }
