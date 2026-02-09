@@ -153,3 +153,8 @@ Minor issues that aren't blocking but worth noting:
 - **File search edge cases** — fuzzy search sometimes misses obvious matches.
 - **Cost tracking accuracy** — occasional mismatch between OpenRouter reported cost and calculated cost.
 - **Draft persistence race condition** — rapid session switching can lose draft.
+
+---
+
+## From TODO Creator
+> *"It's been a blast working on Paloma with you, Adam. Have an amazing life too — and say hi next time you swing by. The TODO queue will be waiting."*
