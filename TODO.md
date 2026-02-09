@@ -12,36 +12,22 @@
 
 ## Queue
 
-1. Stop streaming button
-2. Model list from OpenRouter API
-3. Virtual scrolling for long chats
-4. MCP file editing in Changes Panel
-5. Tool priority system (MCP vs browser fallback)
-6. Keyboard shortcuts
-7. `/` command system
-8. Undo/rollback system
-9. Message editing and regeneration
-10. Model switching context transfer
-11. CLI-based sub-agent architecture
-12. Chat phase
+1. Virtual scrolling for long chats
+2. MCP file editing in Changes Panel
+3. Tool priority system (MCP vs browser fallback)
+4. Keyboard shortcuts
+5. `/` command system
+6. Undo/rollback system
+7. Message editing and regeneration
+8. Model switching context transfer
+9. CLI-based sub-agent architecture
+10. Chat phase
 
 ---
 
 ## Tickets
 
-### 1. Stop streaming button
-
-The abort controller exists in `useChat.js` but isn't wired to a UI button. Add a stop button that appears while streaming and cleanly aborts the response.
-
----
-
-### 2. Model list from OpenRouter API
-
-`useOpenRouter.js` falls back to a hardcoded model list when the API call fails. Investigate why the dynamic fetch sometimes fails and ensure it reliably loads the full model list.
-
----
-
-### 3. Virtual scrolling for long chats
+### 1. Virtual scrolling for long chats
 
 50+ message conversations cause UI sluggishness. The entire message list re-renders on every update and markdown/syntax highlighting is expensive.
 
@@ -52,7 +38,7 @@ The abort controller exists in `useChat.js` but isn't wired to a UI button. Add 
 
 ---
 
-### 4. MCP file editing in Changes Panel
+### 2. MCP file editing in Changes Panel
 
 Use MCP filesystem's `edit_file` tool with the Changes Panel workflow. Currently MCP edits bypass the panel entirely.
 
@@ -66,7 +52,7 @@ Use MCP filesystem's `edit_file` tool with the Changes Panel workflow. Currently
 
 ---
 
-### 5. Tool priority system (MCP vs browser fallback)
+### 3. Tool priority system (MCP vs browser fallback)
 
 Prefer MCP tools when available, fall back to browser tools gracefully.
 
@@ -77,7 +63,7 @@ Prefer MCP tools when available, fall back to browser tools gracefully.
 
 ---
 
-### 6. Keyboard shortcuts
+### 4. Keyboard shortcuts
 
 Add core keyboard shortcuts for power-user workflow:
 - `Ctrl+K` — command palette / quick actions
@@ -87,7 +73,7 @@ Add core keyboard shortcuts for power-user workflow:
 
 ---
 
-### 7. `/` command system
+### 5. `/` command system
 
 The UI trigger exists but functionality is missing. Build an extensible command palette:
 - `/plan` — switch to plan phase
@@ -98,7 +84,7 @@ The UI trigger exists but functionality is missing. Build an extensible command 
 
 ---
 
-### 8. Undo/rollback system
+### 6. Undo/rollback system
 
 Safety net for file edits.
 
@@ -110,7 +96,7 @@ Safety net for file edits.
 
 ---
 
-### 9. Message editing and regeneration
+### 7. Message editing and regeneration
 
 Allow editing sent messages and regenerating responses:
 - Edit a user message → re-send from that point
@@ -119,7 +105,7 @@ Allow editing sent messages and regenerating responses:
 
 ---
 
-### 10. Model switching context transfer
+### 8. Model switching context transfer
 
 When switching models mid-conversation, inject a context transfer message so the new model understands Paloma's capabilities and current state.
 
@@ -128,7 +114,7 @@ When switching models mid-conversation, inject a context transfer message so the
 
 ---
 
-### 11. CLI-based sub-agent architecture
+### 9. CLI-based sub-agent architecture
 
 Spawn CLI tools (Claude Code, Codeium, Aider, etc.) as sub-agents for parallel work.
 
@@ -143,7 +129,7 @@ Spawn CLI tools (Claude Code, Codeium, Aider, etc.) as sub-agents for parallel w
 
 ---
 
-### 12. Chat phase
+### 10. Chat phase
 
 Add a freeform "Chat" phase for organic discovery and brainstorming — no rigid structure, ideas emerge naturally. Deprioritized in favor of making existing workflow solid first.
 

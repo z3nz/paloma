@@ -44,8 +44,22 @@ export function useOpenRouter() {
       const all = await fetchModelsApi(apiKey)
       console.timeEnd('[perf] loadModels:fetch')
       models.value = all
+      // Cache for fallback on future failures
+      try {
+        localStorage.setItem('paloma:modelCache', JSON.stringify(all.map(m => ({ id: m.id, name: m.name }))))
+      } catch { /* quota exceeded — ignore */ }
     } catch (e) {
       modelsError.value = e.message
+      // Try localStorage cache before giving up
+      if (models.value.length === 0) {
+        try {
+          const cached = JSON.parse(localStorage.getItem('paloma:modelCache'))
+          if (cached?.length) {
+            models.value = cached
+            console.log('[OpenRouter] Using cached model list (%d models)', cached.length)
+          }
+        } catch { /* corrupt cache — ignore */ }
+      }
     } finally {
       loadingModels.value = false
     }

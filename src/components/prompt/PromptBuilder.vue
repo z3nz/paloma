@@ -73,7 +73,8 @@
         />
       </div>
       <div class="text-xs text-text-muted">
-        <span v-if="indexing">Indexing files...</span>
+        <span v-if="modelsError" class="text-warning" title="Using cached/fallback model list">Models: offline</span>
+        <span v-else-if="indexing">Indexing files...</span>
       </div>
     </div>
   </div>
@@ -97,7 +98,7 @@ const props = defineProps({
 const emit = defineEmits(['send', 'stop', 'update-session'])
 
 const { search, indexing } = useFileIndex()
-const { models } = useOpenRouter()
+const { models, modelsError } = useOpenRouter()
 
 const input = ref('')
 const attachedFiles = ref([])
