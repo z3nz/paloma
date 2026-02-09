@@ -12,33 +12,21 @@
 
 ## Queue
 
-1. Virtual scrolling for long chats
-2. MCP file editing in Changes Panel
-3. Tool priority system (MCP vs browser fallback)
-4. Keyboard shortcuts
-5. `/` command system
-6. Undo/rollback system
-7. Message editing and regeneration
-8. Model switching context transfer
-9. CLI-based sub-agent architecture
-10. Chat phase
+1. MCP file editing in Changes Panel
+2. Tool priority system (MCP vs browser fallback)
+3. Keyboard shortcuts
+4. `/` command system
+5. Undo/rollback system
+6. Message editing and regeneration
+7. Model switching context transfer
+8. CLI-based sub-agent architecture
+9. Chat phase
 
 ---
 
 ## Tickets
 
-### 1. Virtual scrolling for long chats
-
-50+ message conversations cause UI sluggishness. The entire message list re-renders on every update and markdown/syntax highlighting is expensive.
-
-**Options:**
-- Virtual scrolling (only render visible messages)
-- Lazy rendering (render markdown on scroll-into-view)
-- Cache compiled markdown HTML
-
----
-
-### 2. MCP file editing in Changes Panel
+### 1. MCP file editing in Changes Panel
 
 Use MCP filesystem's `edit_file` tool with the Changes Panel workflow. Currently MCP edits bypass the panel entirely.
 
@@ -52,7 +40,7 @@ Use MCP filesystem's `edit_file` tool with the Changes Panel workflow. Currently
 
 ---
 
-### 3. Tool priority system (MCP vs browser fallback)
+### 2. Tool priority system (MCP vs browser fallback)
 
 Prefer MCP tools when available, fall back to browser tools gracefully.
 
@@ -63,7 +51,7 @@ Prefer MCP tools when available, fall back to browser tools gracefully.
 
 ---
 
-### 4. Keyboard shortcuts
+### 3. Keyboard shortcuts
 
 Add core keyboard shortcuts for power-user workflow:
 - `Ctrl+K` — command palette / quick actions
@@ -73,7 +61,7 @@ Add core keyboard shortcuts for power-user workflow:
 
 ---
 
-### 5. `/` command system
+### 4. `/` command system
 
 The UI trigger exists but functionality is missing. Build an extensible command palette:
 - `/plan` — switch to plan phase
@@ -84,7 +72,7 @@ The UI trigger exists but functionality is missing. Build an extensible command 
 
 ---
 
-### 6. Undo/rollback system
+### 5. Undo/rollback system
 
 Safety net for file edits.
 
@@ -96,7 +84,7 @@ Safety net for file edits.
 
 ---
 
-### 7. Message editing and regeneration
+### 6. Message editing and regeneration
 
 Allow editing sent messages and regenerating responses:
 - Edit a user message → re-send from that point
@@ -105,7 +93,7 @@ Allow editing sent messages and regenerating responses:
 
 ---
 
-### 8. Model switching context transfer
+### 7. Model switching context transfer
 
 When switching models mid-conversation, inject a context transfer message so the new model understands Paloma's capabilities and current state.
 
@@ -114,7 +102,7 @@ When switching models mid-conversation, inject a context transfer message so the
 
 ---
 
-### 9. CLI-based sub-agent architecture
+### 8. CLI-based sub-agent architecture
 
 Spawn CLI tools (Claude Code, Codeium, Aider, etc.) as sub-agents for parallel work.
 
@@ -129,7 +117,7 @@ Spawn CLI tools (Claude Code, Codeium, Aider, etc.) as sub-agents for parallel w
 
 ---
 
-### 10. Chat phase
+### 9. Chat phase
 
 Add a freeform "Chat" phase for organic discovery and brainstorming — no rigid structure, ideas emerge naturally. Deprioritized in favor of making existing workflow solid first.
 
