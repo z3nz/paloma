@@ -75,6 +75,9 @@ function phaseColor(phase) {
 
 function formatModel(model) {
   if (!model) return ''
+  if (model.startsWith('claude-cli:')) {
+    return model.split(':').pop() + ' (CLI)'
+  }
   return model.split('/').pop()
 }
 

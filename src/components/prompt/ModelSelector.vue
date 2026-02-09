@@ -30,6 +30,22 @@
         />
       </div>
       <div class="max-h-64 overflow-y-auto">
+        <!-- Local CLI models -->
+        <template v-if="filteredCliModels.length">
+          <div class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">Local CLI</div>
+          <div
+            v-for="cliId in filteredCliModels"
+            :key="cliId"
+            @click="selectModel(cliId)"
+            class="px-3 py-2 text-sm cursor-pointer transition-colors"
+            :class="cliId === modelValue ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
+          >
+            {{ cliId.split(':').pop() }}
+            <span class="text-xs text-text-muted ml-1">CLI</span>
+          </div>
+        </template>
+        <!-- OpenRouter models -->
+        <div v-if="filteredModels.length" class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">OpenRouter</div>
         <div
           v-for="model in filteredModels"
           :key="model"
@@ -47,6 +63,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { CLI_MODELS, isCliModel } from '../../services/claudeStream.js'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -73,7 +90,18 @@ const popularModels = [
 
 const displayName = computed(() => {
   if (!props.modelValue) return 'Select model'
+  if (isCliModel(props.modelValue)) {
+    const cli = CLI_MODELS.find(m => m.id === props.modelValue)
+    return cli?.name || props.modelValue.split(':').pop() + ' (CLI)'
+  }
   return props.modelValue.split('/').pop()
+})
+
+const filteredCliModels = computed(() => {
+  const ids = CLI_MODELS.map(m => m.id)
+  if (!filter.value) return ids
+  const q = filter.value.toLowerCase()
+  return ids.filter(id => id.toLowerCase().includes(q) || CLI_MODELS.find(m => m.id === id)?.name.toLowerCase().includes(q))
 })
 
 const filteredModels = computed(() => {

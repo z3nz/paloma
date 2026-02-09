@@ -7,6 +7,7 @@ import { PHASE_INSTRUCTIONS } from '../prompts/phases.js'
 import { getAllTools, AUTO_EXECUTE_TOOLS, executeTool } from '../services/tools.js'
 import { useOpenRouter } from './useOpenRouter.js'
 import { useMCP, isMcpTool, parseMcpToolName } from './useMCP.js'
+import { isCliModel, getCliModelName, streamClaudeChat } from '../services/claudeStream.js'
 
 const _saved = import.meta.hot ? window.__PALOMA_CHAT__ : undefined
 
@@ -18,6 +19,7 @@ const toolActivity = ref(_saved?.toolActivity ?? [])
 const pendingToolConfirmation = ref(_saved?.pendingToolConfirmation ?? null)
 const contextWarning = ref(_saved?.contextWarning ?? null)
 let abortController = _saved?.abortController ?? null
+let cliRequestId = null
 
 if (import.meta.hot) {
   const save = () => {
@@ -34,6 +36,7 @@ if (import.meta.hot) {
   }
   save()
   watch([messages, streaming, streamingContent, error, toolActivity, pendingToolConfirmation, contextWarning], save, { flush: 'sync' })
+  import.meta.hot.accept()
 }
 
 const MAX_TOOL_ROUNDS = 25
@@ -125,163 +128,240 @@ export function useChat() {
       }
     }
 
-    // Stream response with tool loop
+    // Stream response
     streaming.value = true
     streamingContent.value = ''
     abortController = new AbortController()
-    const tools = dirHandle ? getAllTools(enabledMcpTools) : enabledMcpTools.length ? getAllTools(enabledMcpTools) : []
-    let continueLoop = true
-    let round = 0
 
     try {
-      while (continueLoop) {
-        if (round++ >= MAX_TOOL_ROUNDS) {
-          error.value = 'Tool call limit reached'
-          break
+      if (isCliModel(model)) {
+        // === CLI path: Claude Code handles its own tools and history ===
+        const { sendClaudeChat } = useMCP()
+
+        // Look up existing cliSessionId from the DB session
+        const session = await db.sessions.get(sessionId)
+        const existingCliSession = session?.cliSessionId || null
+        console.log(`[cli] ${existingCliSession ? 'Resuming' : 'New'} session, model=${model}`)
+
+        // Only send systemPrompt on first message (when no cliSessionId yet)
+        const cliOptions = {
+          prompt: fullContent,
+          model: getCliModelName(model),
+          sessionId: existingCliSession,
+          systemPrompt: existingCliSession ? undefined : buildSystemPrompt(phase, projectInstructions, activePlans),
+          cwd: undefined // bridge will use its own cwd
         }
-        continueLoop = false
+
         let accumulatedContent = ''
-        let toolCalls = null
         let usage = null
 
-        for await (const chunk of streamChat(apiKey, model, apiMessages,
-          { tools: tools.length ? tools : undefined })) {
+        for await (const chunk of streamClaudeChat(
+          (opts, cbs) => sendClaudeChat(opts, cbs),
+          cliOptions
+        )) {
           if (chunk.type === 'content') {
             accumulatedContent += chunk.text
             streamingContent.value = accumulatedContent
-          } else if (chunk.type === 'tool_calls') {
-            toolCalls = chunk.calls
           } else if (chunk.type === 'usage') {
             usage = chunk.usage
+          } else if (chunk.type === 'session_id') {
+            cliRequestId = chunk.requestId
+            // Persist cliSessionId so future messages resume the conversation
+            if (!existingCliSession && chunk.sessionId) {
+              await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId })
+            }
           }
         }
 
-        if (toolCalls?.length) {
-          // Save assistant message with tool calls
-          const assistantMsg = {
-            sessionId,
-            role: 'assistant',
-            content: accumulatedContent || null,
-            toolCalls,
-            usage,
-            model,
-            files: [],
-            timestamp: Date.now()
-          }
-          const assistantMsgId = await db.messages.add(assistantMsg)
-          assistantMsg.id = assistantMsgId
-          messages.value.push(assistantMsg)
-          apiMessages.push({
-            role: 'assistant',
-            content: accumulatedContent || null,
-            tool_calls: toolCalls
-          })
+        // Save assistant message
+        const assistantMsg = {
+          sessionId,
+          role: 'assistant',
+          content: accumulatedContent,
+          usage,
+          model,
+          files: [],
+          timestamp: Date.now()
+        }
+        const assistantMsgId = await db.messages.add(assistantMsg)
+        assistantMsg.id = assistantMsgId
+        messages.value.push(assistantMsg)
 
-          // Execute each tool call
-          for (const call of toolCalls) {
-            let args
-            try {
-              args = JSON.parse(call.function.arguments)
-            } catch {
-              args = {}
+        // Check context usage
+        if (usage) {
+          const { getModelInfo } = useOpenRouter()
+          const modelInfo = getModelInfo(model)
+          if (modelInfo?.context_length) {
+            const pct = (usage.totalTokens / modelInfo.context_length) * 100
+            if (pct >= 80) {
+              contextWarning.value = `Context ${Math.round(pct)}% full (${usage.totalTokens.toLocaleString()} / ${modelInfo.context_length.toLocaleString()} tokens). Consider starting a new session.`
+            } else {
+              contextWarning.value = null
             }
+          }
+        }
 
-            const toolName = call.function.name
-            let result
+        // Auto-generate title from first exchange
+        if (messages.value.filter(m => m.role === 'user').length === 1) {
+          return generateTitle(content)
+        }
+      } else {
+        // === OpenRouter path: existing behavior unchanged ===
+        const tools = dirHandle ? getAllTools(enabledMcpTools) : enabledMcpTools.length ? getAllTools(enabledMcpTools) : []
+        let continueLoop = true
+        let round = 0
 
-            const activityEntry = { name: toolName, args, status: 'running' }
-            toolActivity.value = [...toolActivity.value, activityEntry]
+        while (continueLoop) {
+          if (round++ >= MAX_TOOL_ROUNDS) {
+            error.value = 'Tool call limit reached'
+            break
+          }
+          continueLoop = false
+          let accumulatedContent = ''
+          let toolCalls = null
+          let usage = null
 
-            if (isMcpTool(toolName)) {
-              const { server } = parseMcpToolName(toolName)
-              if (mcpAutoExec.has(server)) {
+          for await (const chunk of streamChat(apiKey, model, apiMessages,
+            { tools: tools.length ? tools : undefined })) {
+            if (chunk.type === 'content') {
+              accumulatedContent += chunk.text
+              streamingContent.value = accumulatedContent
+            } else if (chunk.type === 'tool_calls') {
+              toolCalls = chunk.calls
+            } else if (chunk.type === 'usage') {
+              usage = chunk.usage
+            }
+          }
+
+          if (toolCalls?.length) {
+            // Save assistant message with tool calls
+            const assistantMsg = {
+              sessionId,
+              role: 'assistant',
+              content: accumulatedContent || null,
+              toolCalls,
+              usage,
+              model,
+              files: [],
+              timestamp: Date.now()
+            }
+            const assistantMsgId = await db.messages.add(assistantMsg)
+            assistantMsg.id = assistantMsgId
+            messages.value.push(assistantMsg)
+            apiMessages.push({
+              role: 'assistant',
+              content: accumulatedContent || null,
+              tool_calls: toolCalls
+            })
+
+            // Execute each tool call
+            for (const call of toolCalls) {
+              let args
+              try {
+                args = JSON.parse(call.function.arguments)
+              } catch {
+                args = {}
+              }
+
+              const toolName = call.function.name
+              let result
+
+              const activityEntry = { name: toolName, args, status: 'running' }
+              toolActivity.value = [...toolActivity.value, activityEntry]
+
+              if (isMcpTool(toolName)) {
+                const { server } = parseMcpToolName(toolName)
+                if (mcpAutoExec.has(server)) {
+                  try {
+                    result = await callMcpTool(toolName, args)
+                  } catch (e) {
+                    result = JSON.stringify({ error: e.message })
+                  }
+                } else {
+                  result = await requestToolConfirmation(toolName, args, dirHandle)
+                }
+              } else if (AUTO_EXECUTE_TOOLS.has(toolName)) {
                 try {
-                  result = await callMcpTool(toolName, args)
+                  result = await executeTool(toolName, args, dirHandle, searchFn)
                 } catch (e) {
                   result = JSON.stringify({ error: e.message })
                 }
               } else {
+                // Write tool — needs confirmation
                 result = await requestToolConfirmation(toolName, args, dirHandle)
               }
-            } else if (AUTO_EXECUTE_TOOLS.has(toolName)) {
-              try {
-                result = await executeTool(toolName, args, dirHandle, searchFn)
-              } catch (e) {
-                result = JSON.stringify({ error: e.message })
+
+              activityEntry.status = 'done'
+              toolActivity.value = [...toolActivity.value]
+
+              // Save tool result message
+              const toolMsg = {
+                sessionId,
+                role: 'tool',
+                toolCallId: call.id,
+                toolName,
+                toolArgs: args,
+                content: typeof result === 'string' ? result : JSON.stringify(result),
+                timestamp: Date.now()
               }
-            } else {
-              // Write tool — needs confirmation
-              result = await requestToolConfirmation(toolName, args, dirHandle)
+              const toolMsgId = await db.messages.add(toolMsg)
+              toolMsg.id = toolMsgId
+              messages.value.push(toolMsg)
+              apiMessages.push({
+                role: 'tool',
+                tool_call_id: call.id,
+                content: toolMsg.content
+              })
             }
 
-            activityEntry.status = 'done'
-            toolActivity.value = [...toolActivity.value]
-
-            // Save tool result message
-            const toolMsg = {
+            // Reset for next round
+            streamingContent.value = ''
+            continueLoop = true
+          } else {
+            // Final assistant message (no tool calls)
+            const assistantMsg = {
               sessionId,
-              role: 'tool',
-              toolCallId: call.id,
-              toolName,
-              toolArgs: args,
-              content: typeof result === 'string' ? result : JSON.stringify(result),
+              role: 'assistant',
+              content: accumulatedContent,
+              usage,
+              model,
+              files: [],
               timestamp: Date.now()
             }
-            const toolMsgId = await db.messages.add(toolMsg)
-            toolMsg.id = toolMsgId
-            messages.value.push(toolMsg)
-            apiMessages.push({
-              role: 'tool',
-              tool_call_id: call.id,
-              content: toolMsg.content
-            })
-          }
+            const assistantMsgId = await db.messages.add(assistantMsg)
+            assistantMsg.id = assistantMsgId
+            messages.value.push(assistantMsg)
 
-          // Reset for next round
-          streamingContent.value = ''
-          continueLoop = true
-        } else {
-          // Final assistant message (no tool calls)
-          const assistantMsg = {
-            sessionId,
-            role: 'assistant',
-            content: accumulatedContent,
-            usage,
-            model,
-            files: [],
-            timestamp: Date.now()
-          }
-          const assistantMsgId = await db.messages.add(assistantMsg)
-          assistantMsg.id = assistantMsgId
-          messages.value.push(assistantMsg)
-
-          // Check context usage and set warning
-          if (usage) {
-            const { getModelInfo } = useOpenRouter()
-            const modelInfo = getModelInfo(model)
-            if (modelInfo?.context_length) {
-              const pct = (usage.totalTokens / modelInfo.context_length) * 100
-              if (pct >= 80) {
-                contextWarning.value = `Context ${Math.round(pct)}% full (${usage.totalTokens.toLocaleString()} / ${modelInfo.context_length.toLocaleString()} tokens). Consider starting a new session.`
-              } else {
-                contextWarning.value = null
+            // Check context usage and set warning
+            if (usage) {
+              const { getModelInfo } = useOpenRouter()
+              const modelInfo = getModelInfo(model)
+              if (modelInfo?.context_length) {
+                const pct = (usage.totalTokens / modelInfo.context_length) * 100
+                if (pct >= 80) {
+                  contextWarning.value = `Context ${Math.round(pct)}% full (${usage.totalTokens.toLocaleString()} / ${modelInfo.context_length.toLocaleString()} tokens). Consider starting a new session.`
+                } else {
+                  contextWarning.value = null
+                }
               }
             }
-          }
 
-          // Auto-generate title from first exchange
-          if (messages.value.filter(m => m.role === 'user').length === 1) {
-            return generateTitle(content)
+            // Auto-generate title from first exchange
+            if (messages.value.filter(m => m.role === 'user').length === 1) {
+              return generateTitle(content)
+            }
           }
         }
       }
     } catch (e) {
+      console.error(`[chat] error:`, e.message)
       error.value = e.message
     } finally {
       streaming.value = false
       streamingContent.value = ''
       toolActivity.value = []
       abortController = null
+      cliRequestId = null
     }
 
     return null
@@ -313,6 +393,11 @@ export function useChat() {
   }
 
   function stopStreaming() {
+    if (cliRequestId) {
+      const { stopClaudeChat } = useMCP()
+      stopClaudeChat(cliRequestId)
+      cliRequestId = null
+    }
     if (abortController) {
       abortController.abort()
       abortController = null

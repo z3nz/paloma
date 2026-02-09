@@ -7,8 +7,12 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    hmr: {
+      // Prevent full-page reloads — only apply HMR updates or do nothing
+      overlay: true
+    },
     watch: {
-      ignored: ['**/node_modules/**', '**/.git/**']
+      ignored: ['**/node_modules/**', '**/.git/**', '**/bridge/**', '**/.claude/**']
     }
   }
 })

@@ -1,10 +1,12 @@
 import { WebSocketServer } from 'ws'
 import { loadConfig } from './config.js'
 import { McpManager } from './mcp-manager.js'
+import { ClaudeCliManager } from './claude-cli.js'
 
 const port = parseInt(process.argv.find((_, i, a) => a[i - 1] === '--port') || '19191', 10)
 
 const manager = new McpManager()
+const cliManager = new ClaudeCliManager()
 
 async function main() {
   const servers = await loadConfig()
@@ -41,6 +43,23 @@ async function main() {
         } catch (e) {
           ws.send(JSON.stringify({ type: 'error', id: msg.id, message: e.message }))
         }
+      } else if (msg.type === 'claude_chat') {
+        const { requestId, sessionId } = cliManager.chat(
+          {
+            prompt: msg.prompt,
+            model: msg.model,
+            sessionId: msg.sessionId,
+            systemPrompt: msg.systemPrompt,
+            cwd: msg.cwd
+          },
+          (event) => {
+            if (ws.readyState !== 1) return // OPEN
+            ws.send(JSON.stringify({ ...event, id: msg.id }))
+          }
+        )
+        ws.send(JSON.stringify({ type: 'claude_ack', id: msg.id, requestId, sessionId }))
+      } else if (msg.type === 'claude_stop') {
+        cliManager.stop(msg.requestId)
       } else {
         ws.send(JSON.stringify({ type: 'error', id: msg.id, message: `Unknown message type: ${msg.type}` }))
       }
@@ -52,6 +71,7 @@ async function main() {
   // Graceful shutdown
   const shutdown = async () => {
     console.log('\nShutting down...')
+    cliManager.shutdown()
     await manager.shutdown()
     wss.close()
     process.exit(0)

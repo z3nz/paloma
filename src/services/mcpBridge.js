@@ -7,6 +7,7 @@ export function createMcpBridge() {
   let reconnectTimer = null
   let intentionalClose = false
   const pending = new Map() // id -> { resolve, reject }
+  const streamListeners = new Map() // id -> { onStream, onDone, onError }
   let onStateChange = null
   let onToolsUpdate = null
 
@@ -60,6 +61,33 @@ export function createMcpBridge() {
           pending.delete(msg.id)
           p.resolve({ content: msg.content, isError: msg.isError })
         }
+      } else if (msg.type === 'claude_ack' && msg.id) {
+        const p = pending.get(msg.id)
+        if (p) {
+          pending.delete(msg.id)
+          p.resolve({ requestId: msg.requestId, sessionId: msg.sessionId })
+        }
+      } else if (msg.type === 'claude_stream' && msg.id) {
+        const listener = streamListeners.get(msg.id)
+        if (listener) {
+          listener.onStream?.(msg.event)
+        } else {
+          console.warn(`[cli] stream event with no listener: id=${msg.id}`)
+        }
+      } else if (msg.type === 'claude_done' && msg.id) {
+        console.log(`[cli] done: exitCode=${msg.exitCode}`)
+        const listener = streamListeners.get(msg.id)
+        if (listener) {
+          streamListeners.delete(msg.id)
+          listener.onDone?.(msg.sessionId, msg.exitCode)
+        }
+      } else if (msg.type === 'claude_error' && msg.id) {
+        console.error(`[cli] error:`, msg.error)
+        const listener = streamListeners.get(msg.id)
+        if (listener) {
+          streamListeners.delete(msg.id)
+          listener.onError?.(msg.error)
+        }
       } else if (msg.type === 'error' && msg.id) {
         const p = pending.get(msg.id)
         if (p) {
@@ -76,6 +104,11 @@ export function createMcpBridge() {
       for (const [id, p] of pending) {
         p.reject(new Error('Bridge connection lost'))
         pending.delete(id)
+      }
+      // Error all stream listeners
+      for (const [id, listener] of streamListeners) {
+        listener.onError?.('Bridge connection lost')
+        streamListeners.delete(id)
       }
       if (!intentionalClose) _scheduleReconnect()
     }
@@ -131,7 +164,36 @@ export function createMcpBridge() {
     })
   }
 
-  return { connect, disconnect, discover, callTool, getState }
+  function sendClaudeChat(options, callbacks) {
+    const id = crypto.randomUUID()
+    streamListeners.set(id, {
+      onStream: callbacks.onStream,
+      onDone: callbacks.onDone,
+      onError: callbacks.onError
+    })
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject })
+      _send({
+        type: 'claude_chat',
+        id,
+        prompt: options.prompt,
+        model: options.model,
+        sessionId: options.sessionId,
+        systemPrompt: options.systemPrompt,
+        cwd: options.cwd
+      }).catch((e) => {
+        pending.delete(id)
+        streamListeners.delete(id)
+        reject(e)
+      })
+    })
+  }
+
+  function stopClaudeChat(requestId) {
+    _send({ type: 'claude_stop', requestId })
+  }
+
+  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, getState }
 }
 
 // Enable HMR boundary — errors here don't cascade to full reload

@@ -1,5 +1,6 @@
 import { ref, watch } from 'vue'
 import { fetchModels as fetchModelsApi, validateApiKey as validateApi } from '../services/openrouter.js'
+import { CLI_MODELS, isCliModel } from '../services/claudeStream.js'
 
 const _saved = import.meta.hot ? window.__PALOMA_OPENROUTER__ : undefined
 
@@ -17,6 +18,7 @@ if (import.meta.hot) {
   }
   save()
   watch([models, loadingModels, modelsError], save, { flush: 'sync' })
+  import.meta.hot.accept()
 }
 
 // Curated popular models shown at top
@@ -60,11 +62,18 @@ export function useOpenRouter() {
   }
 
   function getModelName(id) {
+    if (isCliModel(id)) {
+      const cli = CLI_MODELS.find(m => m.id === id)
+      return cli?.name || id.split(':').pop() + ' (CLI)'
+    }
     const model = models.value.find(m => m.id === id)
     return model?.name || id.split('/').pop()
   }
 
   function getModelInfo(id) {
+    if (isCliModel(id)) {
+      return CLI_MODELS.find(m => m.id === id) || null
+    }
     return models.value.find(m => m.id === id) || null
   }
 

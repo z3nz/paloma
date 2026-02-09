@@ -27,6 +27,7 @@ if (import.meta.hot) {
   }
   save()
   watch([connected, connectionState, servers, bridgeUrl, autoConnect], save, { flush: 'sync' })
+  import.meta.hot.accept()
 }
 
 // Flatten all server tools into OpenRouter format
@@ -115,6 +116,15 @@ export function useMCP() {
     connect()
   }
 
+  function sendClaudeChat(options, callbacks) {
+    if (!bridge || !connected.value) throw new Error('Bridge not connected')
+    return bridge.sendClaudeChat(options, callbacks)
+  }
+
+  function stopClaudeChat(requestId) {
+    if (bridge) bridge.stopClaudeChat(requestId)
+  }
+
   return {
     connected,
     connectionState,
@@ -126,6 +136,8 @@ export function useMCP() {
     disconnect,
     refreshTools,
     callMcpTool,
+    sendClaudeChat,
+    stopClaudeChat,
     getEnabledTools,
     getAutoExecuteServers
   }
