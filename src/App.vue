@@ -110,7 +110,7 @@ import { useOpenRouter } from './composables/useOpenRouter.js'
 import { useChanges } from './composables/useChanges.js'
 
 const { apiKey, defaultModel } = useSettings()
-const { dirHandle, projectName, needsReconnect, openProject, tryAutoRecover, getHashSessionId, syncHash } = useProject()
+const { dirHandle, projectName, needsReconnect, openProject, tryAutoRecover, resolveRoot, getHashSessionId, syncHash } = useProject()
 const { files, buildIndex, updatePaths } = useFileIndex()
 const { sessions, activeSessionId, loadSessions, createSession, updateSession, deleteSession, setActiveSession } = useSessions()
 const { models, loadModels } = useOpenRouter()
@@ -136,6 +136,8 @@ onMounted(async () => {
       if (handle) {
         buildIndex(handle)
         await loadSessions(handle.name)
+        // Resolve filesystem path for CLI cwd (non-blocking)
+        resolveRoot()
         // Restore session from URL hash if available
         const hashSessionId = getHashSessionId()
         if (hashSessionId && sessions.value.some(s => s.id === hashSessionId)) {
@@ -179,6 +181,8 @@ async function handleOpenProject() {
     const handle = await openProject()
     // File indexing runs in background — don't block chat loading
     buildIndex(handle)
+    // Resolve filesystem path for CLI cwd (non-blocking)
+    resolveRoot()
     await loadSessions(handle.name)
   } catch (e) {
     if (e.name !== 'AbortError') {

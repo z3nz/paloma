@@ -94,6 +94,12 @@ export function createMcpBridge() {
           streamListeners.delete(msg.id)
           listener.onError?.(msg.error)
         }
+      } else if (msg.type === 'resolved_path' && msg.id) {
+        const p = pending.get(msg.id)
+        if (p) {
+          pending.delete(msg.id)
+          p.resolve(msg.path)
+        }
       } else if (msg.type === 'error' && msg.id) {
         const p = pending.get(msg.id)
         if (p) {
@@ -210,7 +216,18 @@ export function createMcpBridge() {
     })
   }
 
-  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, exportChats, getState }
+  function resolveProjectPath(name) {
+    const id = crypto.randomUUID()
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject })
+      _send({ type: 'resolve_path', id, name }).catch((e) => {
+        pending.delete(id)
+        reject(e)
+      })
+    })
+  }
+
+  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, exportChats, resolveProjectPath, getState }
 }
 
 // Enable HMR boundary — errors here don't cascade to full reload

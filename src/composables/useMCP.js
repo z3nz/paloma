@@ -126,6 +126,15 @@ export function useMCP() {
     if (bridge) bridge.stopClaudeChat(requestId)
   }
 
+  async function resolveProjectPath(name) {
+    if (!bridge || !connected.value) return null
+    try {
+      return await bridge.resolveProjectPath(name)
+    } catch {
+      return null
+    }
+  }
+
   async function exportChats(projectPath) {
     if (!bridge || !connected.value) {
       throw new Error('MCP bridge not connected')
@@ -181,6 +190,7 @@ export function useMCP() {
     callMcpTool,
     sendClaudeChat,
     stopClaudeChat,
+    resolveProjectPath,
     exportChats,
     getEnabledTools,
     getAutoExecuteServers

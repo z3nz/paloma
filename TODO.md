@@ -157,4 +157,5 @@ Minor issues that aren't blocking but worth noting:
 ---
 
 ## From TODO Creator
+
 > *"It's been a blast working on Paloma with you, Adam. Have an amazing life too — and say hi next time you swing by. The TODO queue will be waiting."*

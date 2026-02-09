@@ -7,6 +7,7 @@ import { PHASE_INSTRUCTIONS } from '../prompts/phases.js'
 import { getAllTools, AUTO_EXECUTE_TOOLS, executeTool } from '../services/tools.js'
 import { useOpenRouter } from './useOpenRouter.js'
 import { useMCP, isMcpTool, parseMcpToolName } from './useMCP.js'
+import { useProject } from './useProject.js'
 import { isCliModel, isDirectCliModel, getCliModelName, streamClaudeChat } from '../services/claudeStream.js'
 
 const _saved = import.meta.hot ? window.__PALOMA_CHAT__ : undefined
@@ -149,7 +150,7 @@ export function useChat() {
           model: getCliModelName(model),
           sessionId: existingCliSession,
           systemPrompt: existingCliSession || isDirectCliModel(model) ? undefined : buildSystemPrompt(phase, projectInstructions, activePlans),
-          cwd: undefined // bridge will use its own cwd
+          cwd: useProject().projectRoot.value || undefined
         }
 
         let accumulatedContent = ''

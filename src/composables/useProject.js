@@ -81,6 +81,7 @@ if (!initialProjectName && hashState.project) {
 
 const dirHandle = shallowRef(_saved?.dirHandle ?? null)
 const projectName = ref(initialProjectName)
+const projectRoot = ref(_saved?.projectRoot ?? null)
 const projectInstructions = ref(_saved?.projectInstructions ?? null)
 const activePlans = ref(_saved?.activePlans ?? [])
 const mcpConfig = ref(_saved?.mcpConfig ?? null)
@@ -108,13 +109,14 @@ if (import.meta.hot) {
     window.__PALOMA_PROJECT__ = {
       dirHandle: dirHandle.value,
       projectName: projectName.value,
+      projectRoot: projectRoot.value,
       projectInstructions: projectInstructions.value,
       activePlans: activePlans.value,
       mcpConfig: mcpConfig.value
     }
   }
   save()
-  watch([dirHandle, projectName, projectInstructions, activePlans, mcpConfig], save, { flush: 'sync' })
+  watch([dirHandle, projectName, projectRoot, projectInstructions, activePlans, mcpConfig], save, { flush: 'sync' })
 }
 
 export function useProject() {
@@ -162,9 +164,26 @@ export function useProject() {
     }
   }
 
+  /** Resolve the full filesystem path for the current project via the bridge */
+  async function resolveRoot() {
+    if (projectRoot.value) return projectRoot.value
+    try {
+      const { resolveProjectPath } = await import('./useMCP.js').then(m => m.useMCP())
+      const path = await resolveProjectPath(projectName.value)
+      if (path) {
+        projectRoot.value = path
+        console.log('[Project] Resolved root:', path)
+      }
+    } catch (e) {
+      console.warn('[Project] Failed to resolve root:', e)
+    }
+    return projectRoot.value
+  }
+
   function closeProject() {
     dirHandle.value = null
     projectName.value = ''
+    projectRoot.value = null
     projectInstructions.value = null
     activePlans.value = []
     mcpConfig.value = null
@@ -184,12 +203,14 @@ export function useProject() {
   return {
     dirHandle,
     projectName,
+    projectRoot,
     projectInstructions,
     activePlans,
     mcpConfig,
     needsReconnect,
     openProject,
     tryAutoRecover,
+    resolveRoot,
     closeProject,
     refreshActivePlans,
     getHashSessionId,

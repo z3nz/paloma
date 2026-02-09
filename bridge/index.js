@@ -1,6 +1,7 @@
 import { WebSocketServer } from 'ws'
-import { mkdir, writeFile } from 'fs/promises'
+import { mkdir, writeFile, readdir, stat } from 'fs/promises'
 import { join } from 'path'
+import { homedir } from 'os'
 import { loadConfig } from './config.js'
 import { McpManager } from './mcp-manager.js'
 import { ClaudeCliManager } from './claude-cli.js'
@@ -78,6 +79,33 @@ async function main() {
         } catch (e) {
           ws.send(JSON.stringify({ type: 'error', id: msg.id, message: e.message }))
         }
+      } else if (msg.type === 'resolve_path') {
+        // Find a directory by name under $HOME (max 3 levels deep)
+        const target = msg.name
+        let found = null
+        async function search(dir, depth) {
+          if (found || depth > 3) return
+          try {
+            const entries = await readdir(dir, { withFileTypes: true })
+            for (const entry of entries) {
+              if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+              const full = join(dir, entry.name)
+              if (entry.name === target) {
+                // Prefer directories that have .paloma/ (our projects)
+                try {
+                  await stat(join(full, '.paloma'))
+                  found = full
+                  return
+                } catch {
+                  if (!found) found = full
+                }
+              }
+              if (depth < 3) await search(full, depth + 1)
+            }
+          } catch { /* permission denied, etc */ }
+        }
+        await search(homedir(), 0)
+        ws.send(JSON.stringify({ type: 'resolved_path', id: msg.id, path: found }))
       } else if (msg.type === 'claude_stop') {
         cliManager.stop(msg.requestId)
       } else {
