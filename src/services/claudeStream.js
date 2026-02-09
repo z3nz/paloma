@@ -1,11 +1,18 @@
 export const CLI_MODELS = [
-  { id: 'claude-cli:opus', name: 'Claude Opus (CLI)', context_length: 200000 },
-  { id: 'claude-cli:sonnet', name: 'Claude Sonnet (CLI)', context_length: 200000 },
-  { id: 'claude-cli:haiku', name: 'Claude Haiku (CLI)', context_length: 200000 }
+  { id: 'claude-cli:opus', name: 'Claude Opus (CLI)', context_length: 200000, direct: false },
+  { id: 'claude-cli:sonnet', name: 'Claude Sonnet (CLI)', context_length: 200000, direct: false },
+  { id: 'claude-cli:haiku', name: 'Claude Haiku (CLI)', context_length: 200000, direct: false },
+  { id: 'claude-cli-direct:opus', name: 'Claude Opus (CLI Direct)', context_length: 200000, direct: true },
+  { id: 'claude-cli-direct:sonnet', name: 'Claude Sonnet (CLI Direct)', context_length: 200000, direct: true },
+  { id: 'claude-cli-direct:haiku', name: 'Claude Haiku (CLI Direct)', context_length: 200000, direct: true }
 ]
 
 export function isCliModel(modelId) {
-  return modelId?.startsWith('claude-cli:')
+  return modelId?.startsWith('claude-cli:') || modelId?.startsWith('claude-cli-direct:')
+}
+
+export function isDirectCliModel(modelId) {
+  return modelId?.startsWith('claude-cli-direct:')
 }
 
 export function getCliModelName(modelId) {

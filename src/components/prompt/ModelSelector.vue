@@ -30,18 +30,32 @@
         />
       </div>
       <div class="max-h-64 overflow-y-auto">
-        <!-- Local CLI models -->
-        <template v-if="filteredCliModels.length">
-          <div class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">Local CLI</div>
+        <!-- Local CLI models (Paloma identity) -->
+        <template v-if="filteredPalomaModels.length">
+          <div class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">Paloma (CLI)</div>
           <div
-            v-for="cliId in filteredCliModels"
+            v-for="cliId in filteredPalomaModels"
             :key="cliId"
             @click="selectModel(cliId)"
             class="px-3 py-2 text-sm cursor-pointer transition-colors"
             :class="cliId === modelValue ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
           >
             {{ cliId.split(':').pop() }}
-            <span class="text-xs text-text-muted ml-1">CLI</span>
+            <span class="text-xs text-text-muted ml-1">Paloma</span>
+          </div>
+        </template>
+        <!-- Direct CLI models (raw Claude Code) -->
+        <template v-if="filteredDirectModels.length">
+          <div class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">Claude Code (Direct)</div>
+          <div
+            v-for="cliId in filteredDirectModels"
+            :key="cliId"
+            @click="selectModel(cliId)"
+            class="px-3 py-2 text-sm cursor-pointer transition-colors"
+            :class="cliId === modelValue ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
+          >
+            {{ cliId.split(':').pop() }}
+            <span class="text-xs text-text-muted ml-1">Direct</span>
           </div>
         </template>
         <!-- OpenRouter models -->
@@ -97,8 +111,15 @@ const displayName = computed(() => {
   return props.modelValue.split('/').pop()
 })
 
-const filteredCliModels = computed(() => {
-  const ids = CLI_MODELS.map(m => m.id)
+const filteredPalomaModels = computed(() => {
+  const ids = CLI_MODELS.filter(m => !m.direct).map(m => m.id)
+  if (!filter.value) return ids
+  const q = filter.value.toLowerCase()
+  return ids.filter(id => id.toLowerCase().includes(q) || CLI_MODELS.find(m => m.id === id)?.name.toLowerCase().includes(q))
+})
+
+const filteredDirectModels = computed(() => {
+  const ids = CLI_MODELS.filter(m => m.direct).map(m => m.id)
   if (!filter.value) return ids
   const q = filter.value.toLowerCase()
   return ids.filter(id => id.toLowerCase().includes(q) || CLI_MODELS.find(m => m.id === id)?.name.toLowerCase().includes(q))
