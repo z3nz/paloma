@@ -163,8 +163,8 @@ Chat phase is where:
 
 Without Chat, Paloma is a tool. With Chat, Paloma is a partner.
 
-### 3. Interactive Claude Code Bridge (NEXT BREAKTHROUGH)
-**STATUS: DISCOVERY IN PROGRESS - PROTOTYPE WORKING**
+### 3. Interactive Claude Code Bridge
+**STATUS: COMPLETE**
 
 **The Origin Story:**
 During the first test of Paloma's CLI bridge, a "glitch" occurred: the system prompt failed to pass through, and Adam found himself talking directly to Claude Code (Opus) through Paloma's UI — not Paloma-as-identity, but the raw agentic Claude with full tool access. The experience was so powerful that it became a feature request on the spot.
@@ -461,6 +461,7 @@ These are covered in detail in ROADMAP.md:
 
 ## 🔄 Completed Recently
 
+- [x] Interactive Claude Code Bridge — full interactive tool approval flow through Paloma UI
 - [x] Claude CLI bridge — spawn local Claude Code from Paloma UI
 - [x] CLI Direct models — talk to raw Claude Code without Paloma identity overlay
 - [x] Model selector split into Paloma (CLI) / Claude Code (Direct) / OpenRouter groups

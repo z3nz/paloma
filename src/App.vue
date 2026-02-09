@@ -1,11 +1,19 @@
 <template>
+  <!-- Auto-recovering (brief flash while checking IndexedDB for stored handle) -->
+  <div
+    v-if="recovering"
+    class="h-screen flex items-center justify-center bg-bg-primary"
+  >
+    <p class="text-text-muted text-sm animate-pulse">Restoring session...</p>
+  </div>
+
   <!-- Welcome / Setup (only if no API key OR no dirHandle and no need to reconnect) -->
   <WelcomeScreen
-    v-if="!apiKey || (!dirHandle && !needsReconnect)"
+    v-else-if="!apiKey || (!dirHandle && !needsReconnect)"
     @open-project="handleOpenProject"
   />
 
-  <!-- Reconnect prompt (full reload recovery) -->
+  <!-- Reconnect prompt (full reload recovery — only shown if auto-recover failed) -->
   <div
     v-else-if="needsReconnect"
     class="h-screen flex items-center justify-center bg-bg-primary"
@@ -55,7 +63,7 @@
 
     <template #right-sidebar>
       <ChangesPanel
-        v-if="pendingChanges.length > 0"
+        v-if="hasPendingChanges || pendingChanges.some(c => c.status === 'error')"
         :pending-changes="pendingChanges"
         :has-pending-changes="hasPendingChanges"
         :pending-count="pendingCount"
@@ -87,7 +95,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import WelcomeScreen from './components/welcome/WelcomeScreen.vue'
 import AppLayout from './components/layout/AppLayout.vue'
 import ChatView from './components/chat/ChatView.vue'
@@ -102,7 +110,7 @@ import { useOpenRouter } from './composables/useOpenRouter.js'
 import { useChanges } from './composables/useChanges.js'
 
 const { apiKey, defaultModel } = useSettings()
-const { dirHandle, projectName, needsReconnect, openProject } = useProject()
+const { dirHandle, projectName, needsReconnect, openProject, tryAutoRecover, getHashSessionId, syncHash } = useProject()
 const { files, buildIndex, updatePaths } = useFileIndex()
 const { sessions, activeSessionId, loadSessions, createSession, updateSession, deleteSession, setActiveSession } = useSessions()
 const { models, loadModels } = useOpenRouter()
@@ -113,10 +121,42 @@ const {
 
 const showSettings = ref(false)
 const diffModalChange = ref(null)
+const recovering = ref(false)
 
 const activeSession = computed(() =>
   sessions.value.find(s => s.id === activeSessionId.value) || null
 )
+
+// --- Auto-recovery on mount ---
+onMounted(async () => {
+  if (needsReconnect.value && apiKey.value) {
+    recovering.value = true
+    try {
+      const handle = await tryAutoRecover()
+      if (handle) {
+        buildIndex(handle)
+        await loadSessions(handle.name)
+        // Restore session from URL hash if available
+        const hashSessionId = getHashSessionId()
+        if (hashSessionId && sessions.value.some(s => s.id === hashSessionId)) {
+          setActiveSession(hashSessionId)
+        }
+      }
+    } catch (e) {
+      console.warn('[Recovery] Auto-recover failed:', e)
+    } finally {
+      recovering.value = false
+    }
+  }
+})
+
+// --- URL hash sync ---
+// Keep hash in sync whenever project or active session changes
+watch([projectName, activeSessionId], ([name, sid]) => {
+  if (name && dirHandle.value) {
+    syncHash(sid)
+  }
+})
 
 // Load models when API key is available
 watch(apiKey, (key) => {

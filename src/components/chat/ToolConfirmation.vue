@@ -1,9 +1,9 @@
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center" @click.self="$emit('deny')">
     <div class="absolute inset-0 bg-black/60" @click="$emit('deny')"></div>
-    <div class="relative bg-bg-secondary border border-border rounded-lg w-full max-w-lg mx-4 shadow-2xl">
+    <div class="relative bg-bg-secondary border border-border rounded-lg w-full max-w-lg mx-4 shadow-2xl max-h-[80vh] flex flex-col">
       <!-- Header -->
-      <div class="flex items-center justify-between px-6 py-4 border-b border-border">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
         <div class="flex items-center gap-3">
           <span
             class="text-xs font-medium uppercase tracking-wider px-2 py-0.5 rounded"
@@ -24,7 +24,7 @@
       </div>
 
       <!-- Body -->
-      <div class="px-6 py-5">
+      <div class="px-6 py-5 overflow-y-auto min-h-0">
         <p class="text-sm text-text-secondary">{{ description }}</p>
         <div
           v-if="confirmation.toolName === 'createFile' && confirmation.args.content"
@@ -41,7 +41,7 @@
       </div>
 
       <!-- Footer -->
-      <div class="flex justify-end gap-2 px-6 py-4 border-t border-border">
+      <div class="flex justify-end gap-2 px-6 py-4 border-t border-border shrink-0">
         <button
           @click="$emit('deny')"
           class="px-4 py-2 text-sm text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors"

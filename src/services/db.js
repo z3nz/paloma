@@ -13,6 +13,13 @@ db.version(2).stores({
   drafts: 'sessionId'
 })
 
+db.version(3).stores({
+  sessions: '++id, projectPath, updatedAt',
+  messages: '++id, sessionId, timestamp',
+  drafts: 'sessionId',
+  projectHandles: 'name'
+})
+
 export default db
 
 // Enable HMR boundary — errors here don't cascade to full reload
