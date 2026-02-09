@@ -1,5 +1,5 @@
 import { ref, shallowRef, watch, computed } from 'vue'
-import { openProject as openDir, readProjectInstructions, readActivePlans, readMcpConfig } from '../services/filesystem.js'
+import { openProject as openDir, ensurePalomaDir, readProjectInstructions, readActivePlans, readMcpConfig } from '../services/filesystem.js'
 import db from '../services/db.js'
 
 const _saved = import.meta.hot ? window.__PALOMA_PROJECT__ : undefined
@@ -122,6 +122,7 @@ export function useProject() {
     const handle = await openDir()
     dirHandle.value = handle
     projectName.value = handle.name
+    await ensurePalomaDir(handle)
     const [instructions, plans, mcp] = await Promise.all([
       readProjectInstructions(handle),
       readActivePlans(handle),
@@ -142,6 +143,7 @@ export function useProject() {
     const handle = await recoverHandle(name)
     if (!handle) return null
     dirHandle.value = handle
+    await ensurePalomaDir(handle)
     const [instructions, plans, mcp] = await Promise.all([
       readProjectInstructions(handle),
       readActivePlans(handle),

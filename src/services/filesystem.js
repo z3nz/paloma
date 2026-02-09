@@ -35,6 +35,35 @@ export async function readGitignore(dirHandle) {
   }
 }
 
+export async function ensurePalomaDir(dirHandle) {
+  try {
+    const paloma = await dirHandle.getDirectoryHandle('.paloma', { create: true })
+    const plans = await paloma.getDirectoryHandle('plans', { create: true })
+    await plans.getDirectoryHandle('active', { create: true })
+    await plans.getDirectoryHandle('completed', { create: true })
+    await plans.getDirectoryHandle('archived', { create: true })
+    // Create default files only if they don't exist
+    try {
+      await paloma.getFileHandle('instructions.md')
+    } catch {
+      const f = await paloma.getFileHandle('instructions.md', { create: true })
+      const w = await f.createWritable()
+      await w.write('# Project Instructions\n\nAdd project-specific instructions for Paloma here.\n')
+      await w.close()
+    }
+    try {
+      await paloma.getFileHandle('mcp.json')
+    } catch {
+      const f = await paloma.getFileHandle('mcp.json', { create: true })
+      const w = await f.createWritable()
+      await w.write('{\n  "enabled": [],\n  "autoExecute": []\n}\n')
+      await w.close()
+    }
+  } catch (e) {
+    console.warn('[Filesystem] Failed to create .paloma/ structure:', e)
+  }
+}
+
 export async function readProjectInstructions(dirHandle) {
   try {
     const palomaDir = await dirHandle.getDirectoryHandle('.paloma')
