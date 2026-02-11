@@ -110,6 +110,15 @@ function scrollToBottom(behavior = 'smooth') {
 const streamingHtmlThrottled = ref('<span class="streaming-cursor"></span>')
 let throttleTimer = null
 
+function renderAndScroll() {
+  streamingHtmlThrottled.value = marked.parse(props.streamingContent, { breaks: true }) + '<span class="streaming-cursor"></span>'
+  // Scroll after render, using instant during streaming to avoid
+  // smooth-scroll animation setting isNearBottom=false mid-flight
+  if (isNearBottom.value) {
+    scrollToBottom('instant')
+  }
+}
+
 watch(
   () => props.streamingContent,
   (content) => {
@@ -120,7 +129,7 @@ watch(
     if (throttleTimer) return
     throttleTimer = setTimeout(() => {
       throttleTimer = null
-      streamingHtmlThrottled.value = marked.parse(props.streamingContent, { breaks: true }) + '<span class="streaming-cursor"></span>'
+      renderAndScroll()
     }, 150)
   }
 )
@@ -134,7 +143,7 @@ watch(
         clearTimeout(throttleTimer)
         throttleTimer = null
       }
-      streamingHtmlThrottled.value = marked.parse(props.streamingContent, { breaks: true }) + '<span class="streaming-cursor"></span>'
+      renderAndScroll()
     }
   }
 )
@@ -155,12 +164,12 @@ watch(
   }
 )
 
-// Scroll during streaming only if user is near bottom
+// Scroll when tool activity changes (new tools appear below streaming content)
 watch(
-  () => props.streamingContent,
-  () => {
-    if (isNearBottom.value) {
-      scrollToBottom()
+  () => props.toolActivity.length,
+  (newLen, oldLen) => {
+    if (newLen > oldLen && isNearBottom.value) {
+      scrollToBottom('instant')
     }
   }
 )

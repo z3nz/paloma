@@ -2,14 +2,23 @@ import { WebSocketServer } from 'ws'
 import { mkdir, writeFile, readdir, stat } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
+import { randomUUID } from 'crypto'
 import { loadConfig } from './config.js'
 import { McpManager } from './mcp-manager.js'
 import { ClaudeCliManager } from './claude-cli.js'
+import { McpProxyServer } from './mcp-proxy-server.js'
 
 const port = parseInt(process.argv.find((_, i, a) => a[i - 1] === '--port') || '19191', 10)
+const proxyPort = 19192
 
 const manager = new McpManager()
 const cliManager = new ClaudeCliManager()
+let mcpProxy = null
+
+// Pending ask_user requests: id → { resolve }
+const pendingAskUser = new Map()
+// Pending tool confirmation requests: id → { resolve }
+const pendingToolConfirm = new Map()
 
 async function main() {
   const servers = await loadConfig()
@@ -17,6 +26,37 @@ async function main() {
 
   const wss = new WebSocketServer({ port })
   console.log(`MCP Bridge listening on ws://localhost:${port}`)
+
+  function broadcast(msg) {
+    const data = JSON.stringify(msg)
+    for (const client of wss.clients) {
+      if (client.readyState === 1) client.send(data)
+    }
+  }
+
+  // Start MCP proxy server for CLI tool access
+  mcpProxy = new McpProxyServer(manager, {
+    port: proxyPort,
+    onToolConfirmation(toolName, args) {
+      const id = randomUUID()
+      broadcast({ type: 'cli_tool_confirmation', id, toolName, args })
+      return new Promise(resolve => {
+        pendingToolConfirm.set(id, { resolve })
+      })
+    },
+    onToolActivity(toolName, args, status) {
+      broadcast({ type: 'cli_tool_activity', toolName, args, status })
+    },
+    onAskUser(question, options) {
+      const id = randomUUID()
+      broadcast({ type: 'ask_user', id, question, options })
+      return new Promise(resolve => {
+        pendingAskUser.set(id, { resolve })
+      })
+    }
+  })
+  await mcpProxy.start()
+  cliManager.mcpProxyPort = proxyPort
 
   wss.on('connection', (ws) => {
     console.log('Client connected')
@@ -108,6 +148,22 @@ async function main() {
         ws.send(JSON.stringify({ type: 'resolved_path', id: msg.id, path: found }))
       } else if (msg.type === 'claude_stop') {
         cliManager.stop(msg.requestId)
+      } else if (msg.type === 'ask_user_response') {
+        const pending = pendingAskUser.get(msg.id)
+        if (pending) {
+          pendingAskUser.delete(msg.id)
+          pending.resolve(msg.answer)
+        }
+      } else if (msg.type === 'tool_confirmation_response') {
+        const pending = pendingToolConfirm.get(msg.id)
+        if (pending) {
+          pendingToolConfirm.delete(msg.id)
+          pending.resolve({
+            approved: msg.approved,
+            reason: msg.reason,
+            result: msg.result
+          })
+        }
       } else {
         ws.send(JSON.stringify({ type: 'error', id: msg.id, message: `Unknown message type: ${msg.type}` }))
       }
@@ -120,6 +176,7 @@ async function main() {
   const shutdown = async () => {
     console.log('\nShutting down...')
     cliManager.shutdown()
+    if (mcpProxy) await mcpProxy.shutdown()
     await manager.shutdown()
     wss.close()
     process.exit(0)

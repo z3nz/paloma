@@ -41,47 +41,103 @@
       </div>
 
       <!-- Footer -->
-      <div class="flex justify-end gap-2 px-6 py-4 border-t border-border shrink-0">
+      <div class="flex items-center justify-between px-6 py-4 border-t border-border shrink-0">
         <button
           @click="$emit('deny')"
           class="px-4 py-2 text-sm text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors"
         >
           Deny
         </button>
-        <button
-          @click="$emit('allow')"
-          class="px-4 py-2 text-sm text-white rounded-md transition-colors"
-          :class="confirmation.toolName === 'deleteFile'
-            ? 'bg-danger/90 hover:bg-danger'
-            : isMcp ? 'bg-purple-600/90 hover:bg-purple-600'
-            : 'bg-success/90 hover:bg-success'"
-        >
-          Allow
-        </button>
+        <div class="flex items-center gap-2">
+          <!-- Session/project approve for server-backed tools -->
+          <div v-if="serverName" class="relative" ref="menuAnchor">
+            <button
+              @click="showMenu = !showMenu"
+              class="px-3 py-2 text-sm text-text-muted hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors flex items-center gap-1"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
+            <div
+              v-if="showMenu"
+              class="absolute bottom-full right-0 mb-1 bg-bg-primary border border-border rounded-md shadow-lg py-1 min-w-[220px] z-10"
+            >
+              <button
+                @click="showMenu = false; $emit('allow-session', serverName)"
+                class="w-full text-left px-4 py-2 text-sm text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+              >
+                Allow <span class="font-mono text-accent">{{ serverName }}</span> for session
+              </button>
+              <button
+                @click="showMenu = false; $emit('allow-always', serverName)"
+                class="w-full text-left px-4 py-2 text-sm text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+              >
+                Always allow <span class="font-mono text-accent">{{ serverName }}</span>
+              </button>
+            </div>
+          </div>
+          <button
+            @click="$emit('allow')"
+            class="px-4 py-2 text-sm text-white rounded-md transition-colors"
+            :class="confirmation.toolName === 'deleteFile'
+              ? 'bg-danger/90 hover:bg-danger'
+              : isExternalTool ? 'bg-purple-600/90 hover:bg-purple-600'
+              : 'bg-success/90 hover:bg-success'"
+          >
+            Allow
+          </button>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { extractServerName } from '../../composables/usePermissions.js'
 
 const props = defineProps({
   confirmation: { type: Object, required: true }
 })
 
-defineEmits(['allow', 'deny'])
+defineEmits(['allow', 'deny', 'allow-session', 'allow-always'])
+
+const showMenu = ref(false)
+const menuAnchor = ref(null)
+
+// Close menu on outside click
+function handleClickOutside(e) {
+  if (menuAnchor.value && !menuAnchor.value.contains(e.target)) {
+    showMenu.value = false
+  }
+}
+
+onMounted(() => document.addEventListener('click', handleClickOutside))
+onBeforeUnmount(() => document.removeEventListener('click', handleClickOutside))
 
 const isMcp = computed(() => props.confirmation.toolName.startsWith('mcp__'))
+// CLI proxy tools have names like "git__git_status" (server__tool format, no mcp__ prefix)
+const isProxyTool = computed(() => !isMcp.value && props.confirmation.toolName.includes('__'))
+const isExternalTool = computed(() => isMcp.value || isProxyTool.value)
 
-const mcpDisplayName = computed(() => {
-  if (!isMcp.value) return ''
-  const parts = props.confirmation.toolName.split('__')
-  return `${parts[1]} / ${parts.slice(2).join('__')}`
+const serverName = computed(() => extractServerName(props.confirmation.toolName))
+
+const toolDisplayName = computed(() => {
+  const name = props.confirmation.toolName
+  if (isMcp.value) {
+    const parts = name.split('__')
+    return `${parts[1]} / ${parts.slice(2).join('__')}`
+  }
+  if (isProxyTool.value) {
+    const parts = name.split('__')
+    return `${parts[0]} / ${parts.slice(1).join('__')}`
+  }
+  return name
 })
 
 const actionLabel = computed(() => {
-  if (isMcp.value) return 'MCP'
+  if (isExternalTool.value) return 'MCP'
   switch (props.confirmation.toolName) {
     case 'createFile': return 'Create'
     case 'deleteFile': return 'Delete'
@@ -91,7 +147,7 @@ const actionLabel = computed(() => {
 })
 
 const actionBadgeClass = computed(() => {
-  if (isMcp.value) return 'bg-purple-500/20 text-purple-400'
+  if (isExternalTool.value) return 'bg-purple-500/20 text-purple-400'
   switch (props.confirmation.toolName) {
     case 'createFile': return 'bg-success/20 text-success'
     case 'deleteFile': return 'bg-danger/20 text-danger'
@@ -101,16 +157,16 @@ const actionBadgeClass = computed(() => {
 })
 
 const primaryPath = computed(() => {
-  if (isMcp.value) return mcpDisplayName.value
+  if (isExternalTool.value) return toolDisplayName.value
   const args = props.confirmation.args
   return args.path || args.fromPath || ''
 })
 
 const description = computed(() => {
-  if (isMcp.value) {
+  if (isExternalTool.value) {
     const args = props.confirmation.args
     const argSummary = Object.entries(args).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')
-    return `The assistant wants to call MCP tool "${mcpDisplayName.value}" with: ${argSummary || 'no arguments'}`
+    return `The assistant wants to call tool "${toolDisplayName.value}" with: ${argSummary || 'no arguments'}`
   }
   const args = props.confirmation.args
   switch (props.confirmation.toolName) {

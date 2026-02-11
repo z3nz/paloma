@@ -1,0 +1,239 @@
+import { createServer } from 'http'
+import { Server } from '@modelcontextprotocol/sdk/server'
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
+import {
+  ListToolsRequestSchema,
+  CallToolRequestSchema
+} from '@modelcontextprotocol/sdk/types.js'
+
+const CONFIRMATION_TIMEOUT = 5 * 60 * 1000 // 5 minutes
+
+export class McpProxyServer {
+  constructor(mcpManager, { port = 19192, onToolConfirmation, onToolActivity, onAskUser }) {
+    this.mcpManager = mcpManager
+    this.port = port
+    this.onToolConfirmation = onToolConfirmation || (() => Promise.resolve({ approved: true }))
+    this.onToolActivity = onToolActivity || (() => {})
+    this.onAskUser = onAskUser || (() => Promise.resolve('No handler'))
+    this.httpServer = null
+    this.transports = new Map() // sessionId → { transport, server }
+  }
+
+  async start() {
+    this.httpServer = createServer((req, res) => {
+      // CORS for local CLI
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204)
+        res.end()
+        return
+      }
+
+      if (req.method === 'GET' && req.url === '/sse') {
+        this._handleSSE(req, res)
+      } else if (req.method === 'POST' && req.url?.startsWith('/messages')) {
+        this._handlePost(req, res)
+      } else {
+        res.writeHead(404)
+        res.end('Not found')
+      }
+    })
+
+    return new Promise((resolve) => {
+      this.httpServer.listen(this.port, () => {
+        console.log(`MCP Proxy Server listening on http://localhost:${this.port}`)
+        resolve()
+      })
+    })
+  }
+
+  async shutdown() {
+    for (const [, entry] of this.transports) {
+      try { await entry.transport.close() } catch {}
+    }
+    this.transports.clear()
+    if (this.httpServer) {
+      return new Promise(resolve => this.httpServer.close(resolve))
+    }
+  }
+
+  _buildToolList() {
+    const tools = []
+    const servers = this.mcpManager.getTools()
+
+    for (const [serverName, serverInfo] of Object.entries(servers)) {
+      if (serverInfo.status !== 'connected') continue
+      for (const tool of serverInfo.tools) {
+        tools.push({
+          name: `${serverName}__${tool.name}`,
+          description: tool.description || '',
+          inputSchema: tool.inputSchema || { type: 'object', properties: {} },
+          _server: serverName,
+          _tool: tool.name
+        })
+      }
+    }
+
+    // Add ask_user tool
+    tools.push({
+      name: 'ask_user',
+      description: 'Ask the user a question and get their response. Use this when you need clarification or approval.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          question: { type: 'string', description: 'The question to ask the user' },
+          options: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Optional list of choices for the user to pick from'
+          }
+        },
+        required: ['question']
+      }
+    })
+
+    return tools
+  }
+
+  async _handleToolCall(name, args) {
+    if (name === 'ask_user') {
+      return this._handleAskUser(args)
+    }
+
+    // Parse proxy tool name: serverName__toolName
+    const sepIdx = name.indexOf('__')
+    if (sepIdx === -1) {
+      return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true }
+    }
+    const serverName = name.slice(0, sepIdx)
+    const toolName = name.slice(sepIdx + 2)
+
+    // Ask browser for confirmation before executing
+    this.onToolActivity(name, args, 'pending')
+    try {
+      const decision = await Promise.race([
+        this.onToolConfirmation(name, args),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), CONFIRMATION_TIMEOUT)
+        )
+      ])
+
+      if (!decision.approved) {
+        this.onToolActivity(name, args, 'denied')
+        return {
+          content: [{ type: 'text', text: `Tool denied by user: ${decision.reason || 'No reason given'}` }],
+          isError: true
+        }
+      }
+
+      // User approved — execute the tool
+      this.onToolActivity(name, args, 'running')
+
+      // If the browser already executed the tool and returned a result, use that
+      if (decision.result !== undefined) {
+        this.onToolActivity(name, args, 'done')
+        const text = typeof decision.result === 'string' ? decision.result : JSON.stringify(decision.result)
+        return { content: [{ type: 'text', text }] }
+      }
+
+      // Otherwise execute via mcpManager
+      const result = await this.mcpManager.callTool(serverName, toolName, args)
+      this.onToolActivity(name, args, 'done')
+      if (result.content) {
+        return { content: result.content, isError: result.isError || false }
+      }
+      return { content: [{ type: 'text', text: 'OK' }] }
+    } catch (e) {
+      this.onToolActivity(name, args, 'error')
+      if (e.message === 'timeout') {
+        return {
+          content: [{ type: 'text', text: 'Tool confirmation timed out (5 minutes)' }],
+          isError: true
+        }
+      }
+      return {
+        content: [{ type: 'text', text: `Error: ${e.message}` }],
+        isError: true
+      }
+    }
+  }
+
+  async _handleAskUser(args) {
+    try {
+      const answer = await Promise.race([
+        this.onAskUser(args.question, args.options || []),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), CONFIRMATION_TIMEOUT)
+        )
+      ])
+      return { content: [{ type: 'text', text: answer }] }
+    } catch (e) {
+      if (e.message === 'timeout') {
+        return { content: [{ type: 'text', text: 'No response (timed out)' }] }
+      }
+      return {
+        content: [{ type: 'text', text: `Error: ${e.message}` }],
+        isError: true
+      }
+    }
+  }
+
+  _createServer() {
+    const server = new Server(
+      { name: 'paloma-proxy', version: '1.0.0' },
+      { capabilities: { tools: {} } }
+    )
+
+    // tools/list — return raw JSON Schema directly (no Zod conversion)
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
+      const tools = this._buildToolList()
+      return {
+        tools: tools.map(t => ({
+          name: t.name,
+          description: t.description,
+          inputSchema: t.inputSchema
+        }))
+      }
+    })
+
+    // tools/call — route to the appropriate handler
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: args } = request.params
+      return this._handleToolCall(name, args || {})
+    })
+
+    return server
+  }
+
+  async _handleSSE(req, res) {
+    const server = this._createServer()
+    const transport = new SSEServerTransport('/messages', res)
+    this.transports.set(transport.sessionId, { transport, server })
+
+    transport.onclose = () => {
+      this.transports.delete(transport.sessionId)
+      console.log(`[mcp-proxy] SSE session closed: ${transport.sessionId}`)
+    }
+
+    console.log(`[mcp-proxy] SSE session started: ${transport.sessionId}`)
+    await server.connect(transport)
+  }
+
+  async _handlePost(req, res) {
+    // Extract sessionId from query string: /messages?sessionId=xxx
+    const url = new URL(req.url, `http://localhost:${this.port}`)
+    const sessionId = url.searchParams.get('sessionId')
+    const entry = this.transports.get(sessionId)
+
+    if (!entry) {
+      res.writeHead(400)
+      res.end(JSON.stringify({ error: 'Unknown session' }))
+      return
+    }
+
+    await entry.transport.handlePostMessage(req, res)
+  }
+}

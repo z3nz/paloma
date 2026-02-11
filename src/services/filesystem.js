@@ -107,6 +107,14 @@ export async function readMcpConfig(dirHandle) {
   }
 }
 
+export async function writeMcpConfig(dirHandle, config) {
+  const palomaDir = await dirHandle.getDirectoryHandle('.paloma')
+  const fileHandle = await palomaDir.getFileHandle('mcp.json', { create: true })
+  const writable = await fileHandle.createWritable()
+  await writable.write(JSON.stringify(config, null, 2) + '\n')
+  await writable.close()
+}
+
 export async function requestWritePermission(dirHandle) {
   const status = await dirHandle.queryPermission({ mode: 'readwrite' })
   if (status === 'granted') return true

@@ -1,14 +1,15 @@
 import { ref, watch } from 'vue'
 import db from '../services/db.js'
-import { streamChat } from '../services/openrouter.js'
 import { readFile } from '../services/filesystem.js'
-import { BASE_INSTRUCTIONS } from '../prompts/base.js'
-import { PHASE_INSTRUCTIONS } from '../prompts/phases.js'
-import { getAllTools, AUTO_EXECUTE_TOOLS, executeTool } from '../services/tools.js'
+import { getAllTools } from '../services/tools.js'
 import { useOpenRouter } from './useOpenRouter.js'
-import { useMCP, isMcpTool, parseMcpToolName } from './useMCP.js'
+import { useMCP } from './useMCP.js'
 import { useProject } from './useProject.js'
-import { isCliModel, isDirectCliModel, getCliModelName, streamClaudeChat } from '../services/claudeStream.js'
+import { isCliModel } from '../services/claudeStream.js'
+import { buildSystemPrompt } from './useSystemPrompt.js'
+import { useToolExecution } from './useToolExecution.js'
+import { runOpenRouterLoop } from './useOpenRouterChat.js'
+import { runCliChat, stopCli, clearCliRequestId } from './useCliChat.js'
 
 const _saved = import.meta.hot ? window.__PALOMA_CHAT__ : undefined
 
@@ -16,11 +17,8 @@ const messages = ref(_saved?.messages ?? [])
 const streaming = ref(_saved?.streaming ?? false)
 const streamingContent = ref(_saved?.streamingContent ?? '')
 const error = ref(_saved?.error ?? null)
-const toolActivity = ref(_saved?.toolActivity ?? [])
-const pendingToolConfirmation = ref(_saved?.pendingToolConfirmation ?? null)
 const contextWarning = ref(_saved?.contextWarning ?? null)
 let abortController = _saved?.abortController ?? null
-let cliRequestId = null
 
 if (import.meta.hot) {
   const save = () => {
@@ -29,26 +27,23 @@ if (import.meta.hot) {
       streaming: streaming.value,
       streamingContent: streamingContent.value,
       error: error.value,
-      toolActivity: toolActivity.value,
-      pendingToolConfirmation: pendingToolConfirmation.value,
       contextWarning: contextWarning.value,
       abortController
     }
   }
   save()
-  watch([messages, streaming, streamingContent, error, toolActivity, pendingToolConfirmation, contextWarning], save, { flush: 'sync' })
+  watch([messages, streaming, streamingContent, error, contextWarning], save, { flush: 'sync' })
   import.meta.hot.accept()
 }
 
-const MAX_TOOL_ROUNDS = 25
-
 export function useChat() {
+  const { toolActivity, pendingToolConfirmation, clearActivity, resolveToolConfirmation, rejectToolConfirmation } = useToolExecution()
+
   async function loadMessages(sessionId) {
     if (!sessionId) {
       messages.value = []
       return
     }
-
     console.time('[perf] loadMessages:db')
     const result = await db.messages
       .where('sessionId')
@@ -60,7 +55,7 @@ export function useChat() {
 
   async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions, activePlans, searchFn, mcpConfig) {
     error.value = null
-    toolActivity.value = []
+    clearActivity()
 
     // Build file contents for attached files
     const fileContents = []
@@ -75,7 +70,6 @@ export function useChat() {
       }
     }
 
-    // Build user message content with file contents
     let fullContent = ''
     if (fileContents.length > 0) {
       fullContent += fileContents.map(f =>
@@ -97,21 +91,17 @@ export function useChat() {
     userMsg.id = userMsgId
     messages.value.push(userMsg)
 
-    // Resolve MCP tools early so they're available for system prompt + tool list
+    // Resolve MCP tools
     const { getEnabledTools, getAutoExecuteServers, callMcpTool } = useMCP()
     const enabledMcpTools = mcpConfig ? getEnabledTools(mcpConfig) : []
     const mcpAutoExec = mcpConfig ? getAutoExecuteServers(mcpConfig) : new Set()
 
     // Build messages array for API
     const apiMessages = []
-
-    // Layered system prompt: base + project + phase
     apiMessages.push({
       role: 'system',
       content: buildSystemPrompt(phase, projectInstructions, activePlans, enabledMcpTools)
     })
-
-    // Add conversation history (including tool messages)
     for (const msg of messages.value) {
       if (msg.role === 'user' || msg.role === 'assistant') {
         const apiMsg = { role: msg.role, content: msg.content }
@@ -129,228 +119,59 @@ export function useChat() {
       }
     }
 
-    // Stream response
     streaming.value = true
     streamingContent.value = ''
     abortController = new AbortController()
 
     try {
       if (isCliModel(model)) {
-        // === CLI path: Claude Code handles its own tools and history ===
-        const { sendClaudeChat } = useMCP()
+        // === CLI path ===
+        const { content: cliContent, usage } = await runCliChat({
+          sessionId, model, fullContent,
+          phase, projectInstructions, activePlans,
+          onContent(text) { streamingContent.value = text }
+        })
 
-        // Look up existing cliSessionId from the DB session
-        const session = await db.sessions.get(sessionId)
-        const existingCliSession = session?.cliSessionId || null
-        console.log(`[cli] ${existingCliSession ? 'Resuming' : 'New'} session, model=${model}`)
+        await saveAssistantMessage(sessionId, cliContent, null, usage, model)
+        checkContextUsage(usage, model)
 
-        // Only send systemPrompt on first message (when no cliSessionId yet)
-        const cliOptions = {
-          prompt: fullContent,
-          model: getCliModelName(model),
-          sessionId: existingCliSession,
-          systemPrompt: existingCliSession || isDirectCliModel(model) ? undefined : buildSystemPrompt(phase, projectInstructions, activePlans),
-          cwd: useProject().projectRoot.value || undefined
-        }
-
-        let accumulatedContent = ''
-        let usage = null
-
-        for await (const chunk of streamClaudeChat(
-          (opts, cbs) => sendClaudeChat(opts, cbs),
-          cliOptions
-        )) {
-          if (chunk.type === 'content') {
-            accumulatedContent += chunk.text
-            streamingContent.value = accumulatedContent
-          } else if (chunk.type === 'usage') {
-            usage = chunk.usage
-          } else if (chunk.type === 'session_id') {
-            cliRequestId = chunk.requestId
-            // Persist cliSessionId so future messages resume the conversation
-            if (!existingCliSession && chunk.sessionId) {
-              await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId })
-            }
-          }
-        }
-
-        // Save assistant message
-        const assistantMsg = {
-          sessionId,
-          role: 'assistant',
-          content: accumulatedContent,
-          usage,
-          model,
-          files: [],
-          timestamp: Date.now()
-        }
-        const assistantMsgId = await db.messages.add(assistantMsg)
-        assistantMsg.id = assistantMsgId
-        messages.value.push(assistantMsg)
-
-        // Check context usage
-        if (usage) {
-          const { getModelInfo } = useOpenRouter()
-          const modelInfo = getModelInfo(model)
-          if (modelInfo?.context_length) {
-            const pct = (usage.totalTokens / modelInfo.context_length) * 100
-            if (pct >= 80) {
-              contextWarning.value = `Context ${Math.round(pct)}% full (${usage.totalTokens.toLocaleString()} / ${modelInfo.context_length.toLocaleString()} tokens). Consider starting a new session.`
-            } else {
-              contextWarning.value = null
-            }
-          }
-        }
-
-        // Auto-generate title from first exchange
         if (messages.value.filter(m => m.role === 'user').length === 1) {
           return generateTitle(content)
         }
       } else {
-        // === OpenRouter path: existing behavior unchanged ===
+        // === OpenRouter path ===
         const tools = dirHandle ? getAllTools(enabledMcpTools) : enabledMcpTools.length ? getAllTools(enabledMcpTools) : []
-        let continueLoop = true
-        let round = 0
 
-        while (continueLoop) {
-          if (round++ >= MAX_TOOL_ROUNDS) {
-            error.value = 'Tool call limit reached'
-            break
-          }
-          continueLoop = false
-          let accumulatedContent = ''
-          let toolCalls = null
-          let usage = null
-
-          for await (const chunk of streamChat(apiKey, model, apiMessages,
-            { tools: tools.length ? tools : undefined })) {
-            if (chunk.type === 'content') {
-              accumulatedContent += chunk.text
-              streamingContent.value = accumulatedContent
-            } else if (chunk.type === 'tool_calls') {
-              toolCalls = chunk.calls
-            } else if (chunk.type === 'usage') {
-              usage = chunk.usage
-            }
-          }
-
-          if (toolCalls?.length) {
-            // Save assistant message with tool calls
-            const assistantMsg = {
+        const result = await runOpenRouterLoop({
+          apiKey, model, apiMessages, tools, sessionId,
+          mcpAutoExec, callMcpTool, searchFn, dirHandle,
+          onContent(text) { streamingContent.value = text },
+          onResetStreaming() { streamingContent.value = '' },
+          async onSaveAssistant(content, toolCalls, usage, model) {
+            return saveAssistantMessage(sessionId, content, toolCalls, usage, model)
+          },
+          async onSaveTool(callId, toolName, args, content) {
+            const toolMsg = {
               sessionId,
-              role: 'assistant',
-              content: accumulatedContent || null,
-              toolCalls,
-              usage,
-              model,
-              files: [],
+              role: 'tool',
+              toolCallId: callId,
+              toolName,
+              toolArgs: args,
+              content,
               timestamp: Date.now()
             }
-            const assistantMsgId = await db.messages.add(assistantMsg)
-            assistantMsg.id = assistantMsgId
-            messages.value.push(assistantMsg)
-            apiMessages.push({
-              role: 'assistant',
-              content: accumulatedContent || null,
-              tool_calls: toolCalls
-            })
+            const toolMsgId = await db.messages.add(toolMsg)
+            toolMsg.id = toolMsgId
+            messages.value.push(toolMsg)
+          }
+        })
 
-            // Execute each tool call
-            for (const call of toolCalls) {
-              let args
-              try {
-                args = JSON.parse(call.function.arguments)
-              } catch {
-                args = {}
-              }
+        if (result) {
+          await saveAssistantMessage(sessionId, result.content, null, result.usage, result.model)
+          checkContextUsage(result.usage, model)
 
-              const toolName = call.function.name
-              let result
-
-              const activityEntry = { name: toolName, args, status: 'running' }
-              toolActivity.value = [...toolActivity.value, activityEntry]
-
-              if (isMcpTool(toolName)) {
-                const { server } = parseMcpToolName(toolName)
-                if (mcpAutoExec.has(server)) {
-                  try {
-                    result = await callMcpTool(toolName, args)
-                  } catch (e) {
-                    result = JSON.stringify({ error: e.message })
-                  }
-                } else {
-                  result = await requestToolConfirmation(toolName, args, dirHandle)
-                }
-              } else if (AUTO_EXECUTE_TOOLS.has(toolName)) {
-                try {
-                  result = await executeTool(toolName, args, dirHandle, searchFn)
-                } catch (e) {
-                  result = JSON.stringify({ error: e.message })
-                }
-              } else {
-                // Write tool — needs confirmation
-                result = await requestToolConfirmation(toolName, args, dirHandle)
-              }
-
-              activityEntry.status = 'done'
-              toolActivity.value = [...toolActivity.value]
-
-              // Save tool result message
-              const toolMsg = {
-                sessionId,
-                role: 'tool',
-                toolCallId: call.id,
-                toolName,
-                toolArgs: args,
-                content: typeof result === 'string' ? result : JSON.stringify(result),
-                timestamp: Date.now()
-              }
-              const toolMsgId = await db.messages.add(toolMsg)
-              toolMsg.id = toolMsgId
-              messages.value.push(toolMsg)
-              apiMessages.push({
-                role: 'tool',
-                tool_call_id: call.id,
-                content: toolMsg.content
-              })
-            }
-
-            // Reset for next round
-            streamingContent.value = ''
-            continueLoop = true
-          } else {
-            // Final assistant message (no tool calls)
-            const assistantMsg = {
-              sessionId,
-              role: 'assistant',
-              content: accumulatedContent,
-              usage,
-              model,
-              files: [],
-              timestamp: Date.now()
-            }
-            const assistantMsgId = await db.messages.add(assistantMsg)
-            assistantMsg.id = assistantMsgId
-            messages.value.push(assistantMsg)
-
-            // Check context usage and set warning
-            if (usage) {
-              const { getModelInfo } = useOpenRouter()
-              const modelInfo = getModelInfo(model)
-              if (modelInfo?.context_length) {
-                const pct = (usage.totalTokens / modelInfo.context_length) * 100
-                if (pct >= 80) {
-                  contextWarning.value = `Context ${Math.round(pct)}% full (${usage.totalTokens.toLocaleString()} / ${modelInfo.context_length.toLocaleString()} tokens). Consider starting a new session.`
-                } else {
-                  contextWarning.value = null
-                }
-              }
-            }
-
-            // Auto-generate title from first exchange
-            if (messages.value.filter(m => m.role === 'user').length === 1) {
-              return generateTitle(content)
-            }
+          if (messages.value.filter(m => m.role === 'user').length === 1) {
+            return generateTitle(content)
           }
         }
       }
@@ -360,31 +181,43 @@ export function useChat() {
     } finally {
       streaming.value = false
       streamingContent.value = ''
-      toolActivity.value = []
+      // Don't clear tool activity here — let it persist so users can see what happened.
+      // It gets cleared at the start of the next sendMessage() call.
       abortController = null
-      cliRequestId = null
+      clearCliRequestId()
     }
 
     return null
   }
 
-  function requestToolConfirmation(toolName, args, dirHandle) {
-    return new Promise(resolve => {
-      pendingToolConfirmation.value = { toolName, args, dirHandle, resolve }
-    })
-  }
-
-  function resolveToolConfirmation(result) {
-    if (pendingToolConfirmation.value) {
-      pendingToolConfirmation.value.resolve(result)
-      pendingToolConfirmation.value = null
+  async function saveAssistantMessage(sessionId, content, toolCalls, usage, model) {
+    const assistantMsg = {
+      sessionId,
+      role: 'assistant',
+      content,
+      usage,
+      model,
+      files: [],
+      timestamp: Date.now()
     }
+    if (toolCalls) assistantMsg.toolCalls = toolCalls
+    const id = await db.messages.add(assistantMsg)
+    assistantMsg.id = id
+    messages.value.push(assistantMsg)
+    return assistantMsg
   }
 
-  function rejectToolConfirmation(reason) {
-    if (pendingToolConfirmation.value) {
-      pendingToolConfirmation.value.resolve(JSON.stringify({ error: `Denied: ${reason}` }))
-      pendingToolConfirmation.value = null
+  function checkContextUsage(usage, model) {
+    if (!usage) return
+    const { getModelInfo } = useOpenRouter()
+    const modelInfo = getModelInfo(model)
+    if (modelInfo?.context_length) {
+      const pct = (usage.totalTokens / modelInfo.context_length) * 100
+      if (pct >= 80) {
+        contextWarning.value = `Context ${Math.round(pct)}% full (${usage.totalTokens.toLocaleString()} / ${modelInfo.context_length.toLocaleString()} tokens). Consider starting a new session.`
+      } else {
+        contextWarning.value = null
+      }
     }
   }
 
@@ -394,11 +227,7 @@ export function useChat() {
   }
 
   function stopStreaming() {
-    if (cliRequestId) {
-      const { stopClaudeChat } = useMCP()
-      stopClaudeChat(cliRequestId)
-      cliRequestId = null
-    }
+    stopCli()
     if (abortController) {
       abortController.abort()
       abortController = null
@@ -406,41 +235,11 @@ export function useChat() {
     streaming.value = false
   }
 
-  function buildSystemPrompt(phase, projectInstructions, activePlans, enabledMcpTools = []) {
-    let prompt = BASE_INSTRUCTIONS
-
-    if (enabledMcpTools.length > 0) {
-      prompt += '\n\n## MCP Tools\n\nYou also have access to these tools provided by external MCP servers:\n'
-      for (const tool of enabledMcpTools) {
-        const fn = tool.function
-        const serverName = fn.name.split('__')[1]
-        prompt += `- ${fn.name} (server: ${serverName}) — ${fn.description}\n`
-      }
-    }
-
-    if (projectInstructions) {
-      prompt += '\n\n## Project Instructions\n\n' + projectInstructions
-    }
-
-    if (activePlans?.length > 0) {
-      prompt += '\n\n## Active Plans\n\n'
-      prompt += activePlans.map(p =>
-        `<plan name="${p.name}">\n${p.content}\n</plan>`
-      ).join('\n\n')
-    }
-
-    const activePhase = phase || 'research'
-    prompt += '\n\n## Current Phase: ' + activePhase.charAt(0).toUpperCase() + activePhase.slice(1) + '\n\n'
-    prompt += PHASE_INSTRUCTIONS[activePhase] || PHASE_INSTRUCTIONS.research
-
-    return prompt
-  }
-
   function clearChat() {
     messages.value = []
     streamingContent.value = ''
     error.value = null
-    toolActivity.value = []
+    clearActivity()
   }
 
   return {

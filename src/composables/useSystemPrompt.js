@@ -1,0 +1,35 @@
+import { BASE_INSTRUCTIONS } from '../prompts/base.js'
+import { PHASE_INSTRUCTIONS } from '../prompts/phases.js'
+
+export function buildSystemPrompt(phase, projectInstructions, activePlans, enabledMcpTools = []) {
+  let prompt = BASE_INSTRUCTIONS
+
+  if (enabledMcpTools.length > 0) {
+    prompt += '\n\n## MCP Tools\n\nYou also have access to these tools provided by external MCP servers:\n'
+    for (const tool of enabledMcpTools) {
+      const fn = tool.function
+      const serverName = fn.name.split('__')[1]
+      prompt += `- ${fn.name} (server: ${serverName}) — ${fn.description}\n`
+    }
+  }
+
+  if (projectInstructions) {
+    prompt += '\n\n## Project Instructions\n\n' + projectInstructions
+  }
+
+  if (activePlans?.length > 0) {
+    prompt += '\n\n## Active Plans\n\n'
+    prompt += activePlans.map(p =>
+      `<plan name="${p.name}">\n${p.content}\n</plan>`
+    ).join('\n\n')
+  }
+
+  const activePhase = phase || 'research'
+  prompt += '\n\n## Current Phase: ' + activePhase.charAt(0).toUpperCase() + activePhase.slice(1) + '\n\n'
+  prompt += PHASE_INSTRUCTIONS[activePhase] || PHASE_INSTRUCTIONS.research
+
+  return prompt
+}
+
+// Enable HMR boundary
+if (import.meta.hot) import.meta.hot.accept()

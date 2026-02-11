@@ -1,9 +1,13 @@
 import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
+import { writeFileSync, unlinkSync } from 'fs'
+import { join } from 'path'
+import { tmpdir } from 'os'
 
 export class ClaudeCliManager {
   constructor() {
-    this.processes = new Map() // requestId → { process, sessionId }
+    this.processes = new Map() // requestId → { process, sessionId, mcpConfigPath }
+    this.mcpProxyPort = null
   }
 
   chat({ prompt, model, sessionId, systemPrompt, cwd }, onEvent) {
@@ -23,13 +27,33 @@ export class ClaudeCliManager {
       console.log(`[cli] New session, model=${model}`)
     }
 
+    // Inject MCP config if proxy is available
+    let mcpConfigPath = null
+    if (this.mcpProxyPort) {
+      mcpConfigPath = join(tmpdir(), `paloma-mcp-${requestId}.json`)
+      const mcpConfig = {
+        mcpServers: {
+          paloma: {
+            type: 'sse',
+            url: `http://localhost:${this.mcpProxyPort}/sse`
+          }
+        }
+      }
+      writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig))
+      args.push('--mcp-config', mcpConfigPath)
+      // Pre-approve all paloma MCP tools so CLI doesn't prompt for permission
+      // (the MCP proxy itself gates execution with browser confirmation)
+      args.push('--allowedTools', 'mcp__paloma__*')
+      console.log(`[cli] MCP config written to ${mcpConfigPath}`)
+    }
+
     const proc = spawn('claude', args, {
       cwd: cwd || process.cwd(),
       env: { ...process.env },
       stdio: ['ignore', 'pipe', 'pipe']
     })
 
-    this.processes.set(requestId, { process: proc, sessionId })
+    this.processes.set(requestId, { process: proc, sessionId, mcpConfigPath })
     console.log(`[cli] Process spawned, pid=${proc.pid}`)
 
     let buffer = ''
@@ -65,6 +89,11 @@ export class ClaudeCliManager {
         } catch {
           // skip
         }
+      }
+      // Clean up temp MCP config
+      const entry = this.processes.get(requestId)
+      if (entry?.mcpConfigPath) {
+        try { unlinkSync(entry.mcpConfigPath) } catch {}
       }
       this.processes.delete(requestId)
       onEvent({ type: 'claude_done', requestId, sessionId, exitCode: code })

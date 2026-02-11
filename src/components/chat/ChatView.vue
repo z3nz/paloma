@@ -30,27 +30,37 @@
     />
 
     <ToolConfirmation
-      v-if="pendingToolConfirmation"
-      :confirmation="pendingToolConfirmation"
+      v-if="showToolConfirmation"
+      :confirmation="activeToolConfirmation"
       @allow="handleToolAllow"
       @deny="handleToolDeny"
+      @allow-session="handleToolAllowSession"
+      @allow-always="handleToolAllowAlways"
+    />
+
+    <AskUserDialog
+      v-if="pendingAskUser"
+      :ask-user="pendingAskUser"
+      @respond="handleAskUserRespond"
     />
   </div>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import MessageList from './MessageList.vue'
 import PromptBuilder from '../prompt/PromptBuilder.vue'
 import DiffPreview from './DiffPreview.vue'
 import ToolConfirmation from './ToolConfirmation.vue'
+import AskUserDialog from './AskUserDialog.vue'
 import { useChat } from '../../composables/useChat.js'
 import { useChanges } from '../../composables/useChanges.js'
 import { useSettings } from '../../composables/useSettings.js'
 import { useProject } from '../../composables/useProject.js'
 import { useFileIndex } from '../../composables/useFileIndex.js'
 import { useMCP, isMcpTool } from '../../composables/useMCP.js'
-import { readFileSafe, requestWritePermission, writeFile } from '../../services/filesystem.js'
+import { usePermissions } from '../../composables/usePermissions.js'
+import { readFileSafe, requestWritePermission, writeFile, writeMcpConfig } from '../../services/filesystem.js'
 import { resolveEdit } from '../../services/editing.js'
 import { executeWriteTool } from '../../services/tools.js'
 
@@ -69,7 +79,32 @@ const { detectChanges, loadSessionChanges } = useChanges()
 const { apiKey } = useSettings()
 const { dirHandle, projectInstructions, activePlans, mcpConfig, refreshActivePlans } = useProject()
 const { search: searchFiles, updatePaths } = useFileIndex()
-const { callMcpTool } = useMCP()
+const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool } = useMCP()
+const { isAutoApproved, approveForSession } = usePermissions()
+
+// Unified: show ToolConfirmation for either OpenRouter or CLI tool calls
+const activeToolConfirmation = computed(() => {
+  if (pendingToolConfirmation.value) return pendingToolConfirmation.value
+  if (pendingCliToolConfirmation.value) return pendingCliToolConfirmation.value
+  return null
+})
+
+// Only show the dialog if the tool isn't auto-approved
+const showToolConfirmation = ref(false)
+
+// When a new tool confirmation arrives, check permissions before showing dialog
+watch(activeToolConfirmation, (confirmation) => {
+  if (!confirmation) {
+    showToolConfirmation.value = false
+    return
+  }
+  if (isAutoApproved(confirmation.toolName, mcpConfig.value)) {
+    // Auto-approve without showing dialog
+    handleToolAllow()
+  } else {
+    showToolConfirmation.value = true
+  }
+})
 
 const showDiff = ref(false)
 const pendingEdit = ref({ path: '', code: '', originalContent: null })
@@ -175,6 +210,15 @@ function getPathUpdatesForTool(toolName, args) {
 }
 
 async function handleToolAllow() {
+  showToolConfirmation.value = false
+
+  // CLI tool confirmation: proxy executes the tool server-side
+  if (pendingCliToolConfirmation.value) {
+    approveCliTool()
+    return
+  }
+
+  // OpenRouter tool confirmation: browser executes the tool
   if (!pendingToolConfirmation.value) return
   const { toolName, args } = pendingToolConfirmation.value
 
@@ -208,6 +252,43 @@ async function handleToolAllow() {
 }
 
 function handleToolDeny() {
+  showToolConfirmation.value = false
+  if (pendingCliToolConfirmation.value) {
+    denyCliTool('User denied')
+    return
+  }
   rejectToolConfirmation('User denied')
+}
+
+function handleToolAllowSession(serverName) {
+  approveForSession(serverName)
+  handleToolAllow()
+}
+
+async function handleToolAllowAlways(serverName) {
+  // Add to session approvals for immediate effect
+  approveForSession(serverName)
+
+  // Persist to project config
+  if (dirHandle.value && mcpConfig.value) {
+    const autoExecute = mcpConfig.value.autoExecute || []
+    if (!autoExecute.includes(serverName)) {
+      mcpConfig.value = {
+        ...mcpConfig.value,
+        autoExecute: [...autoExecute, serverName]
+      }
+      try {
+        await writeMcpConfig(dirHandle.value, mcpConfig.value)
+      } catch (err) {
+        console.warn('[Permissions] Failed to persist autoExecute:', err)
+      }
+    }
+  }
+
+  handleToolAllow()
+}
+
+function handleAskUserRespond(answer) {
+  respondToAskUser(answer)
 }
 </script>

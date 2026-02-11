@@ -79,6 +79,10 @@ export async function* streamClaudeChat(sendFn, options) {
         for (const block of event.message.content) {
           if (block.type === 'text' && block.text) {
             yield { type: 'content', text: block.text }
+          } else if (block.type === 'tool_use') {
+            yield { type: 'tool_use', id: block.id, name: block.name, input: block.input }
+          } else if (block.type === 'tool_result') {
+            yield { type: 'tool_result', toolUseId: block.tool_use_id, content: block.content }
           }
         }
       } else if (event.type === 'content_block_delta') {

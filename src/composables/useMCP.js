@@ -10,6 +10,9 @@ const servers = ref(_saved?.servers ?? {})
 const bridgeUrl = ref(_saved?.bridgeUrl ?? (localStorage.getItem('paloma:mcpBridgeUrl') || 'ws://localhost:19191'))
 const autoConnect = ref(_saved?.autoConnect ?? (localStorage.getItem('paloma:mcpAutoConnect') === 'true'))
 
+const pendingAskUser = ref(_saved?.pendingAskUser ?? null)
+const pendingCliToolConfirmation = ref(_saved?.pendingCliToolConfirmation ?? null)
+
 let bridge = _saved?.bridge ?? null
 
 watch(bridgeUrl, (val) => localStorage.setItem('paloma:mcpBridgeUrl', val))
@@ -23,11 +26,13 @@ if (import.meta.hot) {
       servers: servers.value,
       bridgeUrl: bridgeUrl.value,
       autoConnect: autoConnect.value,
+      pendingAskUser: pendingAskUser.value,
+      pendingCliToolConfirmation: pendingCliToolConfirmation.value,
       bridge
     }
   }
   save()
-  watch([connected, connectionState, servers, bridgeUrl, autoConnect], save, { flush: 'sync' })
+  watch([connected, connectionState, servers, bridgeUrl, autoConnect, pendingAskUser, pendingCliToolConfirmation], save, { flush: 'sync' })
   import.meta.hot.accept()
 }
 
@@ -78,6 +83,15 @@ export function useMCP() {
       },
       onToolsUpdate(serverData) {
         servers.value = serverData
+      },
+      onCliToolActivity(toolName, args, status) {
+        // CLI tool activity is surfaced via useToolExecution in useCliChat
+      },
+      onCliToolConfirmation(id, toolName, args) {
+        pendingCliToolConfirmation.value = { id, toolName, args }
+      },
+      onAskUser(id, question, options) {
+        pendingAskUser.value = { id, question, options }
       }
     })
   }
@@ -124,6 +138,24 @@ export function useMCP() {
 
   function stopClaudeChat(requestId) {
     if (bridge) bridge.stopClaudeChat(requestId)
+  }
+
+  function respondToAskUser(answer) {
+    if (!pendingAskUser.value || !bridge) return
+    bridge.respondToAskUser(pendingAskUser.value.id, answer)
+    pendingAskUser.value = null
+  }
+
+  function approveCliTool(result) {
+    if (!pendingCliToolConfirmation.value || !bridge) return
+    bridge.respondToToolConfirmation(pendingCliToolConfirmation.value.id, true, result)
+    pendingCliToolConfirmation.value = null
+  }
+
+  function denyCliTool(reason) {
+    if (!pendingCliToolConfirmation.value || !bridge) return
+    bridge.respondToToolConfirmation(pendingCliToolConfirmation.value.id, false, undefined, reason)
+    pendingCliToolConfirmation.value = null
   }
 
   async function resolveProjectPath(name) {
@@ -184,12 +216,17 @@ export function useMCP() {
     mcpTools,
     bridgeUrl,
     autoConnect,
+    pendingAskUser,
+    pendingCliToolConfirmation,
     connect,
     disconnect,
     refreshTools,
     callMcpTool,
     sendClaudeChat,
     stopClaudeChat,
+    respondToAskUser,
+    approveCliTool,
+    denyCliTool,
     resolveProjectPath,
     exportChats,
     getEnabledTools,

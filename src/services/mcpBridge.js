@@ -10,6 +10,9 @@ export function createMcpBridge() {
   const streamListeners = new Map() // id -> { onStream, onDone, onError }
   let onStateChange = null
   let onToolsUpdate = null
+  let onCliToolActivity = null
+  let onCliToolConfirmation = null
+  let onAskUser = null
 
   function getState() {
     if (!ws) return 'disconnected'
@@ -21,6 +24,9 @@ export function createMcpBridge() {
   function connect(bridgeUrl = 'ws://localhost:19191', callbacks = {}) {
     onStateChange = callbacks.onStateChange || null
     onToolsUpdate = callbacks.onToolsUpdate || null
+    onCliToolActivity = callbacks.onCliToolActivity || null
+    onCliToolConfirmation = callbacks.onCliToolConfirmation || null
+    onAskUser = callbacks.onAskUser || null
     url = bridgeUrl
     intentionalClose = false
     _connect()
@@ -100,6 +106,12 @@ export function createMcpBridge() {
           pending.delete(msg.id)
           p.resolve(msg.path)
         }
+      } else if (msg.type === 'cli_tool_activity') {
+        onCliToolActivity?.(msg.toolName, msg.args, msg.status)
+      } else if (msg.type === 'cli_tool_confirmation') {
+        onCliToolConfirmation?.(msg.id, msg.toolName, msg.args)
+      } else if (msg.type === 'ask_user') {
+        onAskUser?.(msg.id, msg.question, msg.options)
       } else if (msg.type === 'error' && msg.id) {
         const p = pending.get(msg.id)
         if (p) {
@@ -227,7 +239,15 @@ export function createMcpBridge() {
     })
   }
 
-  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, exportChats, resolveProjectPath, getState }
+  function respondToAskUser(id, answer) {
+    _send({ type: 'ask_user_response', id, answer })
+  }
+
+  function respondToToolConfirmation(id, approved, result, reason) {
+    _send({ type: 'tool_confirmation_response', id, approved, result, reason })
+  }
+
+  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, getState }
 }
 
 // Enable HMR boundary — errors here don't cascade to full reload
