@@ -37,7 +37,18 @@
       >
         <div class="text-sm truncate">{{ session.title }}</div>
         <div class="flex items-center gap-2 mt-1">
-          <span
+          <!-- Streaming indicator -->
+          <span v-if="isStreaming(session.id)"
+            class="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0"
+            title="Streaming..."
+          />
+          <!-- Tool activity indicator -->
+          <span v-else-if="hasToolActivity(session.id)"
+            class="w-2 h-2 rounded-full bg-purple-400 animate-pulse shrink-0"
+            title="Running tools..."
+          />
+          <!-- Phase dot (default) -->
+          <span v-else
             class="w-2 h-2 rounded-full shrink-0"
             :class="phaseColor(session.phase)"
           />
@@ -77,6 +88,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useMCP } from '../../composables/useMCP.js'
+import { useSessionState } from '../../composables/useSessionState.js'
 
 const props = defineProps({
   sessions: { type: Array, default: () => [] },
@@ -87,6 +99,7 @@ const props = defineProps({
 defineEmits(['new-chat', 'select-session', 'delete-session'])
 
 const { exportChats, connected } = useMCP()
+const { isStreaming, hasToolActivity } = useSessionState()
 const exporting = ref(false)
 const exportLabel = ref('Export Chats')
 

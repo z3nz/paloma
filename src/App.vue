@@ -84,6 +84,7 @@ import { useSessions } from './composables/useSessions.js'
 import { useOpenRouter } from './composables/useOpenRouter.js'
 import { useMCP } from './composables/useMCP.js'
 import { useChanges } from './composables/useChanges.js'
+import { useSessionState } from './composables/useSessionState.js'
 
 const { apiKey, defaultModel } = useSettings()
 const { dirHandle, projectName, projectRoot, openProject, switchProject, resolveRoot, getHashSessionId, syncHash } = useProject()
@@ -91,6 +92,7 @@ const { files, buildIndex, updatePaths } = useFileIndex()
 const { sessions, activeSessionId, loadSessions, createSession, updateSession, deleteSession, setActiveSession } = useSessions()
 const { models, loadModels } = useOpenRouter()
 const { connected: bridgeConnected, callMcpTool, resolveProjectPath } = useMCP()
+const { activate: activateSession, removeState: removeSessionState } = useSessionState()
 const {
   pendingChanges, hasPendingChanges, pendingCount,
   applyChange, applyAll, dismissChange, dismissAll
@@ -114,6 +116,7 @@ watch(bridgeConnected, async (isConnected) => {
         const hashSessionId = getHashSessionId()
         if (hashSessionId && sessions.value.some(s => s.id === hashSessionId)) {
           setActiveSession(hashSessionId)
+          activateSession(hashSessionId)
         }
       } catch (e) {
         console.warn('[Recovery] Project recovery failed, loading default sessions:', e)
@@ -163,14 +166,17 @@ async function handleOpenProject() {
 
 async function handleNewChat() {
   const projectPath = projectName.value || 'paloma'
-  await createSession(projectPath, defaultModel.value)
+  const newId = await createSession(projectPath, defaultModel.value)
+  if (newId) activateSession(newId)
 }
 
 async function handleSelectSession(id) {
   setActiveSession(id)
+  activateSession(id)
 }
 
 async function handleDeleteSession(id) {
+  removeSessionState(id)
   await deleteSession(id)
 }
 

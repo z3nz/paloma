@@ -1,27 +1,11 @@
-import { ref, computed, watch } from 'vue'
+import { computed } from 'vue'
 import { extractAnnotatedCodeBlocks } from '../services/codeBlockExtractor.js'
 import { readFileSafe, requestWritePermission, writeFile } from '../services/filesystem.js'
 import { resolveEdit } from '../services/editing.js'
 import db from '../services/db.js'
+import { useSessionState } from './useSessionState.js'
 
-const _saved = import.meta.hot ? window.__PALOMA_CHANGES__ : undefined
-
-const pendingChanges = ref(_saved?.pendingChanges ?? [])
-const currentSessionId = ref(_saved?.currentSessionId ?? null)
-
-if (import.meta.hot) {
-  const save = () => {
-    window.__PALOMA_CHANGES__ = {
-      pendingChanges: pendingChanges.value,
-      currentSessionId: currentSessionId.value
-    }
-  }
-  save()
-  watch([pendingChanges, currentSessionId], save, { flush: 'sync' })
-}
-
-async function persistChanges() {
-  const sessionId = currentSessionId.value
+async function persistChanges(sessionId, pendingChanges) {
   if (!sessionId) return
   try {
     const existing = await db.drafts.get(sessionId)
@@ -42,17 +26,15 @@ async function persistChanges() {
   }
 }
 
-function autoRemoveApplied() {
-  setTimeout(async () => {
-    const remaining = pendingChanges.value.filter(c => c.status !== 'applied')
-    if (remaining.length !== pendingChanges.value.length) {
-      pendingChanges.value = remaining
-      await persistChanges()
-    }
-  }, 1500)
-}
+export function useChanges(sessionState) {
+  if (!sessionState) {
+    const { activeState } = useSessionState()
+    sessionState = activeState()
+  }
 
-export function useChanges() {
+  const pendingChanges = sessionState.pendingChanges
+  let _sessionId = null
+
   const hasPendingChanges = computed(() =>
     pendingChanges.value.some(c => c.status === 'pending')
   )
@@ -61,25 +43,36 @@ export function useChanges() {
     pendingChanges.value.filter(c => c.status === 'pending').length
   )
 
+  function autoRemoveApplied() {
+    setTimeout(async () => {
+      const remaining = pendingChanges.value.filter(c => c.status !== 'applied')
+      if (remaining.length !== pendingChanges.value.length) {
+        pendingChanges.value = remaining
+        await persistChanges(_sessionId, pendingChanges)
+      }
+    }, 1500)
+  }
+
   async function loadSessionChanges(sessionId) {
-    currentSessionId.value = sessionId
+    _sessionId = sessionId
     if (!sessionId) {
       pendingChanges.value = []
       return
     }
+    const { getState } = useSessionState()
+    const state = getState(sessionId)
     const draft = await db.drafts.get(sessionId)
-    pendingChanges.value = draft?.pendingChanges || []
+    state.pendingChanges.value = draft?.pendingChanges || []
   }
 
   async function detectChanges(markdown, dirHandle) {
     const blocks = extractAnnotatedCodeBlocks(markdown)
     if (blocks.length === 0) {
       pendingChanges.value = []
-      await persistChanges()
+      await persistChanges(_sessionId, pendingChanges)
       return
     }
 
-    // Group blocks by path (preserving order of first appearance)
     const grouped = new Map()
     for (const block of blocks) {
       if (!grouped.has(block.path)) {
@@ -95,7 +88,6 @@ export function useChanges() {
       let error = null
 
       try {
-        // Apply blocks sequentially — output of first becomes input to second
         let current = originalContent
         for (const block of fileBlocks) {
           const result = resolveEdit(block.code, current)
@@ -116,7 +108,7 @@ export function useChanges() {
     }
 
     pendingChanges.value = changes
-    await persistChanges()
+    await persistChanges(_sessionId, pendingChanges)
   }
 
   async function applyChange(index, dirHandle) {
@@ -129,19 +121,19 @@ export function useChanges() {
         change.error = 'Write permission denied.'
         change.status = 'error'
         pendingChanges.value = [...pendingChanges.value]
-        await persistChanges()
+        await persistChanges(_sessionId, pendingChanges)
         return
       }
       await writeFile(dirHandle, change.path, change.newContent)
       change.status = 'applied'
       pendingChanges.value = [...pendingChanges.value]
-      await persistChanges()
+      await persistChanges(_sessionId, pendingChanges)
       autoRemoveApplied()
     } catch (err) {
       change.error = `Failed to write file: ${err.message}`
       change.status = 'error'
       pendingChanges.value = [...pendingChanges.value]
-      await persistChanges()
+      await persistChanges(_sessionId, pendingChanges)
     }
   }
 
@@ -166,18 +158,18 @@ export function useChanges() {
       }
     }
     pendingChanges.value = [...pendingChanges.value]
-    await persistChanges()
+    await persistChanges(_sessionId, pendingChanges)
     autoRemoveApplied()
   }
 
   async function dismissChange(index) {
     pendingChanges.value = pendingChanges.value.filter((_, i) => i !== index)
-    await persistChanges()
+    await persistChanges(_sessionId, pendingChanges)
   }
 
   async function dismissAll() {
     pendingChanges.value = []
-    await persistChanges()
+    await persistChanges(_sessionId, pendingChanges)
   }
 
   return {

@@ -1,23 +1,15 @@
-import { ref, watch } from 'vue'
+import { useSessionState } from './useSessionState.js'
 
-const _saved = import.meta.hot ? window.__PALOMA_TOOL_EXEC__ : undefined
-
-const toolActivity = ref(_saved?.toolActivity ?? [])
-const pendingToolConfirmation = ref(_saved?.pendingToolConfirmation ?? null)
-
-if (import.meta.hot) {
-  const save = () => {
-    window.__PALOMA_TOOL_EXEC__ = {
-      toolActivity: toolActivity.value,
-      pendingToolConfirmation: pendingToolConfirmation.value
-    }
+export function useToolExecution(sessionState) {
+  // Backward compat: if no sessionState passed, use active session
+  if (!sessionState) {
+    const { activeState } = useSessionState()
+    sessionState = activeState()
   }
-  save()
-  watch([toolActivity, pendingToolConfirmation], save, { flush: 'sync' })
-  import.meta.hot.accept()
-}
 
-export function useToolExecution() {
+  const toolActivity = sessionState.toolActivity
+  const pendingToolConfirmation = sessionState.pendingToolConfirmation
+
   function addActivity(name, args) {
     const entry = { id: crypto.randomUUID(), name, args, status: 'running' }
     toolActivity.value = [...toolActivity.value, entry]

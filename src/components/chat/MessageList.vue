@@ -29,7 +29,7 @@
     <div v-if="streaming" class="px-6 py-4 bg-bg-secondary/50">
       <div class="max-w-3xl mx-auto">
         <div class="flex items-center gap-2 mb-2">
-          <span class="text-xs font-medium uppercase tracking-wider text-success">Assistant</span>
+          <span class="text-xs font-medium uppercase tracking-wider text-purple-400">Paloma</span>
         </div>
         <div
           class="message-content text-sm text-text-primary"

@@ -14,9 +14,10 @@ const MAX_TOOL_ROUNDS = 25
 export async function runOpenRouterLoop({
   apiKey, model, apiMessages, tools, sessionId,
   isAutoApproved, mcpConfig, callMcpTool, searchFn, dirHandle,
-  onContent, onToolCall, onSaveAssistant, onSaveTool, onResetStreaming
+  onContent, onToolCall, onSaveAssistant, onSaveTool, onResetStreaming,
+  sessionState
 }) {
-  const { addActivity, markActivityDone, requestToolConfirmation } = useToolExecution()
+  const { addActivity, markActivityDone, requestToolConfirmation } = useToolExecution(sessionState)
 
   let continueLoop = true
   let round = 0

@@ -2,18 +2,23 @@ import { isDirectCliModel, getCliModelName, streamClaudeChat } from '../services
 import { useMCP } from './useMCP.js'
 import { useProject } from './useProject.js'
 import { useToolExecution } from './useToolExecution.js'
+import { useSessionState } from './useSessionState.js'
 import { buildSystemPrompt } from './useSystemPrompt.js'
 import db from '../services/db.js'
-
-let cliRequestId = null
 
 /**
  * Runs a CLI chat turn: streams Claude CLI output and returns { content, usage }.
  * Also persists the cliSessionId on the DB session.
  */
-export async function runCliChat({ sessionId, model, fullContent, phase, projectInstructions, activePlans, onContent }) {
+export async function runCliChat({ sessionId, model, fullContent, phase, projectInstructions, activePlans, onContent, sessionState }) {
+  // If no sessionState, fall back to active
+  if (!sessionState) {
+    const { activeState } = useSessionState()
+    sessionState = activeState()
+  }
+
   const { sendClaudeChat } = useMCP()
-  const { addActivity, markActivityDone } = useToolExecution()
+  const { addActivity, markActivityDone } = useToolExecution(sessionState)
 
   const session = await db.sessions.get(sessionId)
   const existingCliSession = session?.cliSessionId || null
@@ -29,7 +34,6 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
 
   let accumulatedContent = ''
   let usage = null
-  // Map tool_use block ids to activity ids
   const toolUseToActivity = new Map()
 
   for await (const chunk of streamClaudeChat(
@@ -42,7 +46,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     } else if (chunk.type === 'usage') {
       usage = chunk.usage
     } else if (chunk.type === 'session_id') {
-      cliRequestId = chunk.requestId
+      sessionState.cliRequestId = chunk.requestId
       if (!existingCliSession && chunk.sessionId) {
         await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId })
       }
@@ -58,16 +62,24 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   return { content: accumulatedContent, usage }
 }
 
-export function stopCli() {
-  if (cliRequestId) {
+export function stopCli(sessionState) {
+  if (!sessionState) {
+    const { activeState } = useSessionState()
+    sessionState = activeState()
+  }
+  if (sessionState.cliRequestId) {
     const { stopClaudeChat } = useMCP()
-    stopClaudeChat(cliRequestId)
-    cliRequestId = null
+    stopClaudeChat(sessionState.cliRequestId)
+    sessionState.cliRequestId = null
   }
 }
 
-export function clearCliRequestId() {
-  cliRequestId = null
+export function clearCliRequestId(sessionState) {
+  if (!sessionState) {
+    const { activeState } = useSessionState()
+    sessionState = activeState()
+  }
+  sessionState.cliRequestId = null
 }
 
 // Enable HMR boundary
