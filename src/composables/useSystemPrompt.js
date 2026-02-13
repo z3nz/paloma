@@ -24,9 +24,9 @@ export function buildSystemPrompt(phase, projectInstructions, activePlans, enabl
     ).join('\n\n')
   }
 
-  const activePhase = phase || 'research'
-  prompt += '\n\n## Current Phase: ' + activePhase.charAt(0).toUpperCase() + activePhase.slice(1) + '\n\n'
-  prompt += PHASE_INSTRUCTIONS[activePhase] || PHASE_INSTRUCTIONS.research
+  const activePillar = phase || 'flow'
+  prompt += '\n\n## Current Pillar: ' + activePillar.charAt(0).toUpperCase() + activePillar.slice(1) + '\n\n'
+  prompt += PHASE_INSTRUCTIONS[activePillar] || PHASE_INSTRUCTIONS.flow
 
   return prompt
 }
