@@ -41,9 +41,9 @@
       <div class="flex items-center gap-2 mb-2">
         <span
           class="text-xs font-medium uppercase tracking-wider"
-          :class="message.role === 'user' ? 'text-accent' : 'text-success'"
+          :class="message.role === 'user' ? 'text-success' : 'text-purple-400'"
         >
-          {{ message.role === 'user' ? 'You' : 'Assistant' }}
+          {{ message.role === 'user' ? 'You' : 'Paloma' }}
         </span>
         <!-- Attached files -->
         <div v-if="message.files?.length" class="flex items-center gap-1 ml-2">
