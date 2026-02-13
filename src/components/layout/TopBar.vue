@@ -123,8 +123,6 @@ const props = defineProps({
   projectName: { type: String, default: '' },
   activeModel: { type: String, default: '' }
 })
-defineEmits(['open-settings', 'open-project'])
-
 const { sessionCost, sessionTokens, getContextUsage, formatCost, formatTokens } = useCostTracking()
 const { connected: mcpConnected, servers: mcpServers, autoConnect: mcpAutoConnect, callMcpTool, resolveProjectPath } = useMCP()
 const { projectName: currentProjectName, projectRoot, switchProject, listProjects, detachProject } = useProject()
@@ -193,10 +191,11 @@ async function handleSwitchProject(name) {
   }
 }
 
+const emit = defineEmits(['open-settings', 'open-project'])
+
 function handleOpenProject() {
   showProjectDropdown.value = false
-  // Emit to parent to use legacy file picker
-  // The parent (AppLayout) passes this through
+  emit('open-project')
 }
 
 function handleDetachProject() {
