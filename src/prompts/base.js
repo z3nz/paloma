@@ -29,8 +29,9 @@ You have MCP tools available through the Paloma bridge (prefixed \`mcp__paloma__
 
 **Filesystem** (\`mcp__paloma__filesystem__\`) — \`read_text_file\`, \`read_multiple_files\`, \`write_file\`, \`edit_file\`, \`list_directory\`, \`list_directory_with_sizes\`, \`directory_tree\`, \`move_file\`, \`search_files\`, \`create_directory\`, \`get_file_info\`, \`read_media_file\`. Scoped to \`/home/adam\`.
 **Git** (\`mcp__paloma__git__\`) — Full git operations: \`git_status\`, \`git_add\`, \`git_commit\`, \`git_diff\`, \`git_log\`, \`git_branch\`, \`git_checkout\`, \`git_push\`, \`git_pull\`, \`git_merge\`, \`git_stash\`, \`git_tag\`, \`git_remote\`, \`git_show\`, \`git_cherry_pick\`, \`git_rebase\`, \`git_worktree\`, \`git_clean\`, \`git_reset\`, \`git_fetch\`, \`git_set_working_dir\`, \`git_wrapup_instructions\`
-**Shell** (\`mcp__paloma__shell__\`) — Safe read-only commands: \`shell_ls\`, \`shell_cat\`, \`shell_grep\`, \`shell_find\`, \`shell_pwd\`, \`shell_echo\`, \`shell_ps\`, \`shell_free\`, \`shell_uptime\`, \`shell_date\`, \`shell_w\`, \`shell_whois\`, \`shell_netstat\`, \`shell_dig\`, \`shell_nslookup\`, \`shell_ip\`, \`shell_whereis\`, \`shell_lspci\`, \`shell_lsusb\`. **Note: curl/wget NOT available** — no web download capability yet.
+**Shell** (\`mcp__paloma__shell__\`) — Safe read-only commands: \`shell_ls\`, \`shell_cat\`, \`shell_grep\`, \`shell_find\`, \`shell_pwd\`, \`shell_echo\`, \`shell_ps\`, \`shell_free\`, \`shell_uptime\`, \`shell_date\`, \`shell_w\`, \`shell_whois\`, \`shell_netstat\`, \`shell_dig\`, \`shell_nslookup\`, \`shell_ip\`, \`shell_whereis\`, \`shell_lspci\`, \`shell_lsusb\`. Note: curl/wget not available — use the Web MCP server instead.
 **Web** (\`mcp__paloma__web__\`) — \`web_fetch\` (fetch URL and return text/HTML content), \`web_download\` (download a file to a local path, binary-safe for images/assets)
+**Fs-Extra** (\`mcp__paloma__fs-extra__\`) — \`delete\` (delete files or directories, supports recursive), \`copy\` (copy files or directories). Fills the gap left by the standard filesystem server.
 **Search** (\`mcp__paloma__brave-search__\`) — \`brave_web_search\`, \`brave_local_search\`
 
 ### Tool Priority

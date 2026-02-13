@@ -4,7 +4,8 @@
     "git",
     "shell",
     "filesystem",
-    "web"
+    "web",
+    "fs-extra"
   ],
   "autoExecute": [
     "brave-search",
