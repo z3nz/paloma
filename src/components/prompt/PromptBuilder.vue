@@ -20,6 +20,18 @@
       @close="closeSlashMenu"
     />
 
+    <!-- Plan search dropdown (second level: after selecting /plan) -->
+    <PlanSearch
+      ref="planSearchRef"
+      :visible="showPlanSearch"
+      :items="planItems"
+      :query="planSearchQuery"
+      :loading="plansLoading"
+      :mode="planMode"
+      @select="onPlanSelect"
+      @close="closePlanSearch"
+    />
+
     <!-- Project search dropdown (second level: after selecting /project) -->
     <ProjectSearch
       ref="projectSearchRef"
@@ -106,6 +118,7 @@
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import FileSearch from './FileSearch.vue'
 import FileChip from './FileChip.vue'
+import PlanSearch from './PlanSearch.vue'
 import ProjectSearch from './ProjectSearch.vue'
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import ModelSelector from './ModelSelector.vue'
@@ -147,9 +160,18 @@ const projectSearchQuery = ref('')
 const projectList = ref([])
 const projectsLoading = ref(false)
 
+const showPlanSearch = ref(false)
+const planSearchQuery = ref('')
+const planItems = ref([])
+const plansLoading = ref(false)
+const planMode = ref('list') // 'list' | 'activate' | 'pause' | 'complete' | 'archive'
+const planSearchRef = ref(null)
+let planAction = null // tracks what action to take on selection
+
 // Available slash commands — add more here as we build them
 const slashCommands = [
-  { name: 'project', description: 'Switch project context' }
+  { name: 'project', description: 'Switch project context' },
+  { name: 'plan', description: 'List and manage plans' }
 ]
 
 // Track trigger positions for replacement
@@ -241,6 +263,44 @@ function onInput() {
   const cursorPos = el.selectionStart
   const textBeforeCursor = input.value.slice(0, cursorPos)
 
+  // Check for /plan<space> trigger (second level — user selected /plan command)
+  // Matches: /plan <query>, /plan activate <query>, /plan pause <query>, etc.
+  const planActionMatch = textBeforeCursor.match(/(^|\s)(\/plan\s+(?:activate|pause|complete|archive)\s+)(\S*)$/i)
+  const planListMatch = !planActionMatch && textBeforeCursor.match(/(^|\s)(\/plan\s+)(\S*)$/i)
+  if (planActionMatch) {
+    slashStartIndex = cursorPos - planActionMatch[2].length - planActionMatch[3].length
+    const action = planActionMatch[2].trim().split(/\s+/)[1] // 'activate', 'pause', etc.
+    planSearchQuery.value = planActionMatch[3]
+    planMode.value = action
+    planAction = action
+    const wasVisible = showPlanSearch.value
+    showPlanSearch.value = true
+    showSlashMenu.value = false
+    showFileSearch.value = false
+    showProjectSearch.value = false
+    if (!wasVisible && !plansLoading.value) {
+      loadPlanList(action)
+    }
+    return
+  } else if (planListMatch) {
+    slashStartIndex = cursorPos - planListMatch[2].length - planListMatch[3].length
+    planSearchQuery.value = planListMatch[3]
+    planMode.value = 'list'
+    planAction = null
+    const wasVisible = showPlanSearch.value
+    showPlanSearch.value = true
+    showSlashMenu.value = false
+    showFileSearch.value = false
+    showProjectSearch.value = false
+    if (!wasVisible && !plansLoading.value) {
+      loadPlanList('list')
+    }
+    return
+  } else {
+    showPlanSearch.value = false
+    planSearchQuery.value = ''
+  }
+
   // Check for /project<space> trigger (second level — user selected /project command)
   const projectMatch = textBeforeCursor.match(/(^|\s)(\/project\s+)(\S*)$/i)
   if (projectMatch) {
@@ -304,6 +364,126 @@ async function loadProjectList() {
   }
 }
 
+const STATUS_ICONS = { active: '🟢', paused: '⏸️', draft: '📝', completed: '✅', archived: '📦' }
+
+async function loadPlanList(mode) {
+  if (!mcpConnected.value || !currentProjectRoot.value) {
+    planItems.value = []
+    return
+  }
+  plansLoading.value = true
+  try {
+    const plansDir = `${currentProjectRoot.value}/.paloma/plans`
+    const result = await callMcpTool('mcp__filesystem__list_directory', { path: plansDir })
+    const entries = []
+    if (typeof result === 'string') {
+      for (const line of result.split('\n')) {
+        const fileMatch = line.match(/^\[FILE\]\s+(.+)/)
+        if (fileMatch) entries.push(fileMatch[1].trim())
+      }
+    }
+
+    // Parse plan filenames
+    const plans = []
+    for (const filename of entries) {
+      const match = filename.match(/^(active|paused|draft|completed|archived)-(\d{8})-([^-]+)-(.+)\.md$/)
+      if (match) {
+        plans.push({
+          status: match[1],
+          date: match[2],
+          scope: match[3],
+          slug: match[4],
+          filename,
+          id: `${match[3]}-${match[4]}`,
+          label: match[4].replace(/-/g, ' '),
+          icon: STATUS_ICONS[match[1]] || '📄'
+        })
+      }
+    }
+
+    // Filter by mode — show plans that can receive this action
+    let filtered
+    switch (mode) {
+      case 'activate':
+        filtered = plans.filter(p => p.status !== 'active')
+        break
+      case 'pause':
+        filtered = plans.filter(p => p.status === 'active')
+        break
+      case 'complete':
+        filtered = plans.filter(p => p.status !== 'completed')
+        break
+      case 'archive':
+        filtered = plans.filter(p => p.status !== 'archived')
+        break
+      default:
+        filtered = plans
+    }
+
+    // Sort: active first, then paused, draft, completed, archived
+    const order = { active: 0, paused: 1, draft: 2, completed: 3, archived: 4 }
+    filtered.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9))
+
+    planItems.value = filtered
+  } catch (e) {
+    console.warn('[PromptBuilder] Failed to load plans:', e)
+    planItems.value = []
+  } finally {
+    plansLoading.value = false
+  }
+}
+
+async function onPlanSelect(item) {
+  // Handle action items — fill in the action and show filtered plans
+  if (item.type === 'action') {
+    // Replace current input with /plan <action> and re-trigger
+    const startPos = slashStartIndex >= 0 ? slashStartIndex : 0
+    const cursorPos = textareaRef.value?.selectionStart || input.value.length
+    const before = input.value.slice(0, startPos)
+    const after = input.value.slice(cursorPos)
+    input.value = before + '/plan ' + item.action + ' ' + after
+
+    showPlanSearch.value = false
+
+    nextTick(() => {
+      const newPos = startPos + '/plan '.length + item.action.length + 1
+      textareaRef.value?.setSelectionRange(newPos, newPos)
+      onInput()
+    })
+    return
+  }
+
+  // Capture action before closePlanSearch() clears it
+  const action = planAction
+
+  // Clear the input
+  if (slashStartIndex >= 0) {
+    const cursorPos = textareaRef.value?.selectionStart || input.value.length
+    input.value = input.value.slice(0, slashStartIndex) + input.value.slice(cursorPos)
+  }
+
+  closePlanSearch()
+
+  // If no action (list mode, user selected a plan), send /plan to list all
+  if (!action) {
+    emit('send', { content: `/plan`, files: [] })
+    textareaRef.value?.focus()
+    return
+  }
+
+  // Execute the transition: /plan <action> <id>
+  emit('send', { content: `/plan ${action} ${item.id}`, files: [] })
+  textareaRef.value?.focus()
+}
+
+function closePlanSearch() {
+  showPlanSearch.value = false
+  planSearchQuery.value = ''
+  planMode.value = 'list'
+  planAction = null
+  slashStartIndex = -1
+}
+
 function onKeydown(e) {
   // Let file search handle keys first
   if (showFileSearch.value && fileSearchRef.value?.handleKeydown(e)) {
@@ -315,9 +495,23 @@ function onKeydown(e) {
     return
   }
 
+  // Let plan search handle keys
+  if (showPlanSearch.value && planSearchRef.value?.handleKeydown(e)) {
+    return
+  }
+
   // Let project search handle keys
   if (showProjectSearch.value && projectSearchRef.value?.handleKeydown(e)) {
     return
+  }
+
+  // Safety net: if any dropdown is open but its handler didn't catch Enter,
+  // prevent Enter from inserting a newline or doing anything unexpected
+  if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+    if (showPlanSearch.value || showProjectSearch.value || showSlashMenu.value || showFileSearch.value) {
+      e.preventDefault()
+      return
+    }
   }
 
   // Ctrl+Enter to send

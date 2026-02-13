@@ -1,5 +1,7 @@
 # Fadden Pest Control — Demo UI Prototype
 
+**Status:** draft
+
 > **Goal:** High-fidelity UI demo showing the core scheduling → service ticket flow. No backend.
 > **Client:** Matt Fadden (Fadden Pest Control)
 > **Stack:** Vue 3 + Vite + Tailwind CSS (UI only, mock data)

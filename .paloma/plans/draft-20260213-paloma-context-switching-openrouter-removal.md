@@ -1,6 +1,6 @@
 # Plan: Project Context Switching & OpenRouter Independence
 
-**Status:** active
+**Status:** draft
 **Created:** 2026-02-13
 **Scope:** paloma
 **Impact:** Major — touches ~20 files across services, composables, and components

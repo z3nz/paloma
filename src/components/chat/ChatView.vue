@@ -61,6 +61,8 @@ import { useFileIndex } from '../../composables/useFileIndex.js'
 import { useMCP, isMcpTool } from '../../composables/useMCP.js'
 import { usePermissions } from '../../composables/usePermissions.js'
 import { resolveEdit } from '../../services/editing.js'
+import { handleSlashCommand } from '../../services/slashCommands.js'
+import db from '../../services/db.js'
 
 const props = defineProps({
   session: { type: Object, default: null }
@@ -130,6 +132,68 @@ watch(streaming, (newVal, oldVal) => {
 
 async function handleSend({ content, files }) {
   if (!props.session || !content.trim()) return
+
+  // Check for slash commands — execute locally without API call
+  const trimmedContent = content.trim()
+  try {
+    const cmd = await handleSlashCommand(trimmedContent, callMcpTool, projectRoot.value)
+    if (cmd.handled) {
+      // Save user message
+      const userMsg = {
+        sessionId: props.session.id,
+        role: 'user',
+        content: trimmedContent,
+        files: [],
+        timestamp: Date.now()
+      }
+      const userMsgId = await db.messages.add(userMsg)
+      userMsg.id = userMsgId
+      messages.value.push(userMsg)
+
+      // Inject response as assistant message
+      const assistantMsg = {
+        sessionId: props.session.id,
+        role: 'assistant',
+        content: cmd.response,
+        files: [],
+        timestamp: Date.now()
+      }
+      const assistantMsgId = await db.messages.add(assistantMsg)
+      assistantMsg.id = assistantMsgId
+      messages.value.push(assistantMsg)
+
+      // Refresh active plans in case a transition happened
+      await refreshActivePlans(callMcpTool)
+      return
+    }
+  } catch (e) {
+    // If it looks like a slash command but execution failed, still handle it locally
+    if (trimmedContent.startsWith('/plan')) {
+      const userMsg = {
+        sessionId: props.session.id,
+        role: 'user',
+        content: trimmedContent,
+        files: [],
+        timestamp: Date.now()
+      }
+      const userMsgId = await db.messages.add(userMsg)
+      userMsg.id = userMsgId
+      messages.value.push(userMsg)
+
+      const errorMsg = {
+        sessionId: props.session.id,
+        role: 'assistant',
+        content: `Failed to execute command: ${e.message}`,
+        files: [],
+        timestamp: Date.now()
+      }
+      const errorMsgId = await db.messages.add(errorMsg)
+      errorMsg.id = errorMsgId
+      messages.value.push(errorMsg)
+      return
+    }
+    console.error('[ChatView] Slash command error:', e)
+  }
 
   const title = await sendMessage(
     props.session.id,

@@ -64,7 +64,8 @@ You have MCP tools available through the Paloma bridge (prefixed \`mcp__paloma__
 
 Plans live in \`.paloma/plans/\` using a flat naming convention:
 - Pattern: \`{status}-{YYYYMMDD}-{scope}-{slug}.md\`
-- Statuses: \`active\`, \`completed\`, \`archived\`, \`draft\`
+- Statuses: \`active\`, \`paused\`, \`draft\`, \`completed\`, \`archived\`
+- Only \`active\` plans are loaded into conversation context. \`paused\` means in-progress but not loaded.
 - Example: \`active-20260213-fadden-demo-ui-prototype.md\`
 
 No subfolders — status is encoded in the filename prefix.
@@ -72,6 +73,18 @@ Reference docs live in \`.paloma/docs/\` with scope-based prefixes.
 Root values live in \`.paloma/roots/\` as \`root-{name}.md\`.
 
 Active plans are automatically included in your context. Reference them to stay consistent across pillars.
+
+### Slash Commands
+
+- \`/project <name>\` — switch project context
+- \`/plan\` — list all plans with status
+- \`/plan active|paused|draft|completed|archived\` — filter by status
+- \`/plan activate <id>\` — promote to active (loads into context)
+- \`/plan pause <id>\` — pause (in progress, not loaded into context)
+- \`/plan complete <id>\` — mark plan as completed
+- \`/plan archive <id>\` — archive a plan
+
+Slash commands execute locally (no API tokens used).
 
 ## Code Block Format
 

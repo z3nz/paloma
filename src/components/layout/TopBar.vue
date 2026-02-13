@@ -21,6 +21,19 @@
     </button>
 
     <div class="flex items-center gap-2">
+      <!-- Hog Wild toggle -->
+      <button
+        @click="toggleHogWild"
+        class="flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-colors font-medium"
+        :class="hogWild
+          ? 'bg-warning/20 text-warning hover:bg-warning/30'
+          : 'text-text-muted hover:text-text-secondary hover:bg-bg-hover'"
+        :title="hogWild ? 'Hog Wild: ALL tools auto-approved. Click to disable.' : 'Enable Hog Wild mode (auto-approve all tools)'"
+      >
+        <span v-if="hogWild">HOG WILD</span>
+        <span v-else>Hog Wild</span>
+      </button>
+
       <!-- MCP indicator -->
       <div
         v-if="mcpVisible"
@@ -118,6 +131,7 @@ import UsageModal from './UsageModal.vue'
 import { useCostTracking } from '../../composables/useCostTracking.js'
 import { useMCP } from '../../composables/useMCP.js'
 import { useProject } from '../../composables/useProject.js'
+import { usePermissions } from '../../composables/usePermissions.js'
 
 const props = defineProps({
   projectName: { type: String, default: '' },
@@ -126,6 +140,7 @@ const props = defineProps({
 const { sessionCost, sessionTokens, getContextUsage, formatCost, formatTokens } = useCostTracking()
 const { connected: mcpConnected, servers: mcpServers, autoConnect: mcpAutoConnect, callMcpTool, resolveProjectPath } = useMCP()
 const { projectName: currentProjectName, projectRoot, switchProject, listProjects, detachProject } = useProject()
+const { hogWild, toggleHogWild } = usePermissions()
 
 const showUsageModal = ref(false)
 const showProjectDropdown = ref(false)

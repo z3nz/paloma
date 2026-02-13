@@ -5,14 +5,19 @@ const _saved = import.meta.hot ? window.__PALOMA_PERMISSIONS__ : undefined
 // Session-level approvals: Set of server names approved for this session
 const sessionApprovals = ref(_saved?.sessionApprovals ?? new Set())
 
+// Hog Wild mode: auto-approve ALL tools (session-scoped, resets on refresh)
+const hogWild = ref(_saved?.hogWild ?? false)
+
 if (import.meta.hot) {
   const save = () => {
     window.__PALOMA_PERMISSIONS__ = {
-      sessionApprovals: sessionApprovals.value
+      sessionApprovals: sessionApprovals.value,
+      hogWild: hogWild.value
     }
   }
   save()
   watch(sessionApprovals, save, { flush: 'sync' })
+  watch(hogWild, save, { flush: 'sync' })
   import.meta.hot.accept()
 }
 
@@ -39,6 +44,8 @@ export function usePermissions() {
    * @param {Object|null} mcpConfig - Project MCP config with autoExecute array
    */
   function isAutoApproved(toolName, mcpConfig) {
+    if (hogWild.value) return true
+
     const server = extractServerName(toolName)
     if (!server) return false
 
@@ -61,10 +68,16 @@ export function usePermissions() {
     sessionApprovals.value = new Set()
   }
 
+  function toggleHogWild() {
+    hogWild.value = !hogWild.value
+  }
+
   return {
     sessionApprovals,
+    hogWild,
     isAutoApproved,
     approveForSession,
     clearSession,
+    toggleHogWild,
   }
 }
