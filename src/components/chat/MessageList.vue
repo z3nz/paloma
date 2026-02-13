@@ -106,12 +106,33 @@ function scrollToBottom(behavior = 'smooth') {
   })
 }
 
+// --- Streaming markdown safety ---
+// During streaming, code fences may be half-received (opening ``` but no closing ```).
+// marked will produce broken HTML in that case. This helper detects unclosed fences
+// and appends a closing one so the parser always sees valid markdown.
+function closeOpenFences(text) {
+  const fencePattern = /^(`{3,})/gm
+  let open = false
+  let openFence = '```'
+  let match
+  while ((match = fencePattern.exec(text)) !== null) {
+    if (!open) {
+      open = true
+      openFence = match[1]
+    } else {
+      open = false
+    }
+  }
+  return open ? text + '\n' + openFence : text
+}
+
 // --- Throttled streaming HTML ---
 const streamingHtmlThrottled = ref('<span class="streaming-cursor"></span>')
 let throttleTimer = null
 
 function renderAndScroll() {
-  streamingHtmlThrottled.value = marked.parse(props.streamingContent, { breaks: true }) + '<span class="streaming-cursor"></span>'
+  const safeContent = closeOpenFences(props.streamingContent)
+  streamingHtmlThrottled.value = marked.parse(safeContent, { breaks: true }) + '<span class="streaming-cursor"></span>'
   // Scroll after render, using instant during streaming to avoid
   // smooth-scroll animation setting isNearBottom=false mid-flight
   if (isNearBottom.value) {
