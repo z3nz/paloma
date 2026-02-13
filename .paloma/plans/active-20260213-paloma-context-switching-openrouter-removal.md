@@ -286,6 +286,43 @@ When `/project fadden` is invoked:
 
 ---
 
+## Phase 2.5: Plan Approval UI
+
+### Goal
+When Paloma generates a plan, present it in a dedicated modal for review and approval — not buried in chat messages.
+
+### Implementation: Fork DiffPreview.vue → PlanApproval.vue
+
+We already have the perfect pattern in `DiffPreview.vue`: full-screen modal, scrollable content, action buttons. Fork it:
+
+#### `src/components/chat/PlanApproval.vue` — NEW
+- Large modal (max-width 4xl or larger) with backdrop
+- Header: plan title, scope badge, date
+- Body: scrollable markdown-rendered content (reuse `marked` + our existing styles)
+- Footer: three buttons — "Approve" (green), "Request Changes" (amber), "Reject" (red)
+- On approve: plan gets saved to `.paloma/plans/active-*.md` via MCP, confirmation in chat
+- On request changes: returns to chat with the plan context, user can describe what to change
+- On reject: dismissed, note in chat
+
+#### `src/components/chat/ChatView.vue` — MINOR
+- Add `activePlan` ref (like `activeToolConfirmation`)
+- When streaming detects a plan block (could use a `<!-- plan -->` marker or detect the plan format), trigger the modal
+- Wire approve/reject/changes handlers
+
+#### Integration with `/project` context
+- When a plan is approved, it's written to the active project's `.paloma/plans/`
+- The system prompt picks it up on the next message automatically
+- Full lifecycle: generate → review in modal → approve → auto-loaded in future conversations
+
+#### Files to Change
+| File | Change |
+|------|--------|
+| `src/components/chat/PlanApproval.vue` | NEW — modal component |
+| `src/components/chat/ChatView.vue` | Wire plan detection and modal trigger |
+| `src/composables/useChat.js` | Expose plan state for modal |
+
+---
+
 ## Success Criteria
 
 - [ ] `npm install && npm start` → app opens, bridge connects, can chat immediately
@@ -296,3 +333,5 @@ When `/project fadden` is invoked:
 - [ ] OpenRouter works when key is configured (opt-in)
 - [ ] File attachments work via MCP
 - [ ] Code Apply works via MCP
+- [ ] Plans render in a dedicated approval modal with Approve/Changes/Reject
+- [ ] Approved plans auto-save to `.paloma/plans/` and load into future conversations
