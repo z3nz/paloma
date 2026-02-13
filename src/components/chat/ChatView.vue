@@ -36,6 +36,8 @@
       @deny="handleToolDeny"
       @allow-session="handleToolAllowSession"
       @allow-always="handleToolAllowAlways"
+      @allow-tool-session="handleToolAllowToolSession"
+      @allow-tool-always="handleToolAllowToolAlways"
     />
 
     <AskUserDialog
@@ -80,7 +82,7 @@ const { apiKey } = useSettings()
 const { dirHandle, projectRoot, projectInstructions, activePlans, mcpConfig, refreshActivePlans } = useProject()
 const { search: searchFiles } = useFileIndex()
 const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool } = useMCP()
-const { isAutoApproved, approveForSession } = usePermissions()
+const { isAutoApproved, approveForSession, approveToolForSession } = usePermissions()
 
 // Unified: show ToolConfirmation for either OpenRouter or CLI tool calls
 const activeToolConfirmation = computed(() => {
@@ -374,6 +376,52 @@ async function handleToolAllowAlways(serverName) {
       } catch (err) {
         console.warn('[Permissions] Failed to persist autoExecute:', err)
       }
+    }
+  }
+
+  handleToolAllow()
+}
+
+function handleToolAllowToolSession({ server, tool }) {
+  approveToolForSession(server, tool)
+  handleToolAllow()
+}
+
+async function handleToolAllowToolAlways({ server, tool }) {
+  approveToolForSession(server, tool)
+
+  // Persist per-tool approval to mcp.json
+  if (projectRoot.value && mcpConfig.value) {
+    const autoExec = [...(mcpConfig.value.autoExecute || [])]
+    const idx = autoExec.findIndex(e =>
+      (typeof e === 'string' && e === server) || (e?.server === server)
+    )
+
+    if (idx === -1) {
+      // No entry for this server — create allowlist
+      autoExec.push({ server, tools: [tool] })
+    } else if (typeof autoExec[idx] === 'string') {
+      // Server already fully approved — tool is already covered
+    } else {
+      const entry = { ...autoExec[idx] }
+      if (entry.tools && !entry.tools.includes(tool)) {
+        entry.tools = [...entry.tools, tool]
+        autoExec[idx] = entry
+      } else if (entry.except) {
+        entry.except = entry.except.filter(t => t !== tool)
+        if (entry.except.length === 0) autoExec[idx] = server
+        else autoExec[idx] = { ...entry }
+      }
+    }
+
+    mcpConfig.value = { ...mcpConfig.value, autoExecute: autoExec }
+    try {
+      await callMcpTool('mcp__filesystem__write_file', {
+        path: `${projectRoot.value}/.paloma/mcp.json`,
+        content: JSON.stringify(mcpConfig.value, null, 2) + '\n'
+      })
+    } catch (err) {
+      console.warn('[Permissions] Failed to persist per-tool autoExecute:', err)
     }
   }
 

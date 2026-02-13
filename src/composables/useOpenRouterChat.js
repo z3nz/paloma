@@ -1,6 +1,6 @@
 import { streamChat } from '../services/openrouter.js'
 import { AUTO_EXECUTE_TOOLS, executeTool } from '../services/tools.js'
-import { isMcpTool, parseMcpToolName } from './useMCP.js'
+import { isMcpTool } from './useMCP.js'
 import { useToolExecution } from './useToolExecution.js'
 
 const MAX_TOOL_ROUNDS = 25
@@ -13,7 +13,7 @@ const MAX_TOOL_ROUNDS = 25
  */
 export async function runOpenRouterLoop({
   apiKey, model, apiMessages, tools, sessionId,
-  mcpAutoExec, callMcpTool, searchFn, dirHandle,
+  isAutoApproved, mcpConfig, callMcpTool, searchFn, dirHandle,
   onContent, onToolCall, onSaveAssistant, onSaveTool, onResetStreaming
 }) {
   const { addActivity, markActivityDone, requestToolConfirmation } = useToolExecution()
@@ -65,8 +65,7 @@ export async function runOpenRouterLoop({
         const activityId = addActivity(toolName, args)
 
         if (isMcpTool(toolName)) {
-          const { server } = parseMcpToolName(toolName)
-          if (mcpAutoExec.has(server)) {
+          if (isAutoApproved(toolName, mcpConfig)) {
             try {
               result = await callMcpTool(toolName, args)
             } catch (e) {

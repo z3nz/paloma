@@ -4,6 +4,7 @@ import { readFile } from '../services/filesystem.js'
 import { getAllTools } from '../services/tools.js'
 import { useOpenRouter } from './useOpenRouter.js'
 import { useMCP } from './useMCP.js'
+import { usePermissions } from './usePermissions.js'
 import { useProject } from './useProject.js'
 import { isCliModel } from '../services/claudeStream.js'
 import { buildSystemPrompt } from './useSystemPrompt.js'
@@ -92,9 +93,9 @@ export function useChat() {
     messages.value.push(userMsg)
 
     // Resolve MCP tools
-    const { getEnabledTools, getAutoExecuteServers, callMcpTool } = useMCP()
+    const { getEnabledTools, callMcpTool } = useMCP()
+    const { isAutoApproved } = usePermissions()
     const enabledMcpTools = mcpConfig ? getEnabledTools(mcpConfig) : []
-    const mcpAutoExec = mcpConfig ? getAutoExecuteServers(mcpConfig) : new Set()
 
     // Build messages array for API
     const apiMessages = []
@@ -147,7 +148,7 @@ export function useChat() {
 
         const result = await runOpenRouterLoop({
           apiKey, model, apiMessages, tools, sessionId,
-          mcpAutoExec, callMcpTool, searchFn, dirHandle,
+          isAutoApproved, mcpConfig, callMcpTool, searchFn, dirHandle,
           onContent(text) { streamingContent.value = text },
           onResetStreaming() { streamingContent.value = '' },
           async onSaveAssistant(content, toolCalls, usage, model) {

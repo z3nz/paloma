@@ -1,6 +1,6 @@
 # Plan: MCP Permission Management in Settings Modal
 
-**Status:** draft
+**Status:** active
 **Created:** 2026-02-13
 **Scope:** paloma
 **Impact:** Moderate — touches Settings UI, permission composable, and mcp.json

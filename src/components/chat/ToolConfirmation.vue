@@ -61,19 +61,36 @@
             </button>
             <div
               v-if="showMenu"
-              class="absolute bottom-full right-0 mb-1 bg-bg-primary border border-border rounded-md shadow-lg py-1 min-w-[220px] z-10"
+              class="absolute bottom-full right-0 mb-1 bg-bg-primary border border-border rounded-md shadow-lg py-1 min-w-[260px] z-10"
             >
+              <!-- Per-tool options -->
+              <button
+                v-if="bareTool"
+                @click="showMenu = false; $emit('allow-tool-session', { server: serverName, tool: bareTool })"
+                class="w-full text-left px-4 py-2 text-sm text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+              >
+                Allow <span class="font-mono text-accent">{{ bareTool }}</span> for session
+              </button>
+              <button
+                v-if="bareTool"
+                @click="showMenu = false; $emit('allow-tool-always', { server: serverName, tool: bareTool })"
+                class="w-full text-left px-4 py-2 text-sm text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+              >
+                Always allow <span class="font-mono text-accent">{{ bareTool }}</span>
+              </button>
+              <hr v-if="bareTool" class="border-border my-1" />
+              <!-- Server-level options -->
               <button
                 @click="showMenu = false; $emit('allow-session', serverName)"
                 class="w-full text-left px-4 py-2 text-sm text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
               >
-                Allow <span class="font-mono text-accent">{{ serverName }}</span> for session
+                Allow all <span class="font-mono text-accent">{{ serverName }}</span> for session
               </button>
               <button
                 @click="showMenu = false; $emit('allow-always', serverName)"
                 class="w-full text-left px-4 py-2 text-sm text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
               >
-                Always allow <span class="font-mono text-accent">{{ serverName }}</span>
+                Always allow all <span class="font-mono text-accent">{{ serverName }}</span>
               </button>
             </div>
           </div>
@@ -95,13 +112,13 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { extractServerName } from '../../composables/usePermissions.js'
+import { extractServerName, extractToolName } from '../../composables/usePermissions.js'
 
 const props = defineProps({
   confirmation: { type: Object, required: true }
 })
 
-defineEmits(['allow', 'deny', 'allow-session', 'allow-always'])
+defineEmits(['allow', 'deny', 'allow-session', 'allow-always', 'allow-tool-session', 'allow-tool-always'])
 
 const showMenu = ref(false)
 const menuAnchor = ref(null)
@@ -122,6 +139,7 @@ const isProxyTool = computed(() => !isMcp.value && props.confirmation.toolName.i
 const isExternalTool = computed(() => isMcp.value || isProxyTool.value)
 
 const serverName = computed(() => extractServerName(props.confirmation.toolName))
+const bareTool = computed(() => extractToolName(props.confirmation.toolName))
 
 const toolDisplayName = computed(() => {
   const name = props.confirmation.toolName

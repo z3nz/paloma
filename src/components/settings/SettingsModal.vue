@@ -17,7 +17,7 @@
 
       <!-- Body -->
       <div class="px-6 py-5 space-y-5 overflow-y-auto">
-        <!-- MCP Bridge (primary) -->
+        <!-- MCP Bridge -->
         <div>
           <label class="block text-sm text-text-secondary mb-1.5">MCP Bridge</label>
           <div class="space-y-2">
@@ -46,19 +46,134 @@
               <input type="checkbox" v-model="localAutoConnect" class="rounded" />
               Auto-connect on startup
             </label>
-            <div v-if="mcpConnected && Object.keys(mcpServerList).length > 0" class="mt-2 space-y-1.5">
-              <p class="text-xs text-text-muted uppercase tracking-wider">Servers</p>
-              <div v-for="(info, name) in mcpServerList" :key="name" class="flex items-center justify-between bg-bg-primary border border-border rounded-md px-3 py-2">
-                <div class="flex items-center gap-2">
+          </div>
+        </div>
+
+        <!-- MCP Servers & Tool Permissions (unified) -->
+        <div v-if="mcpConnected && Object.keys(mcpServerList).length > 0">
+          <label class="block text-sm text-text-secondary mb-1.5">Servers & Permissions</label>
+          <div class="space-y-1.5">
+            <div v-for="(info, name) in mcpServerList" :key="name">
+              <!-- Server row -->
+              <div
+                class="flex items-center justify-between bg-bg-primary border border-border rounded-md px-3 py-2 cursor-pointer select-none"
+                :class="expandedServers.has(name) ? 'rounded-b-none border-b-0' : ''"
+                @click="toggleExpand(name)"
+              >
+                <div class="flex items-center gap-2 min-w-0">
+                  <svg
+                    width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                    class="shrink-0 text-text-muted transition-transform duration-150"
+                    :class="expandedServers.has(name) ? 'rotate-90' : ''"
+                  >
+                    <polyline points="9 18 15 12 9 6"/>
+                  </svg>
                   <span
-                    class="w-1.5 h-1.5 rounded-full"
+                    class="w-1.5 h-1.5 rounded-full shrink-0"
                     :class="info.status === 'connected' ? 'bg-success' : 'bg-danger'"
                   />
-                  <span class="text-sm text-text-primary">{{ name }}</span>
+                  <span class="text-sm text-text-primary truncate">{{ name }}</span>
+                  <span class="text-xs text-text-muted shrink-0">{{ info.tools?.length || 0 }}</span>
+                  <span class="text-xs px-1.5 py-0.5 rounded-full shrink-0" :class="permBadgeClass(name)">
+                    {{ permBadgeLabel(name) }}
+                  </span>
                 </div>
-                <span class="text-xs text-text-muted">{{ info.tools?.length || 0 }} tools</span>
+                <div class="flex items-center gap-1.5 shrink-0 ml-2" @click.stop>
+                  <!-- Server-level actions -->
+                  <button
+                    v-if="getPermTier(name) === 'project'"
+                    @click="revokeProjectApproval(name)"
+                    class="text-xs px-2 py-1 rounded border border-border text-danger hover:bg-danger/10 transition-colors"
+                  >Revoke</button>
+                  <template v-if="getPermTier(name) === 'session'">
+                    <button
+                      v-if="hasProject"
+                      @click="promoteToProject(name)"
+                      class="text-xs px-2 py-1 rounded border border-border text-accent hover:bg-accent/10 transition-colors"
+                    >Promote</button>
+                    <button
+                      @click="clearServerSession(name)"
+                      class="text-xs px-2 py-1 rounded border border-border text-text-muted hover:text-text-primary transition-colors"
+                    >Clear</button>
+                  </template>
+                  <template v-if="getPermTier(name) === 'none'">
+                    <button
+                      v-if="hasProject"
+                      @click="promoteToProject(name)"
+                      class="text-xs px-2 py-1 rounded border border-border text-accent hover:bg-accent/10 transition-colors"
+                    >Auto-approve</button>
+                    <button
+                      @click="approveServerSession(name)"
+                      class="text-xs px-2 py-1 rounded border border-border text-text-muted hover:text-text-primary transition-colors"
+                    >Session</button>
+                  </template>
+                </div>
+              </div>
+
+              <!-- Expanded tool list -->
+              <div
+                v-if="expandedServers.has(name)"
+                class="bg-bg-primary border border-border border-t-0 rounded-b-md px-2 pb-2 pt-1 space-y-0.5"
+              >
+                <div
+                  v-for="tool in info.tools"
+                  :key="tool.name"
+                  class="flex items-center justify-between rounded px-2 py-1.5 hover:bg-bg-hover/50 transition-colors group"
+                >
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="text-xs font-mono text-text-primary truncate">{{ tool.name }}</span>
+                    <span
+                      class="text-[10px] px-1 py-0.5 rounded-full shrink-0"
+                      :class="toolBadgeClass(name, tool.name)"
+                    >{{ toolBadgeLabel(name, tool.name) }}</span>
+                  </div>
+                  <div class="flex items-center gap-1 shrink-0 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <!-- Per-tool actions depend on the server's config shape -->
+                    <template v-if="toolTier(name, tool.name) === 'project' && !isServerFullyApproved(name)">
+                      <button
+                        @click="revokeToolFromProject(name, tool.name)"
+                        class="text-[10px] px-1.5 py-0.5 rounded border border-border text-danger hover:bg-danger/10 transition-colors"
+                      >Revoke</button>
+                    </template>
+                    <template v-if="toolTier(name, tool.name) === 'project' && isServerFullyApproved(name)">
+                      <button
+                        @click="excludeToolFromProject(name, tool.name)"
+                        class="text-[10px] px-1.5 py-0.5 rounded border border-border text-danger hover:bg-danger/10 transition-colors"
+                      >Exclude</button>
+                    </template>
+                    <template v-if="toolTier(name, tool.name) === 'session'">
+                      <button
+                        v-if="hasProject"
+                        @click="approveToolProject(name, tool.name)"
+                        class="text-[10px] px-1.5 py-0.5 rounded border border-border text-accent hover:bg-accent/10 transition-colors"
+                      >Promote</button>
+                      <button
+                        @click="clearToolSession(name, tool.name)"
+                        class="text-[10px] px-1.5 py-0.5 rounded border border-border text-text-muted hover:text-text-primary transition-colors"
+                      >Clear</button>
+                    </template>
+                    <template v-if="toolTier(name, tool.name) === 'none'">
+                      <button
+                        v-if="hasProject"
+                        @click="approveToolProject(name, tool.name)"
+                        class="text-[10px] px-1.5 py-0.5 rounded border border-border text-accent hover:bg-accent/10 transition-colors"
+                      >Approve</button>
+                      <button
+                        @click="approveToolSession(name, tool.name)"
+                        class="text-[10px] px-1.5 py-0.5 rounded border border-border text-text-muted hover:text-text-primary transition-colors"
+                      >Session</button>
+                    </template>
+                  </div>
+                </div>
               </div>
             </div>
+          </div>
+          <div v-if="sessionCount > 0" class="mt-2">
+            <button
+              @click="clearAllSessions"
+              class="text-xs text-text-muted hover:text-danger transition-colors"
+            >Clear all session approvals ({{ sessionCount }})</button>
           </div>
         </div>
 
@@ -131,9 +246,11 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useSettings } from '../../composables/useSettings.js'
 import { useMCP } from '../../composables/useMCP.js'
+import { usePermissions } from '../../composables/usePermissions.js'
+import { useProject } from '../../composables/useProject.js'
 import { CLI_MODELS } from '../../services/claudeStream.js'
 
 const props = defineProps({
@@ -142,7 +259,221 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const { apiKey, defaultModel } = useSettings()
-const { connected: mcpConnected, connectionState: mcpConnectionState, servers: mcpServerList, bridgeUrl, autoConnect: mcpAutoConnect, connect: mcpConnect, disconnect: mcpDisconnect } = useMCP()
+const { connected: mcpConnected, connectionState: mcpConnectionState, servers: mcpServerList, bridgeUrl, autoConnect: mcpAutoConnect, connect: mcpConnect, disconnect: mcpDisconnect, callMcpTool } = useMCP()
+const { sessionApprovals, approveForSession, revokeSession, approveToolForSession, revokeToolSession, clearSession, getToolPermTier } = usePermissions()
+const { projectRoot, mcpConfig } = useProject()
+
+const hasProject = computed(() => !!projectRoot.value && !!mcpConfig.value)
+const sessionCount = computed(() => sessionApprovals.value.size)
+const expandedServers = ref(new Set())
+
+// --- Server-level permission helpers ---
+
+function getPermTier(serverName) {
+  // Check if server has ANY project-level entry (string or object)
+  const autoExec = mcpConfig.value?.autoExecute
+  if (autoExec) {
+    for (const entry of autoExec) {
+      if (typeof entry === 'string' && entry === serverName) return 'project'
+      if (entry?.server === serverName) return 'project'
+    }
+  }
+  if (sessionApprovals.value.has(serverName)) return 'session'
+  return 'none'
+}
+
+function isServerFullyApproved(serverName) {
+  // True only if the server is a plain string in autoExecute (all tools)
+  const autoExec = mcpConfig.value?.autoExecute
+  if (!autoExec) return false
+  return autoExec.some(e => typeof e === 'string' && e === serverName)
+}
+
+function permBadgeLabel(serverName) {
+  const tier = getPermTier(serverName)
+  if (tier === 'project') {
+    if (isServerFullyApproved(serverName)) return 'all'
+    const entry = mcpConfig.value?.autoExecute?.find(e => e?.server === serverName)
+    if (entry?.tools) return `${entry.tools.length} tools`
+    if (entry?.except) return `${entry.except.length} excluded`
+    return 'project'
+  }
+  if (tier === 'session') return 'session'
+  return 'ask'
+}
+
+function permBadgeClass(serverName) {
+  const tier = getPermTier(serverName)
+  if (tier === 'project') return 'bg-accent/20 text-accent'
+  if (tier === 'session') return 'bg-warning/20 text-warning'
+  return 'bg-bg-hover text-text-muted'
+}
+
+// --- Per-tool permission helpers ---
+
+function toolTier(serverName, toolName) {
+  return getToolPermTier(serverName, toolName, mcpConfig.value)
+}
+
+function toolBadgeLabel(serverName, toolName) {
+  const tier = toolTier(serverName, toolName)
+  if (tier === 'project') return isServerFullyApproved(serverName) ? 'inherited' : 'approved'
+  if (tier === 'session') return 'session'
+  return 'ask'
+}
+
+function toolBadgeClass(serverName, toolName) {
+  const tier = toolTier(serverName, toolName)
+  if (tier === 'project') return isServerFullyApproved(serverName) ? 'bg-accent/10 text-accent/60' : 'bg-accent/20 text-accent'
+  if (tier === 'session') return 'bg-warning/20 text-warning'
+  return 'bg-bg-hover text-text-muted'
+}
+
+// --- Expand/collapse ---
+
+function toggleExpand(serverName) {
+  const next = new Set(expandedServers.value)
+  if (next.has(serverName)) next.delete(serverName)
+  else next.add(serverName)
+  expandedServers.value = next
+}
+
+// --- Write helper ---
+
+async function writeMcpConfig() {
+  if (!projectRoot.value || !mcpConfig.value) return
+  try {
+    await callMcpTool('mcp__filesystem__write_file', {
+      path: `${projectRoot.value}/.paloma/mcp.json`,
+      content: JSON.stringify(mcpConfig.value, null, 2) + '\n'
+    })
+  } catch (err) {
+    console.error('[Settings] Failed to write mcp.json:', err)
+  }
+}
+
+// --- Server-level actions ---
+
+async function promoteToProject(serverName) {
+  if (!mcpConfig.value) return
+  const autoExec = mcpConfig.value.autoExecute || []
+  // Remove any existing object entry for this server, replace with string
+  const filtered = autoExec.filter(e =>
+    !(typeof e === 'string' && e === serverName) && !(e?.server === serverName)
+  )
+  filtered.push(serverName)
+  mcpConfig.value = { ...mcpConfig.value, autoExecute: filtered }
+  await writeMcpConfig()
+  approveForSession(serverName)
+}
+
+async function revokeProjectApproval(serverName) {
+  if (!mcpConfig.value) return
+  const autoExec = (mcpConfig.value.autoExecute || []).filter(e =>
+    !(typeof e === 'string' && e === serverName) && !(e?.server === serverName)
+  )
+  mcpConfig.value = { ...mcpConfig.value, autoExecute: autoExec }
+  await writeMcpConfig()
+  revokeSession(serverName)
+}
+
+function approveServerSession(serverName) {
+  approveForSession(serverName)
+}
+
+function clearServerSession(serverName) {
+  revokeSession(serverName)
+}
+
+function clearAllSessions() {
+  clearSession()
+}
+
+// --- Per-tool project actions ---
+
+async function approveToolProject(serverName, toolName) {
+  if (!mcpConfig.value) return
+  const autoExec = [...(mcpConfig.value.autoExecute || [])]
+  const idx = autoExec.findIndex(e =>
+    (typeof e === 'string' && e === serverName) || (e?.server === serverName)
+  )
+
+  if (idx === -1) {
+    // No entry — create allowlist
+    autoExec.push({ server: serverName, tools: [toolName] })
+  } else if (typeof autoExec[idx] === 'string') {
+    // Already fully approved — tool is covered
+    return
+  } else {
+    const entry = { ...autoExec[idx] }
+    if (entry.tools) {
+      if (!entry.tools.includes(toolName)) {
+        entry.tools = [...entry.tools, toolName]
+      }
+    } else if (entry.except) {
+      entry.except = entry.except.filter(t => t !== toolName)
+      if (entry.except.length === 0) {
+        autoExec[idx] = serverName
+        mcpConfig.value = { ...mcpConfig.value, autoExecute: autoExec }
+        await writeMcpConfig()
+        return
+      }
+    }
+    autoExec[idx] = entry
+  }
+
+  mcpConfig.value = { ...mcpConfig.value, autoExecute: autoExec }
+  await writeMcpConfig()
+}
+
+async function revokeToolFromProject(serverName, toolName) {
+  if (!mcpConfig.value) return
+  const autoExec = [...(mcpConfig.value.autoExecute || [])]
+  const idx = autoExec.findIndex(e =>
+    (typeof e === 'string' && e === serverName) || (e?.server === serverName)
+  )
+  if (idx === -1) return
+
+  if (typeof autoExec[idx] === 'string') {
+    // Full server — convert to except list
+    autoExec[idx] = { server: serverName, except: [toolName] }
+  } else {
+    const entry = { ...autoExec[idx] }
+    if (entry.tools) {
+      entry.tools = entry.tools.filter(t => t !== toolName)
+      if (entry.tools.length === 0) {
+        autoExec.splice(idx, 1)
+      } else {
+        autoExec[idx] = entry
+      }
+    } else if (entry.except) {
+      if (!entry.except.includes(toolName)) {
+        entry.except = [...entry.except, toolName]
+      }
+      autoExec[idx] = entry
+    }
+  }
+
+  mcpConfig.value = { ...mcpConfig.value, autoExecute: autoExec }
+  await writeMcpConfig()
+}
+
+async function excludeToolFromProject(serverName, toolName) {
+  // Same as revokeToolFromProject — converts string to except list
+  await revokeToolFromProject(serverName, toolName)
+}
+
+// --- Per-tool session actions ---
+
+function approveToolSession(serverName, toolName) {
+  approveToolForSession(serverName, toolName)
+}
+
+function clearToolSession(serverName, toolName) {
+  revokeToolSession(serverName, toolName)
+}
+
+// --- General settings ---
 
 const localKey = ref(apiKey.value)
 const localModel = ref(defaultModel.value)
