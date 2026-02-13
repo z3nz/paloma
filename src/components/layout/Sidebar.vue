@@ -104,6 +104,13 @@ async function handleExport() {
 
 function phaseColor(phase) {
   const colors = {
+    flow: 'bg-blue-400',
+    scout: 'bg-cyan-400',
+    chart: 'bg-yellow-400',
+    forge: 'bg-orange-400',
+    polish: 'bg-pink-400',
+    ship: 'bg-green-400',
+    // Legacy fallbacks
     research: 'bg-blue-400',
     plan: 'bg-yellow-400',
     implement: 'bg-green-400',

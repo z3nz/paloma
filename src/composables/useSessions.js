@@ -41,7 +41,7 @@ export function useSessions() {
     sessions.value = result
   }
 
-  async function createSession(projectPath, model, phase = 'research') {
+  async function createSession(projectPath, model, phase = 'flow') {
     if (!projectPath) {
       console.error('[Sessions] Cannot create session without projectPath')
       return null
