@@ -36,7 +36,10 @@ export function useCostTracking() {
     if (!model?.context_length) return null
     const lastAssistant = [...messages.value].reverse().find(m => m.role === 'assistant' && m.usage)
     if (!lastAssistant) return null
-    const used = lastAssistant.usage.totalTokens
+    // promptTokens on the last response = entire conversation history sent to the model,
+    // plus completionTokens = total context consumed after that response.
+    // This is the best approximation of current context window usage.
+    const used = (lastAssistant.usage.promptTokens || 0) + (lastAssistant.usage.completionTokens || 0)
     return {
       used,
       limit: model.context_length,

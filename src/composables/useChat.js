@@ -212,9 +212,12 @@ export function useChat() {
     const { getModelInfo } = useOpenRouter()
     const modelInfo = getModelInfo(model)
     if (modelInfo?.context_length) {
-      const pct = (usage.totalTokens / modelInfo.context_length) * 100
+      // promptTokens = entire conversation sent to model, completionTokens = response generated
+      // Together they represent the total context consumed after this response
+      const used = (usage.promptTokens || 0) + (usage.completionTokens || 0)
+      const pct = (used / modelInfo.context_length) * 100
       if (pct >= 80) {
-        contextWarning.value = `Context ${Math.round(pct)}% full (${usage.totalTokens.toLocaleString()} / ${modelInfo.context_length.toLocaleString()} tokens). Consider starting a new session.`
+        contextWarning.value = `Context ${Math.round(pct)}% full (${used.toLocaleString()} / ${modelInfo.context_length.toLocaleString()} tokens). Consider starting a new session.`
       } else {
         contextWarning.value = null
       }
