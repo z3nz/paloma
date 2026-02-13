@@ -1,6 +1,6 @@
 # Plan: Multi-Tab Parallel Sessions
 
-**Status:** draft
+**Status:** active
 **Created:** 2026-02-13
 **Scope:** paloma
 **Impact:** Major — architectural research needed, touches bridge, MCP proxy, session management

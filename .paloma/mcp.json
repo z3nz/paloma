@@ -9,6 +9,20 @@
   ],
   "autoExecute": [
     "brave-search",
-    "filesystem"
+    "filesystem",
+    {
+      "server": "shell",
+      "tools": [
+        "shell_find"
+      ]
+    },
+    {
+      "server": "git",
+      "tools": [
+        "git_diff",
+        "git_log",
+        "git_status"
+      ]
+    }
   ]
 }
