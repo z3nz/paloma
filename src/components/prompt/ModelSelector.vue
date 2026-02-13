@@ -58,18 +58,20 @@
             <span class="text-xs text-text-muted ml-1">Direct</span>
           </div>
         </template>
-        <!-- OpenRouter models -->
-        <div v-if="filteredModels.length" class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">OpenRouter</div>
-        <div
-          v-for="model in filteredModels"
-          :key="model"
-          @click="selectModel(model)"
-          class="px-3 py-2 text-sm cursor-pointer transition-colors"
-          :class="model === modelValue ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
-        >
-          {{ model.split('/').pop() }}
-          <span class="text-xs text-text-muted ml-1">{{ model.split('/')[0] }}</span>
-        </div>
+        <!-- OpenRouter models (only when API key is configured) -->
+        <div v-if="apiKey && filteredModels.length" class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">OpenRouter</div>
+        <template v-if="apiKey">
+          <div
+            v-for="model in filteredModels"
+            :key="model"
+            @click="selectModel(model)"
+            class="px-3 py-2 text-sm cursor-pointer transition-colors"
+            :class="model === modelValue ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
+          >
+            {{ model.split('/').pop() }}
+            <span class="text-xs text-text-muted ml-1">{{ model.split('/')[0] }}</span>
+          </div>
+        </template>
       </div>
     </div>
   </div>
@@ -78,6 +80,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { CLI_MODELS, isCliModel } from '../../services/claudeStream.js'
+import { useSettings } from '../../composables/useSettings.js'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -85,6 +88,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:modelValue'])
+
+const { apiKey } = useSettings()
 
 const open = ref(false)
 const filter = ref('')

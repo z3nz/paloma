@@ -140,6 +140,9 @@ export function useChat() {
         }
       } else {
         // === OpenRouter path ===
+        if (!apiKey) {
+          throw new Error('OpenRouter API key required for this model. Configure it in Settings, or switch to a CLI model.')
+        }
         const tools = dirHandle ? getAllTools(enabledMcpTools) : enabledMcpTools.length ? getAllTools(enabledMcpTools) : []
 
         const result = await runOpenRouterLoop({

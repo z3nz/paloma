@@ -1,7 +1,13 @@
 <template>
   <div class="w-[280px] bg-bg-secondary border-r border-border flex flex-col h-full">
-    <!-- New chat button -->
-    <div class="p-3">
+    <!-- Project indicator + New chat -->
+    <div class="p-3 space-y-2">
+      <div v-if="projectPath && projectPath !== 'paloma'" class="flex items-center gap-2 px-2 py-1.5 bg-bg-primary/50 rounded-md">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent shrink-0">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        <span class="text-xs text-text-secondary truncate">{{ projectPath }}</span>
+      </div>
       <button
         @click="$emit('new-chat')"
         class="w-full px-3 py-2 bg-accent hover:bg-accent-hover text-white text-sm font-medium rounded-md transition-colors flex items-center justify-center gap-2"

@@ -10,6 +10,28 @@
       @close="closeFileSearch"
     />
 
+    <!-- Slash command menu (first level: type / to see commands) -->
+    <SlashCommandMenu
+      ref="slashMenuRef"
+      :visible="showSlashMenu"
+      :commands="slashCommands"
+      :query="slashMenuQuery"
+      @select="onSlashCommandSelect"
+      @close="closeSlashMenu"
+    />
+
+    <!-- Project search dropdown (second level: after selecting /project) -->
+    <ProjectSearch
+      ref="projectSearchRef"
+      :visible="showProjectSearch"
+      :projects="projectList"
+      :query="projectSearchQuery"
+      :loading="projectsLoading"
+      :current-project="currentProject"
+      @select="onProjectSelect"
+      @close="closeProjectSearch"
+    />
+
     <!-- Attached files -->
     <div v-if="attachedFiles.length > 0" class="flex flex-wrap gap-1.5 mb-2">
       <FileChip
@@ -27,7 +49,7 @@
         v-model="input"
         @input="onInput"
         @keydown="onKeydown"
-        placeholder="Message Paloma... (@ to attach files, Ctrl+Enter to send)"
+        placeholder="Message Paloma... (@ attach files, / commands, Ctrl+Enter send)"
         class="prompt-textarea w-full bg-bg-primary border border-border rounded-lg px-4 py-3 pr-12 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
         rows="1"
       />
@@ -84,10 +106,14 @@
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import FileSearch from './FileSearch.vue'
 import FileChip from './FileChip.vue'
+import ProjectSearch from './ProjectSearch.vue'
+import SlashCommandMenu from './SlashCommandMenu.vue'
 import ModelSelector from './ModelSelector.vue'
 import PhaseSelector from './PhaseSelector.vue'
 import { useFileIndex } from '../../composables/useFileIndex.js'
 import { useOpenRouter } from '../../composables/useOpenRouter.js'
+import { useProject } from '../../composables/useProject.js'
+import { useMCP } from '../../composables/useMCP.js'
 import db from '../../services/db.js'
 
 const props = defineProps({
@@ -99,18 +125,36 @@ const emit = defineEmits(['send', 'stop', 'update-session'])
 
 const { search, indexing } = useFileIndex()
 const { models, modelsError } = useOpenRouter()
+const { switchProject, listProjects, projectName: currentProject, projectRoot: currentProjectRoot } = useProject()
+const { callMcpTool, resolveProjectPath, connected: mcpConnected } = useMCP()
 
 const input = ref('')
 const attachedFiles = ref([])
 const textareaRef = ref(null)
 const fileSearchRef = ref(null)
+const projectSearchRef = ref(null)
+const slashMenuRef = ref(null)
 
 const showFileSearch = ref(false)
 const fileSearchQuery = ref('')
-const fileSearchResults = ref([])
+const fileSearchResults = ref([])  
 
-// Track @ position for replacement
+const showSlashMenu = ref(false)
+const slashMenuQuery = ref('')
+
+const showProjectSearch = ref(false)
+const projectSearchQuery = ref('')
+const projectList = ref([])
+const projectsLoading = ref(false)
+
+// Available slash commands — add more here as we build them
+const slashCommands = [
+  { name: 'project', description: 'Switch project context' }
+]
+
+// Track trigger positions for replacement
 let atStartIndex = -1
+let slashStartIndex = -1
 
 const currentModel = computed(() => props.session?.model || '')
 const currentPhase = computed(() => props.session?.phase || 'research')
@@ -197,6 +241,39 @@ function onInput() {
   const cursorPos = el.selectionStart
   const textBeforeCursor = input.value.slice(0, cursorPos)
 
+  // Check for /project<space> trigger (second level — user selected /project command)
+  const projectMatch = textBeforeCursor.match(/(^|\s)(\/project\s+)(\S*)$/i)
+  if (projectMatch) {
+    slashStartIndex = cursorPos - projectMatch[2].length - projectMatch[3].length
+    projectSearchQuery.value = projectMatch[3]
+    const wasVisible = showProjectSearch.value
+    showProjectSearch.value = true
+    showSlashMenu.value = false
+    showFileSearch.value = false
+    if (!wasVisible && !projectsLoading.value) {
+      loadProjectList()
+    }
+    return
+  } else {
+    showProjectSearch.value = false
+    projectSearchQuery.value = ''
+  }
+
+  // Check for / trigger (first level — command menu)
+  const slashMatch = textBeforeCursor.match(/(^|\s)(\/\S*)$/)
+  if (slashMatch) {
+    slashStartIndex = cursorPos - slashMatch[2].length
+    // Strip the leading / to get the query
+    slashMenuQuery.value = slashMatch[2].slice(1)
+    showSlashMenu.value = true
+    showFileSearch.value = false
+    return
+  } else {
+    showSlashMenu.value = false
+    slashMenuQuery.value = ''
+    slashStartIndex = -1
+  }
+
   // Check for @ trigger
   const atMatch = textBeforeCursor.match(/@([^\s@]*)$/)
   if (atMatch) {
@@ -211,9 +288,35 @@ function onInput() {
   }
 }
 
+async function loadProjectList() {
+  if (!mcpConnected.value) return
+  projectsLoading.value = true
+  try {
+    const root = currentProjectRoot.value
+      ? currentProjectRoot.value.replace(/\/projects\/[^/]+$/, '')
+      : '/home/adam/paloma'
+    projectList.value = await listProjects(callMcpTool, root)
+  } catch (e) {
+    console.warn('[PromptBuilder] Failed to load projects:', e)
+    projectList.value = ['paloma']
+  } finally {
+    projectsLoading.value = false
+  }
+}
+
 function onKeydown(e) {
   // Let file search handle keys first
   if (showFileSearch.value && fileSearchRef.value?.handleKeydown(e)) {
+    return
+  }
+
+  // Let slash command menu handle keys
+  if (showSlashMenu.value && slashMenuRef.value?.handleKeydown(e)) {
+    return
+  }
+
+  // Let project search handle keys
+  if (showProjectSearch.value && projectSearchRef.value?.handleKeydown(e)) {
     return
   }
 
@@ -247,11 +350,65 @@ function closeFileSearch() {
   atStartIndex = -1
 }
 
-function send() {
+function onSlashCommandSelect(cmd) {
+  // Replace the partial /text with the full command + space
+  if (slashStartIndex >= 0) {
+    const cursorPos = textareaRef.value?.selectionStart || input.value.length
+    const before = input.value.slice(0, slashStartIndex)
+    const after = input.value.slice(cursorPos)
+    input.value = before + '/' + cmd.name + ' ' + after
+
+    // Position cursor right after the command + space
+    nextTick(() => {
+      const newPos = slashStartIndex + cmd.name.length + 2 // / + name + space
+      textareaRef.value?.setSelectionRange(newPos, newPos)
+      // Trigger onInput to transition into the command's sub-menu
+      onInput()
+    })
+  }
+
+  closeSlashMenu()
+}
+
+function closeSlashMenu() {
+  showSlashMenu.value = false
+  slashMenuQuery.value = ''
+}
+
+async function onProjectSelect(projectName) {
+  // Remove /project text from input
+  if (slashStartIndex >= 0) {
+    const cursorPos = textareaRef.value?.selectionStart || input.value.length
+    input.value = input.value.slice(0, slashStartIndex) + input.value.slice(cursorPos)
+  }
+
+  closeProjectSearch()
+
+  // Switch project
+  try {
+    await switchProject(projectName, callMcpTool, resolveProjectPath)
+    // Emit session update so App.vue can reload sessions for the new project
+    emit('update-session', { projectSwitch: projectName })
+  } catch (e) {
+    console.error('[PromptBuilder] Project switch failed:', e)
+  }
+
+  textareaRef.value?.focus()
+}
+
+function closeProjectSearch() {
+  showProjectSearch.value = false
+  projectSearchQuery.value = ''
+  slashStartIndex = -1
+}
+
+async function send() {
   if (!canSend.value) return
 
+  const text = input.value.trim()
+
   emit('send', {
-    content: input.value.trim(),
+    content: text,
     files: [...attachedFiles.value]
   })
 

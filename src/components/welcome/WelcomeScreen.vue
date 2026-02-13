@@ -7,82 +7,74 @@
         <p class="text-text-secondary text-sm">AI-powered development workflows, locally.</p>
       </div>
 
-      <!-- Step 1: API Key -->
-      <div v-if="step === 1" class="space-y-4">
-        <div>
-          <label class="block text-sm text-text-secondary mb-2">OpenRouter API Key</label>
-          <input
-            v-model="keyInput"
-            type="password"
-            placeholder="sk-or-..."
-            class="w-full bg-bg-secondary border border-border rounded-md px-3 py-2.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
-            @keydown.enter="validateKey"
-          />
-          <p class="text-xs text-text-muted mt-2">
-            Get your key at
-            <a href="https://openrouter.ai/keys" target="_blank" class="text-accent hover:text-accent-hover underline">openrouter.ai/keys</a>
+      <!-- Connecting state -->
+      <div v-if="connectionState === 'connecting'" class="text-center space-y-4">
+        <div class="flex items-center justify-center gap-2 text-text-secondary">
+          <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+          </svg>
+          <span class="text-sm">Connecting to bridge...</span>
+        </div>
+      </div>
+
+      <!-- Not connected — setup help -->
+      <div v-else-if="!connected" class="space-y-4">
+        <div class="bg-bg-secondary border border-border rounded-lg p-4 space-y-3">
+          <p class="text-sm text-text-secondary">
+            Paloma needs the bridge server to run. Start it with:
+          </p>
+          <div class="bg-bg-primary border border-border rounded-md px-3 py-2 font-mono text-sm text-text-primary select-all">
+            node bridge/index.js
+          </div>
+          <p class="text-xs text-text-muted">
+            The bridge connects Paloma to Claude CLI and MCP tools.
           </p>
         </div>
 
-        <p v-if="keyError" class="text-danger text-sm">{{ keyError }}</p>
+        <div class="flex gap-2">
+          <input
+            v-model="localBridgeUrl"
+            placeholder="ws://localhost:19191"
+            class="flex-1 bg-bg-secondary border border-border rounded-md px-3 py-2.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
+            @keydown.enter="handleConnect"
+          />
+          <button
+            @click="handleConnect"
+            class="px-4 py-2.5 bg-accent hover:bg-accent-hover text-white font-medium rounded-md transition-colors text-sm whitespace-nowrap"
+          >
+            Connect
+          </button>
+        </div>
 
-        <button
-          @click="validateKey"
-          :disabled="!keyInput || validating"
-          class="w-full py-2.5 bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors text-sm"
-        >
-          {{ validating ? 'Validating...' : 'Continue' }}
-        </button>
-      </div>
-
-      <!-- Step 2: Open Project -->
-      <div v-if="step === 2" class="space-y-4 text-center">
-        <p class="text-text-secondary text-sm">API key saved. Now open a project directory.</p>
-        <button
-          @click="pickProject"
-          class="w-full py-2.5 bg-accent hover:bg-accent-hover text-white font-medium rounded-md transition-colors text-sm"
-        >
-          Open Project Folder
-        </button>
-        <p class="text-xs text-text-muted">
-          Paloma uses the File System Access API to read files locally. Nothing is uploaded.
-        </p>
+        <p v-if="connectionError" class="text-danger text-sm">{{ connectionError }}</p>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useSettings } from '../../composables/useSettings.js'
-import { useOpenRouter } from '../../composables/useOpenRouter.js'
+import { ref, watch } from 'vue'
+import { useMCP } from '../../composables/useMCP.js'
 
-const emit = defineEmits(['complete', 'open-project'])
+const { connected, connectionState, bridgeUrl, connect } = useMCP()
 
-const { apiKey } = useSettings()
-const { validateApiKey } = useOpenRouter()
+const localBridgeUrl = ref(bridgeUrl.value)
+const connectionError = ref('')
 
-const step = ref(apiKey.value ? 2 : 1)
-const keyInput = ref('')
-const keyError = ref('')
-const validating = ref(false)
-
-async function validateKey() {
-  if (!keyInput.value) return
-  validating.value = true
-  keyError.value = ''
-
-  const valid = await validateApiKey(keyInput.value)
-  if (valid) {
-    apiKey.value = keyInput.value
-    step.value = 2
-  } else {
-    keyError.value = 'Invalid API key. Please check and try again.'
+// Watch for failed connections
+watch(connectionState, (state, oldState) => {
+  if (oldState === 'connecting' && state === 'disconnected') {
+    connectionError.value = 'Could not connect. Is the bridge running?'
   }
-  validating.value = false
-}
+  if (state === 'connected') {
+    connectionError.value = ''
+  }
+})
 
-function pickProject() {
-  emit('open-project')
+function handleConnect() {
+  connectionError.value = ''
+  bridgeUrl.value = localBridgeUrl.value
+  connect(localBridgeUrl.value)
 }
 </script>

@@ -8,7 +8,7 @@ const connected = ref(_saved?.connected ?? false)
 const connectionState = ref(_saved?.connectionState ?? 'disconnected') // 'disconnected' | 'connecting' | 'connected'
 const servers = ref(_saved?.servers ?? {})
 const bridgeUrl = ref(_saved?.bridgeUrl ?? (localStorage.getItem('paloma:mcpBridgeUrl') || 'ws://localhost:19191'))
-const autoConnect = ref(_saved?.autoConnect ?? (localStorage.getItem('paloma:mcpAutoConnect') === 'true'))
+const autoConnect = ref(_saved?.autoConnect ?? (localStorage.getItem('paloma:mcpAutoConnect') !== 'false'))
 
 const pendingAskUser = ref(_saved?.pendingAskUser ?? null)
 const pendingCliToolConfirmation = ref(_saved?.pendingCliToolConfirmation ?? null)

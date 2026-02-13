@@ -1,9 +1,9 @@
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center" @click.self="$emit('close')">
     <div class="absolute inset-0 bg-black/60" @click="$emit('close')"></div>
-    <div class="relative bg-bg-secondary border border-border rounded-lg w-full max-w-lg mx-4 shadow-2xl">
+    <div class="relative bg-bg-secondary border border-border rounded-lg w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] flex flex-col">
       <!-- Header -->
-      <div class="flex items-center justify-between px-6 py-4 border-b border-border">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
         <h2 class="text-lg font-semibold text-text-primary">Settings</h2>
         <button
           @click="$emit('close')"
@@ -16,48 +16,8 @@
       </div>
 
       <!-- Body -->
-      <div class="px-6 py-5 space-y-5">
-        <!-- API Key -->
-        <div>
-          <label class="block text-sm text-text-secondary mb-1.5">OpenRouter API Key</label>
-          <div class="flex gap-2">
-            <input
-              v-model="localKey"
-              :type="showKey ? 'text' : 'password'"
-              placeholder="sk-or-..."
-              class="flex-1 bg-bg-primary border border-border rounded-md px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
-            />
-            <button
-              @click="showKey = !showKey"
-              class="px-3 py-2 bg-bg-primary border border-border rounded-md text-text-secondary hover:text-text-primary text-sm transition-colors"
-            >
-              {{ showKey ? 'Hide' : 'Show' }}
-            </button>
-          </div>
-        </div>
-
-        <!-- Default Model -->
-        <div>
-          <label class="block text-sm text-text-secondary mb-1.5">Default Model</label>
-          <select
-            v-model="localModel"
-            class="w-full bg-bg-primary border border-border rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent"
-          >
-            <option v-for="m in popularModels" :key="m" :value="m">
-              {{ m.split('/').pop() }}
-            </option>
-          </select>
-        </div>
-
-        <!-- Project info -->
-        <div v-if="projectName">
-          <label class="block text-sm text-text-secondary mb-1.5">Current Project</label>
-          <div class="text-sm text-text-primary bg-bg-primary border border-border rounded-md px-3 py-2">
-            {{ projectName }}
-          </div>
-        </div>
-
-        <!-- MCP Bridge -->
+      <div class="px-6 py-5 space-y-5 overflow-y-auto">
+        <!-- MCP Bridge (primary) -->
         <div>
           <label class="block text-sm text-text-secondary mb-1.5">MCP Bridge</label>
           <div class="space-y-2">
@@ -101,10 +61,58 @@
             </div>
           </div>
         </div>
+
+        <!-- Default Model -->
+        <div>
+          <label class="block text-sm text-text-secondary mb-1.5">Default Model</label>
+          <select
+            v-model="localModel"
+            class="w-full bg-bg-primary border border-border rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent"
+          >
+            <optgroup label="Paloma (CLI)">
+              <option v-for="m in cliModels" :key="m.id" :value="m.id">
+                {{ m.name }}
+              </option>
+            </optgroup>
+            <optgroup v-if="apiKey" label="OpenRouter">
+              <option v-for="m in popularModels" :key="m" :value="m">
+                {{ m.split('/').pop() }}
+              </option>
+            </optgroup>
+          </select>
+        </div>
+
+        <!-- Project info -->
+        <div v-if="projectName">
+          <label class="block text-sm text-text-secondary mb-1.5">Current Project</label>
+          <div class="text-sm text-text-primary bg-bg-primary border border-border rounded-md px-3 py-2">
+            {{ projectName }}
+          </div>
+        </div>
+
+        <!-- Optional Integrations -->
+        <div>
+          <label class="block text-sm text-text-secondary mb-1.5">OpenRouter API Key</label>
+          <p class="text-xs text-text-muted mb-2">Optional. Paloma works with CLI models by default. Add an OpenRouter key for additional models.</p>
+          <div class="flex gap-2">
+            <input
+              v-model="localKey"
+              :type="showKey ? 'text' : 'password'"
+              placeholder="sk-or-..."
+              class="flex-1 bg-bg-primary border border-border rounded-md px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
+            />
+            <button
+              @click="showKey = !showKey"
+              class="px-3 py-2 bg-bg-primary border border-border rounded-md text-text-secondary hover:text-text-primary text-sm transition-colors"
+            >
+              {{ showKey ? 'Hide' : 'Show' }}
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Footer -->
-      <div class="flex justify-end gap-2 px-6 py-4 border-t border-border">
+      <div class="flex justify-end gap-2 px-6 py-4 border-t border-border shrink-0">
         <button
           @click="$emit('close')"
           class="px-4 py-2 text-sm text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors"
@@ -123,9 +131,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useSettings } from '../../composables/useSettings.js'
 import { useMCP } from '../../composables/useMCP.js'
+import { CLI_MODELS } from '../../services/claudeStream.js'
 
 const props = defineProps({
   projectName: { type: String, default: '' }
@@ -140,6 +149,8 @@ const localModel = ref(defaultModel.value)
 const showKey = ref(false)
 const localBridgeUrl = ref(bridgeUrl.value)
 const localAutoConnect = ref(mcpAutoConnect.value)
+
+const cliModels = CLI_MODELS
 
 const popularModels = [
   'anthropic/claude-sonnet-4',

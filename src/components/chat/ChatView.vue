@@ -60,9 +60,7 @@ import { useProject } from '../../composables/useProject.js'
 import { useFileIndex } from '../../composables/useFileIndex.js'
 import { useMCP, isMcpTool } from '../../composables/useMCP.js'
 import { usePermissions } from '../../composables/usePermissions.js'
-import { readFileSafe, requestWritePermission, writeFile, writeMcpConfig } from '../../services/filesystem.js'
 import { resolveEdit } from '../../services/editing.js'
-import { executeWriteTool } from '../../services/tools.js'
 
 const props = defineProps({
   session: { type: Object, default: null }
@@ -77,8 +75,8 @@ const {
 } = useChat()
 const { detectChanges, loadSessionChanges } = useChanges()
 const { apiKey } = useSettings()
-const { dirHandle, projectInstructions, activePlans, mcpConfig, refreshActivePlans } = useProject()
-const { search: searchFiles, updatePaths } = useFileIndex()
+const { dirHandle, projectRoot, projectInstructions, activePlans, mcpConfig, refreshActivePlans } = useProject()
+const { search: searchFiles } = useFileIndex()
 const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool } = useMCP()
 const { isAutoApproved, approveForSession } = usePermissions()
 
@@ -89,17 +87,14 @@ const activeToolConfirmation = computed(() => {
   return null
 })
 
-// Only show the dialog if the tool isn't auto-approved
 const showToolConfirmation = ref(false)
 
-// When a new tool confirmation arrives, check permissions before showing dialog
 watch(activeToolConfirmation, (confirmation) => {
   if (!confirmation) {
     showToolConfirmation.value = false
     return
   }
   if (isAutoApproved(confirmation.toolName, mcpConfig.value)) {
-    // Auto-approve without showing dialog
     handleToolAllow()
   } else {
     showToolConfirmation.value = true
@@ -126,7 +121,8 @@ watch(
 watch(streaming, (newVal, oldVal) => {
   if (oldVal === true && newVal === false) {
     const lastMsg = messages.value.findLast(m => m.role === 'assistant' && m.content)
-    if (lastMsg?.content && dirHandle.value) {
+    if (lastMsg?.content) {
+      // detectChanges needs the project root to read original files via MCP
       detectChanges(lastMsg.content, dirHandle.value)
     }
   }
@@ -158,11 +154,41 @@ function handleUpdateSession(updates) {
   emit('update-session', props.session.id, updates)
 }
 
+/** Read a file via MCP, returns content string or null */
+async function mcpReadFile(filePath) {
+  if (!projectRoot.value) return null
+  try {
+    const fullPath = `${projectRoot.value}/${filePath}`
+    const result = await callMcpTool('mcp__filesystem__read_text_file', { path: fullPath })
+    if (typeof result === 'string' && result.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(result)
+        if (parsed.error) return null
+      } catch { /* not JSON */ }
+    }
+    return result
+  } catch {
+    return null
+  }
+}
+
+/** Write a file via MCP */
+async function mcpWriteFile(filePath, content) {
+  if (!projectRoot.value) throw new Error('No project root')
+  const fullPath = `${projectRoot.value}/${filePath}`
+  await callMcpTool('mcp__filesystem__write_file', { path: fullPath, content })
+}
+
 async function handleApplyCode({ path, code }) {
   editError.value = null
-  const originalContent = dirHandle.value
-    ? await readFileSafe(dirHandle.value, path)
-    : null
+  // Try MCP first, fall back to dirHandle
+  let originalContent = await mcpReadFile(path)
+  if (originalContent === null && dirHandle.value) {
+    try {
+      const { readFileSafe } = await import('../../services/filesystem.js')
+      originalContent = await readFileSafe(dirHandle.value, path)
+    } catch { /* ignore */ }
+  }
   try {
     const { newContent } = resolveEdit(code, originalContent)
     pendingEdit.value = { path, code: newContent, originalContent }
@@ -175,17 +201,23 @@ async function handleApplyCode({ path, code }) {
 }
 
 async function handleConfirmEdit() {
-  if (!dirHandle.value) {
-    editError.value = 'No project directory open.'
-    return
-  }
   try {
-    const granted = await requestWritePermission(dirHandle.value)
-    if (!granted) {
-      editError.value = 'Write permission denied. Please grant access and try again.'
+    // Try MCP write first
+    if (projectRoot.value) {
+      await mcpWriteFile(pendingEdit.value.path, pendingEdit.value.code)
+    } else if (dirHandle.value) {
+      // Legacy fallback
+      const { requestWritePermission, writeFile } = await import('../../services/filesystem.js')
+      const granted = await requestWritePermission(dirHandle.value)
+      if (!granted) {
+        editError.value = 'Write permission denied.'
+        return
+      }
+      await writeFile(dirHandle.value, pendingEdit.value.path, pendingEdit.value.code)
+    } else {
+      editError.value = 'No project context available to write files.'
       return
     }
-    await writeFile(dirHandle.value, pendingEdit.value.path, pendingEdit.value.code)
     showDiff.value = false
     pendingEdit.value = { path: '', code: '', originalContent: null }
     editError.value = null
@@ -198,15 +230,6 @@ function handleCancelEdit() {
   showDiff.value = false
   pendingEdit.value = { path: '', code: '', originalContent: null }
   editError.value = null
-}
-
-function getPathUpdatesForTool(toolName, args) {
-  switch (toolName) {
-    case 'createFile': return [{ action: 'add', path: args.path }]
-    case 'deleteFile': return [{ action: 'remove', path: args.path }]
-    case 'moveFile': return [{ action: 'move', fromPath: args.fromPath, toPath: args.toPath }]
-    default: return args.path ? [{ action: 'update', path: args.path }] : []
-  }
 }
 
 async function handleToolAllow() {
@@ -222,6 +245,7 @@ async function handleToolAllow() {
   if (!pendingToolConfirmation.value) return
   const { toolName, args } = pendingToolConfirmation.value
 
+  // All tools route through MCP now
   if (isMcpTool(toolName)) {
     try {
       const result = await callMcpTool(toolName, args)
@@ -232,22 +256,23 @@ async function handleToolAllow() {
     return
   }
 
-  if (!dirHandle.value) return
-  try {
-    const result = await executeWriteTool(toolName, args, dirHandle.value)
-    resolveToolConfirmation(result)
-    // Incrementally update file index after write operations
-    const pathUpdates = getPathUpdatesForTool(toolName, args)
-    if (pathUpdates.length > 0) {
-      await updatePaths(dirHandle.value, pathUpdates)
+  // Legacy browser-side write tools — fall back to dirHandle if available
+  if (dirHandle.value) {
+    try {
+      const { executeWriteTool } = await import('../../services/tools.js')
+      const result = await executeWriteTool(toolName, args, dirHandle.value)
+      resolveToolConfirmation(result)
+    } catch (err) {
+      resolveToolConfirmation(JSON.stringify({ error: err.message }))
     }
-    // Refresh active plans if a plan file was touched
-    const affectedPath = args.path || args.fromPath || args.toPath || ''
-    if (affectedPath.startsWith('.paloma/plans/')) {
-      await refreshActivePlans()
-    }
-  } catch (err) {
-    resolveToolConfirmation(JSON.stringify({ error: err.message }))
+  } else {
+    resolveToolConfirmation(JSON.stringify({ error: `Tool "${toolName}" requires a project directory (use /project to load one)` }))
+  }
+
+  // Refresh active plans if a plan file was touched
+  const affectedPath = args.path || args.fromPath || args.toPath || ''
+  if (affectedPath.startsWith('.paloma/plans/')) {
+    await refreshActivePlans(callMcpTool)
   }
 }
 
@@ -266,11 +291,10 @@ function handleToolAllowSession(serverName) {
 }
 
 async function handleToolAllowAlways(serverName) {
-  // Add to session approvals for immediate effect
   approveForSession(serverName)
 
-  // Persist to project config
-  if (dirHandle.value && mcpConfig.value) {
+  // Persist to project config via MCP
+  if (projectRoot.value && mcpConfig.value) {
     const autoExecute = mcpConfig.value.autoExecute || []
     if (!autoExecute.includes(serverName)) {
       mcpConfig.value = {
@@ -278,7 +302,11 @@ async function handleToolAllowAlways(serverName) {
         autoExecute: [...autoExecute, serverName]
       }
       try {
-        await writeMcpConfig(dirHandle.value, mcpConfig.value)
+        const configPath = `${projectRoot.value}/.paloma/mcp.json`
+        await callMcpTool('mcp__filesystem__write_file', {
+          path: configPath,
+          content: JSON.stringify(mcpConfig.value, null, 2) + '\n'
+        })
       } catch (err) {
         console.warn('[Permissions] Failed to persist autoExecute:', err)
       }

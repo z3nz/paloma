@@ -3,7 +3,7 @@ import { ref, watch } from 'vue'
 const _saved = import.meta.hot ? window.__PALOMA_SETTINGS__ : undefined
 
 const apiKey = ref(_saved?.apiKey ?? (localStorage.getItem('paloma:apiKey') || ''))
-const defaultModel = ref(_saved?.defaultModel ?? (localStorage.getItem('paloma:defaultModel') || 'anthropic/claude-sonnet-4'))
+const defaultModel = ref(_saved?.defaultModel ?? (localStorage.getItem('paloma:defaultModel') || 'claude-cli:sonnet'))
 
 const preferences = ref(_saved?.preferences ?? JSON.parse(localStorage.getItem('paloma:preferences') || '{}'))
 

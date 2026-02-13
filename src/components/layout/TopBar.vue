@@ -36,12 +36,61 @@
         <span v-if="mcpConnected && mcpServerCount > 0" class="text-text-muted">({{ mcpServerCount }})</span>
       </div>
 
-      <button
-        @click="$emit('open-project')"
-        class="text-text-secondary hover:text-text-primary text-sm px-2 py-1 rounded hover:bg-bg-hover transition-colors"
-      >
-        Open Project
-      </button>
+      <!-- Project switcher -->
+      <div class="relative" ref="projectDropdownRef">
+        <button
+          @click="toggleProjectDropdown"
+          class="flex items-center gap-1.5 text-text-secondary hover:text-text-primary text-sm px-2 py-1 rounded hover:bg-bg-hover transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          {{ currentProjectName || 'No Project' }}
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+
+        <!-- Dropdown -->
+        <div
+          v-if="showProjectDropdown"
+          class="absolute right-0 top-full mt-1 w-56 bg-bg-secondary border border-border rounded-lg shadow-2xl overflow-hidden z-30"
+        >
+          <div v-if="loadingProjects" class="px-3 py-2 text-xs text-text-muted">Loading projects...</div>
+          <template v-else>
+            <div
+              v-for="name in availableProjects"
+              :key="name"
+              @click="handleSwitchProject(name)"
+              class="px-3 py-2 text-sm cursor-pointer transition-colors"
+              :class="name === currentProjectName
+                ? 'bg-accent/20 text-accent'
+                : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
+            >
+              {{ name }}
+            </div>
+            <div v-if="availableProjects.length === 0" class="px-3 py-2 text-xs text-text-muted">
+              No projects in projects/ directory
+            </div>
+          </template>
+          <div class="border-t border-border">
+            <button
+              @click="handleOpenProject"
+              class="w-full px-3 py-2 text-sm text-text-secondary hover:bg-bg-hover hover:text-text-primary text-left transition-colors"
+            >
+              Open from filesystem...
+            </button>
+            <button
+              v-if="currentProjectName"
+              @click="handleDetachProject"
+              class="w-full px-3 py-2 text-sm text-text-muted hover:bg-bg-hover hover:text-danger text-left transition-colors"
+            >
+              Detach project
+            </button>
+          </div>
+        </div>
+      </div>
+
       <button
         @click="$emit('open-settings')"
         class="text-text-secondary hover:text-text-primary p-1.5 rounded hover:bg-bg-hover transition-colors"
@@ -64,10 +113,11 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import UsageModal from './UsageModal.vue'
 import { useCostTracking } from '../../composables/useCostTracking.js'
 import { useMCP } from '../../composables/useMCP.js'
+import { useProject } from '../../composables/useProject.js'
 
 const props = defineProps({
   projectName: { type: String, default: '' },
@@ -76,9 +126,14 @@ const props = defineProps({
 defineEmits(['open-settings', 'open-project'])
 
 const { sessionCost, sessionTokens, getContextUsage, formatCost, formatTokens } = useCostTracking()
-const { connected: mcpConnected, servers: mcpServers, autoConnect: mcpAutoConnect } = useMCP()
+const { connected: mcpConnected, servers: mcpServers, autoConnect: mcpAutoConnect, callMcpTool, resolveProjectPath } = useMCP()
+const { projectName: currentProjectName, projectRoot, switchProject, listProjects, detachProject } = useProject()
 
 const showUsageModal = ref(false)
+const showProjectDropdown = ref(false)
+const availableProjects = ref([])
+const loadingProjects = ref(false)
+const projectDropdownRef = ref(null)
 
 const mcpVisible = computed(() => mcpAutoConnect.value || mcpConnected.value)
 
@@ -95,7 +150,6 @@ const mcpTooltip = computed(() => {
 })
 
 const hasUsageData = computed(() => sessionTokens.value.total > 0)
-
 const contextUsage = computed(() => props.activeModel ? getContextUsage(props.activeModel) : null)
 
 const contextWarningClass = computed(() => {
@@ -111,4 +165,51 @@ const contextBarClass = computed(() => {
   if (contextUsage.value.percentage >= 80) return 'bg-warning'
   return 'bg-accent'
 })
+
+async function toggleProjectDropdown() {
+  showProjectDropdown.value = !showProjectDropdown.value
+  if (showProjectDropdown.value && mcpConnected.value) {
+    loadingProjects.value = true
+    try {
+      const root = projectRoot.value
+        ? projectRoot.value.replace(/\/projects\/[^/]+$/, '')
+        : '/home/adam/paloma'
+      availableProjects.value = await listProjects(callMcpTool, root)
+    } catch (e) {
+      console.warn('[TopBar] Failed to list projects:', e)
+      availableProjects.value = []
+    } finally {
+      loadingProjects.value = false
+    }
+  }
+}
+
+async function handleSwitchProject(name) {
+  showProjectDropdown.value = false
+  try {
+    await switchProject(name, callMcpTool, resolveProjectPath)
+  } catch (e) {
+    console.error('[TopBar] Failed to switch project:', e)
+  }
+}
+
+function handleOpenProject() {
+  showProjectDropdown.value = false
+  // Emit to parent to use legacy file picker
+  // The parent (AppLayout) passes this through
+}
+
+function handleDetachProject() {
+  showProjectDropdown.value = false
+  detachProject()
+}
+
+function handleClickOutside(e) {
+  if (projectDropdownRef.value && !projectDropdownRef.value.contains(e.target)) {
+    showProjectDropdown.value = false
+  }
+}
+
+onMounted(() => document.addEventListener('click', handleClickOutside))
+onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 </script>

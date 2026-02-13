@@ -42,19 +42,17 @@ export function useSessions() {
   }
 
   async function createSession(projectPath, model, phase = 'flow') {
-    if (!projectPath) {
-      console.error('[Sessions] Cannot create session without projectPath')
-      return null
-    }
+    // Default to 'paloma' when no project is attached
+    const resolvedPath = projectPath || 'paloma'
     const id = await db.sessions.add({
-      projectPath,
+      projectPath: resolvedPath,
       title: 'New Chat',
       model,
       phase,
       createdAt: Date.now(),
       updatedAt: Date.now()
     })
-    await loadSessions(projectPath)
+    await loadSessions(resolvedPath)
     activeSessionId.value = id
     sessionStorage.setItem('paloma:activeSessionId', id)
     return id
