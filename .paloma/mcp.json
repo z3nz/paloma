@@ -1,4 +1,12 @@
 {
-  "enabled": ["brave-search", "git", "shell", "filesystem"],
-  "autoExecute": ["brave-search"]
+  "enabled": [
+    "brave-search",
+    "git",
+    "shell",
+    "filesystem"
+  ],
+  "autoExecute": [
+    "brave-search",
+    "filesystem"
+  ]
 }
