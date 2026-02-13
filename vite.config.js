@@ -3,16 +3,30 @@ import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 
 // Custom plugin: prevent Vite from ever doing a full-page reload.
-// HMR updates apply normally, but if a module can't be hot-replaced,
-// we skip the reload instead of nuking the page mid-stream.
+// Intercepts the HMR WebSocket to block 'full-reload' messages entirely.
+// Vue component HMR updates still work normally.
 function noFullReload() {
   return {
     name: 'no-full-reload',
+    configureServer(server) {
+      server.ws.on('connection', (socket) => {
+        const originalSend = socket.send.bind(socket)
+        socket.send = (data) => {
+          try {
+            const msg = JSON.parse(data)
+            if (msg.type === 'full-reload') {
+              console.log('[HMR] Blocked full-reload:', msg.path || '(no path)')
+              return // swallow it
+            }
+          } catch {}
+          originalSend(data)
+        }
+      })
+    },
     handleHotUpdate({ modules }) {
-      // If any module is not HMR-compatible, return empty array to suppress reload
       const nonHmr = modules.filter(m => !m.isSelfAccepting)
       if (nonHmr.length > 0) {
-        console.log('[HMR] Skipping full reload for:', nonHmr.map(m => m.file).join(', '))
+        console.log('[HMR] Skipping non-HMR modules:', nonHmr.map(m => m.file).join(', '))
         return []
       }
     }
