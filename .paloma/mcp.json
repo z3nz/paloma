@@ -3,7 +3,8 @@
     "brave-search",
     "git",
     "shell",
-    "filesystem"
+    "filesystem",
+    "web"
   ],
   "autoExecute": [
     "brave-search",
