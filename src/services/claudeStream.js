@@ -75,6 +75,9 @@ export async function* streamClaudeChat(sendFn, options) {
       // Claude CLI stream-json events:
       // { type: "assistant", message: { content: [...] } } — partial messages with content blocks
       // { type: "result", ... } — final result with usage
+      // DEBUG: log all stream events to understand CLI format
+      console.log('[claudeStream] event:', event.type, JSON.stringify(event).slice(0, 500))
+
       if (event.type === 'assistant' && event.message?.content) {
         for (const block of event.message.content) {
           if (block.type === 'text' && block.text) {
@@ -83,6 +86,16 @@ export async function* streamClaudeChat(sendFn, options) {
             yield { type: 'tool_use', id: block.id, name: block.name, input: block.input }
           } else if (block.type === 'tool_result') {
             yield { type: 'tool_result', toolUseId: block.tool_use_id, content: block.content }
+          }
+        }
+      } else if (event.type === 'user' && event.message?.content) {
+        // CLI emits tool results as user-type events with tool_result content blocks
+        for (const block of event.message.content) {
+          if (block.type === 'tool_result') {
+            const resultContent = Array.isArray(block.content)
+              ? block.content.map(c => c.text || '').join('')
+              : typeof block.content === 'string' ? block.content : JSON.stringify(block.content)
+            yield { type: 'tool_result', toolUseId: block.tool_use_id, content: resultContent }
           }
         }
       } else if (event.type === 'content_block_start') {

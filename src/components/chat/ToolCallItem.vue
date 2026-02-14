@@ -87,8 +87,8 @@ const duration = computed(() => props.activity.duration || null)
 // Only show spinner during live streaming — persisted messages are always complete
 const isRunning = computed(() => props.live && props.activity.status === 'running')
 
-const hasResult = computed(() => !!props.toolMessage?.content)
-const resultContent = computed(() => props.toolMessage?.content || '')
+const hasResult = computed(() => !!(props.toolMessage?.content || props.activity.result))
+const resultContent = computed(() => props.toolMessage?.content || props.activity.result || '')
 
 const effectiveResultType = computed(() => {
   // Prefer stored resultType, fall back to classification

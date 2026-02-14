@@ -14,6 +14,7 @@ const MAX_TOOL_ROUNDS = 25
 export async function runOpenRouterLoop({
   apiKey, model, apiMessages, tools, sessionId,
   isAutoApproved, mcpConfig, callMcpTool, searchFn, dirHandle,
+  signal,
   onContent, onToolCall, onSaveAssistant, onSaveTool, onResetStreaming,
   onToolsComplete,
   sessionState
@@ -33,7 +34,7 @@ export async function runOpenRouterLoop({
     let usage = null
 
     for await (const chunk of streamChat(apiKey, model, apiMessages,
-      { tools: tools.length ? tools : undefined })) {
+      { tools: tools.length ? tools : undefined, signal })) {
       if (chunk.type === 'content') {
         accumulatedContent += chunk.text
         onContent(accumulatedContent)

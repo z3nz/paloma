@@ -44,6 +44,7 @@
     <ToolCallGroup
       v-if="toolActivity.length"
       :activities="toolActivity"
+      :tool-messages="liveToolMessages"
       :live="true"
       class="px-6 py-2"
     />
@@ -102,8 +103,7 @@ const consumedToolIds = computed(() => {
   for (let i = 0; i < msgs.length; i++) {
     const msg = msgs[i]
     if (msg.role === 'assistant' && msg.toolActivity?.length) {
-      // Collect all tool messages that follow this assistant message
-      // until the next non-tool message
+      // Collect tool messages AFTER this assistant message (OpenRouter path)
       for (let j = i + 1; j < msgs.length; j++) {
         if (msgs[j].role === 'tool') {
           consumed.add(msgs[j].id)
@@ -111,9 +111,15 @@ const consumedToolIds = computed(() => {
           break
         }
       }
-      // Also look backwards for tool messages from earlier tool-call rounds
-      // (in OpenRouter multi-round loops, pattern is: assistant+tools, assistant+tools, ...)
-      // Actually tool messages always come AFTER their parent assistant message, so forward-only is correct.
+      // Collect tool messages BEFORE this assistant message (CLI path:
+      // tool results arrive during stream, assistant message saved at end)
+      for (let j = i - 1; j >= 0; j--) {
+        if (msgs[j].role === 'tool') {
+          consumed.add(msgs[j].id)
+        } else {
+          break
+        }
+      }
     }
   }
   return consumed
@@ -132,6 +138,27 @@ const displayMessages = computed(() => {
 })
 
 /**
+ * Tool messages for the live ToolCallGroup (during streaming).
+ * These are tool messages pushed to the messages array during the current turn
+ * that haven't yet been claimed by a persisted assistant message.
+ * They accumulate at the tail of the messages array as tools complete.
+ */
+const liveToolMessages = computed(() => {
+  if (!props.streaming && !props.toolActivity.length) return []
+  const msgs = props.messages
+  const result = []
+  // Walk backward from the end collecting tool messages until we hit a non-tool message
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role === 'tool') {
+      result.unshift(msgs[i])
+    } else {
+      break
+    }
+  }
+  return result
+})
+
+/**
  * Get tool messages that belong to a given assistant message.
  */
 function getToolMessagesFor(msg) {
@@ -141,9 +168,19 @@ function getToolMessagesFor(msg) {
   if (idx === -1) return []
 
   const toolMsgs = []
+  // Look forward (OpenRouter path: tool messages saved after assistant)
   for (let j = idx + 1; j < msgs.length; j++) {
     if (msgs[j].role === 'tool') {
       toolMsgs.push(msgs[j])
+    } else {
+      break
+    }
+  }
+  // Look backward (CLI path: tool results saved during stream,
+  // assistant message saved at end with later timestamp)
+  for (let j = idx - 1; j >= 0; j--) {
+    if (msgs[j].role === 'tool') {
+      toolMsgs.unshift(msgs[j])  // prepend to maintain chronological order
     } else {
       break
     }

@@ -19,6 +19,90 @@ function sanitizeForDB(obj) {
   try { return JSON.parse(JSON.stringify(obj)) } catch { return obj }
 }
 
+/**
+ * Starts a periodic save of streaming content to the drafts table.
+ * Acts as a write-ahead log — if the page crashes mid-stream, the draft
+ * survives in IndexedDB and can be recovered on reload.
+ */
+function startStreamingDraftSave(sessionId, s, model) {
+  let lastSaved = ''
+
+  async function save() {
+    const content = s.streamingContent.value
+    if (!content || content === lastSaved) return
+    lastSaved = content
+    try {
+      const existing = await db.drafts.get(sessionId) || {}
+      await db.drafts.put({
+        sessionId,
+        ...existing,
+        streamingDraft: {
+          content,
+          toolActivity: sanitizeForDB(s.toolActivity.value),
+          model,
+          timestamp: Date.now()
+        }
+      })
+    } catch (e) {
+      console.warn('[draft] save failed:', e.message)
+    }
+  }
+
+  const timer = setInterval(save, 2000)
+
+  return {
+    /** Immediate flush — call from beforeunload or before clearing state. */
+    flush: save,
+    /** Stop the timer. If completed=true, removes the draft. */
+    async cleanup(completed) {
+      clearInterval(timer)
+      if (completed) {
+        try {
+          const existing = await db.drafts.get(sessionId)
+          if (existing?.streamingDraft) {
+            delete existing.streamingDraft
+            await db.drafts.put(existing)
+          }
+        } catch { /* best-effort */ }
+      }
+    }
+  }
+}
+
+/**
+ * Recovers any streaming drafts left behind by a crash/refresh.
+ * Promotes them to interrupted assistant messages in the messages table.
+ */
+async function recoverStreamingDrafts(sessionId) {
+  if (!sessionId) return
+  try {
+    const draft = await db.drafts.get(sessionId)
+    if (!draft?.streamingDraft) return
+
+    const { content, toolActivity, model, timestamp } = draft.streamingDraft
+    if (content) {
+      const assistantMsg = sanitizeForDB({
+        sessionId,
+        role: 'assistant',
+        content,
+        model: model || null,
+        interrupted: true,
+        toolActivity: toolActivity || [],
+        files: [],
+        timestamp: timestamp || Date.now()
+      })
+      await db.messages.add(assistantMsg)
+      console.log('[recovery] Recovered interrupted streaming message for session', sessionId)
+    }
+
+    // Clean up the draft
+    delete draft.streamingDraft
+    await db.drafts.put(draft)
+  } catch (e) {
+    console.warn('[recovery] Failed to recover streaming draft:', e.message)
+  }
+}
+
 export function useChat() {
   const { getState, activeState, activeId } = useSessionState()
 
@@ -41,6 +125,9 @@ export function useChat() {
       s.messages.value = []
       return
     }
+    // Recover any crashed streaming drafts BEFORE loading messages
+    await recoverStreamingDrafts(sessionId)
+
     const s = getState(sessionId)
     console.time('[perf] loadMessages:db')
     const result = await db.messages
@@ -54,6 +141,7 @@ export function useChat() {
   async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions, activePlans, searchFn, mcpConfig) {
     const s = getState(sessionId)
     s.error.value = null
+    s.streamInterrupted = false
     const { clearActivity, snapshotActivity } = useToolExecution(s)
     clearActivity()
 
@@ -124,6 +212,13 @@ export function useChat() {
     s.streamingContent.value = ''
     s.abortController = new AbortController()
 
+    // Start periodic streaming draft save (crash recovery)
+    const draftSaver = startStreamingDraftSave(sessionId, s, model)
+    const flushOnUnload = () => draftSaver.flush()
+    window.addEventListener('beforeunload', flushOnUnload)
+
+    let completed = false
+
     try {
       if (isCliModel(model)) {
         // === CLI path ===
@@ -134,11 +229,17 @@ export function useChat() {
           sessionState: s
         })
 
-        await saveAssistantMessage(sessionId, s, cliContent, null, usage, model, snapshotActivity())
-        checkContextUsage(s, usage, model)
+        // If stopStreaming() was called during the stream, it already saved
+        if (!s.streamInterrupted) {
+          await saveAssistantMessage(sessionId, s, cliContent, null, usage, model, snapshotActivity())
+          checkContextUsage(s, usage, model)
+          completed = true
 
-        if (s.messages.value.filter(m => m.role === 'user').length === 1) {
-          return generateTitle(content)
+          if (s.messages.value.filter(m => m.role === 'user').length === 1) {
+            return generateTitle(content)
+          }
+        } else {
+          completed = true
         }
       } else {
         // === OpenRouter path ===
@@ -150,6 +251,7 @@ export function useChat() {
         const result = await runOpenRouterLoop({
           apiKey, model, apiMessages, tools, sessionId,
           isAutoApproved, mcpConfig, callMcpTool, searchFn, dirHandle,
+          signal: s.abortController.signal,
           onContent(text) { s.streamingContent.value = text },
           onResetStreaming() { s.streamingContent.value = '' },
           async onSaveAssistant(content, toolCalls, usage, model) {
@@ -185,22 +287,51 @@ export function useChat() {
           sessionState: s
         })
 
-        if (result) {
-          await saveAssistantMessage(sessionId, s, result.content, null, result.usage, result.model, snapshotActivity())
-          checkContextUsage(s, result.usage, model)
+        if (!s.streamInterrupted) {
+          if (result) {
+            await saveAssistantMessage(sessionId, s, result.content, null, result.usage, result.model, snapshotActivity())
+            checkContextUsage(s, result.usage, model)
+            completed = true
 
-          if (s.messages.value.filter(m => m.role === 'user').length === 1) {
-            return generateTitle(content)
+            if (s.messages.value.filter(m => m.role === 'user').length === 1) {
+              return generateTitle(content)
+            }
           }
+        } else {
+          completed = true
         }
       }
     } catch (e) {
-      console.error(`[chat] error:`, e.message)
-      s.error.value = e.message
+      // AbortError is expected when user stops streaming — not a real error
+      if (e.name === 'AbortError') {
+        console.log('[chat] Stream aborted by user')
+        completed = true // stopStreaming already saved partial content
+      } else {
+        console.error(`[chat] error:`, e.message)
+        s.error.value = e.message
+
+        // Save partial content on error (bridge disconnect, network failure, etc.)
+        const partialContent = s.streamingContent.value
+        if (partialContent && sessionId && !s.streamInterrupted) {
+          try {
+            // Force-complete any running tool activities
+            for (const a of s.toolActivity.value) {
+              if (a.status === 'running') a.status = 'done'
+            }
+            await saveAssistantMessage(sessionId, s, partialContent, null, null, model, snapshotActivity(), true)
+            completed = true
+          } catch (saveErr) {
+            console.error('[chat] Failed to save partial content:', saveErr.message)
+          }
+        }
+      }
     } finally {
+      window.removeEventListener('beforeunload', flushOnUnload)
+      await draftSaver.cleanup(completed || s.streamInterrupted)
       s.streaming.value = false
       s.streamingContent.value = ''
       s.abortController = null
+      s.streamInterrupted = false
       clearCliRequestId(s)
       // Clear live tool activity — persisted snapshot is now on the assistant message
       clearActivity()
@@ -209,7 +340,7 @@ export function useChat() {
     return null
   }
 
-  async function saveAssistantMessage(sessionId, s, content, toolCalls, usage, model, toolActivitySnapshot) {
+  async function saveAssistantMessage(sessionId, s, content, toolCalls, usage, model, toolActivitySnapshot, interrupted = false) {
     const raw = {
       sessionId,
       role: 'assistant',
@@ -221,6 +352,7 @@ export function useChat() {
     if (usage) raw.usage = usage
     if (toolCalls) raw.toolCalls = toolCalls
     if (toolActivitySnapshot?.length) raw.toolActivity = toolActivitySnapshot
+    if (interrupted) raw.interrupted = true
 
     // JSON round-trip the entire message to strip reactive proxies, functions,
     // and anything else that would cause DataCloneError in IndexedDB
@@ -251,8 +383,28 @@ export function useChat() {
     return title + (firstMessage.length > 50 ? '...' : '')
   }
 
-  function stopStreaming() {
+  async function stopStreaming() {
     const s = current.value
+    const content = s.streamingContent.value
+    const sid = activeId.value
+
+    // Save partial content before killing the stream
+    if (content && sid && !s.streamInterrupted) {
+      try {
+        const { snapshotActivity } = useToolExecution(s)
+        // Force-complete any still-running tool activities
+        for (const a of s.toolActivity.value) {
+          if (a.status === 'running') a.status = 'done'
+        }
+        await saveAssistantMessage(sid, s, content, null, null, null, snapshotActivity(), true)
+      } catch (e) {
+        console.error('[chat] Failed to save partial content on stop:', e.message)
+      }
+    }
+
+    s.streamInterrupted = true
+
+    // Signal abort to both paths
     stopCli(s)
     if (s.abortController) {
       s.abortController.abort()

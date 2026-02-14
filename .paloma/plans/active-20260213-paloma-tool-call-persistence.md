@@ -1,7 +1,7 @@
 # Tool Call Persistence & Rich UI Overhaul
 
 > **Goal:** Make tool calls first-class citizens — beautifully rendered, permanently persisted, fully exportable, and a joy to browse through.
-> **Status:** Active — Phase 1-3 complete, Phase 4 (CLI result storage) is next priority
+> **Status:** Active — Phase 1-4 complete, Phase 5 (export/import) is next priority
 > **Created:** 2026-02-13
 
 ---
@@ -43,47 +43,14 @@
 
 ## What's NOT Done — Priority Order
 
-### Phase 4: CLI Tool Result Storage (NEXT — HIGH PRIORITY) 🔴
+### Phase 4: CLI Tool Result Storage ✅
 
-**The Problem:**
-The OpenRouter path saves tool results as separate `role: 'tool'` messages in IndexedDB (with `toolCallId`, `toolName`, `toolArgs`, `content`, `resultType`). The CLI path does NOT — Claude CLI handles tools internally via the MCP proxy, and our frontend only sees `tool_use` and `tool_result` stream events. We never persist the actual tool result content for CLI sessions.
+**Completed.** Chose Option A — save CLI tool results as `role: 'tool'` messages.
 
-This means:
-- When you expand a ToolCallItem from a CLI session, there's no `toolMessage` to show — `hasResult` is false, the expand chevron doesn't appear, you can't see what the tool returned.
-- File reads, git diffs, directory listings — all invisible after the fact for CLI sessions.
-- This is the #1 gap in the feature.
-
-**The Solution — Architecture Decision Needed:**
-
-Option A: **Save CLI tool results as `role: 'tool'` messages from the stream**
-- In `useCliChat.js`, when we receive a `tool_result` event, save it to IndexedDB the same way OpenRouter does
-- Requires: the `tool_result` event to have enough data (toolName, args come from the matching `tool_use` event — we already track this in `toolUseToActivity`)
-- Pro: Consistent data model, ToolCallGroup "just works"
-- Con: CLI tool results can be very large (file reads). Need to consider truncation strategy.
-
-Option B: **Store result content on the activity snapshot itself**
-- Instead of separate messages, embed result content directly in the `toolActivity` array on the assistant message
-- Pro: Single-document storage, no cross-referencing needed
-- Con: Makes assistant messages very large in IndexedDB. Harder to truncate.
-
-**Recommended: Option A** — Save CLI tool results as `role: 'tool'` messages. Keep the same data model as OpenRouter. Implement as follows:
-
-1. In `useCliChat.js`, maintain a map of `toolUseId → { name, args }` from `tool_use` events
-2. On `tool_result` event, construct and save a `role: 'tool'` message to IndexedDB with `toolCallId`, `toolName`, `toolArgs`, `content`, `resultType`
-3. Need to pass `sessionId` and `db` access into `useCliChat.js` (or pass a save callback like `onSaveTool`)
-4. The `tool_result` content from CLI may be a string, an array of content blocks, or an object — normalize to string
-5. Consider a size limit (e.g., truncate results > 50KB) to prevent DB bloat
-
-**Files to modify:**
-- `src/composables/useCliChat.js` — Add tool result persistence
-- `src/composables/useChat.js` — Pass `onSaveTool` callback to `runCliChat()` (same pattern as OpenRouter)
-- `src/services/claudeStream.js` — Ensure `tool_result` events carry the content we need
-
-**Critical consideration:** The `tool_result` events from Claude CLI `stream-json` — do they actually carry the full result content? The current code extracts it:
-```js
-yield { type: 'tool_result', toolUseId: block.tool_use_id, content: block.content }
-```
-Need to verify this `content` field has the actual tool output (file contents, git status, etc.) and not just a summary. **Test this first** by adding `console.log` in `claudeStream.js` for `tool_result` events.
+Implementation:
+- `useCliChat.js` — Added `toolUseMeta` map (toolUseId → { name, args }) alongside existing `toolUseToActivity` map. On `tool_result` event, normalizes content to string, saves as `role: 'tool'` message to IndexedDB with same schema as OpenRouter path (toolCallId, toolName, toolArgs, content, resultType), and pushes to `sessionState.messages.value` for live reactivity.
+- `MessageList.vue` — `consumedToolIds` and `getToolMessagesFor()` now search both forward AND backward from assistant messages. CLI path saves tool results during stream (earlier timestamps than assistant message), while OpenRouter saves them after. Bidirectional lookup handles both patterns.
+- Verified: CLI `tool_result` events carry full content (or truncated for very large results), sufficient for display.
 
 ### Phase 5: Export & Import Enrichment (MEDIUM PRIORITY)
 
@@ -118,10 +85,10 @@ Need to verify this `content` field has the actual tool output (file contents, g
 | `src/composables/useToolExecution.js` | `startedAt`, `duration`, `resultType` on activities. `snapshotActivity()` with JSON sanitization |
 | `src/composables/useChat.js` | `toolActivitySnapshot` on assistant messages. `onToolsComplete` callback. `resultType` on tool messages. `clearActivity()` in finally. JSON sanitization on all DB writes |
 | `src/composables/useOpenRouterChat.js` | `onToolsComplete` callback after each tool round. Result passed to `markActivityDone()` |
-| `src/composables/useCliChat.js` | Result content passed to `markActivityDone()`. Safety net for still-running activities. `toolActivity` destructured for safety net |
+| `src/composables/useCliChat.js` | Phase 3: Result content passed to `markActivityDone()`. Safety net for still-running activities. Phase 4: `toolUseMeta` map, persist `role:'tool'` messages to IndexedDB on `tool_result` events |
 | `src/services/claudeStream.js` | Parse `content_block_start` for tool_use. Parse `result.content` for tool_result |
 | `src/components/chat/MessageItem.vue` | ToolCallGroup integration for assistant messages with toolActivity. `toolMessages` prop |
-| `src/components/chat/MessageList.vue` | `consumedToolIds`, `displayMessages`, `getToolMessagesFor()`. ToolCallGroup replaces ToolActivity for live streaming |
+| `src/components/chat/MessageList.vue` | `consumedToolIds`, `displayMessages`, `getToolMessagesFor()`. ToolCallGroup replaces ToolActivity for live streaming. Phase 4: bidirectional tool message lookup (forward + backward from assistant messages) |
 | `src/styles/main.css` | ~395 lines of tool-call-group, tool-call-item, tool-result styles |
 | `.paloma/plans/active-20260213-paloma-tool-call-persistence.md` | This file |
 
@@ -129,7 +96,7 @@ Need to verify this `content` field has the actual tool output (file contents, g
 - `src/services/db.js` — Dexie schemaless for non-indexed fields
 - `src/composables/usePermissions.js`
 - `src/composables/useMCP.js` (export changes deferred to Phase 5)
-- `bridge/` — No bridge changes needed
+- `src/composables/useChat.js` — No changes needed for Phase 4 (CLI path saves directly, no callback pattern needed)
 
 ---
 

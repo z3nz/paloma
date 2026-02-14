@@ -44,7 +44,8 @@ export async function* streamChat(apiKey, model, messages, options = {}) {
       'HTTP-Referer': window.location.origin,
       'X-Title': 'Paloma'
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: options.signal
   })
 
   if (!response.ok) {

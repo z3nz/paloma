@@ -49,7 +49,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import MessageList from './MessageList.vue'
 import PromptBuilder from '../prompt/PromptBuilder.vue'
 import DiffPreview from './DiffPreview.vue'
@@ -103,6 +103,24 @@ watch(activeToolConfirmation, (confirmation) => {
   } else {
     showToolConfirmation.value = true
   }
+})
+
+// Global ESC handler — stops streaming when no modal is open
+function handleGlobalKeydown(e) {
+  if (e.key === 'Escape' && streaming.value) {
+    // Don't stop if a modal/dialog is open — let ESC close that instead
+    if (showToolConfirmation.value || showDiff.value || pendingAskUser.value) return
+    e.preventDefault()
+    stopStreaming()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', handleGlobalKeydown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', handleGlobalKeydown)
 })
 
 const showDiff = ref(false)
@@ -346,9 +364,11 @@ function handleToolDeny() {
   showToolConfirmation.value = false
   if (pendingCliToolConfirmation.value) {
     denyCliTool('User denied')
-    return
+  } else {
+    rejectToolConfirmation('User denied')
   }
-  rejectToolConfirmation('User denied')
+  // Deny kills the entire stream — save partial content and stop
+  stopStreaming()
 }
 
 function handleToolAllowSession(serverName) {

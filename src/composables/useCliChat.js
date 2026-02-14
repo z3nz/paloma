@@ -4,7 +4,13 @@ import { useProject } from './useProject.js'
 import { useToolExecution } from './useToolExecution.js'
 import { useSessionState } from './useSessionState.js'
 import { buildSystemPrompt } from './useSystemPrompt.js'
+import { classifyResult } from '../utils/toolClassifier.js'
 import db from '../services/db.js'
+
+/** Strip non-cloneable values for IndexedDB. */
+function sanitizeForDB(obj) {
+  try { return JSON.parse(JSON.stringify(obj)) } catch { return obj }
+}
 
 /**
  * Runs a CLI chat turn: streams Claude CLI output and returns { content, usage }.
@@ -34,7 +40,8 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
 
   let accumulatedContent = ''
   let usage = null
-  const toolUseToActivity = new Map()
+  const toolUseToActivity = new Map()  // toolUseId → activityId
+  const toolUseMeta = new Map()        // toolUseId → { name, args }
 
   for await (const chunk of streamClaudeChat(
     (opts, cbs) => sendClaudeChat(opts, cbs),
@@ -51,18 +58,41 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
         await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId })
       }
     } else if (chunk.type === 'tool_use') {
+      console.log('[cli] GOT tool_use:', chunk.id, chunk.name, JSON.stringify(chunk.input)?.slice(0, 200))
       const activityId = addActivity(chunk.name, chunk.input)
       toolUseToActivity.set(chunk.id, activityId)
+      toolUseMeta.set(chunk.id, { name: chunk.name, args: chunk.input })
     } else if (chunk.type === 'tool_result') {
+      console.log('[cli] GOT tool_result:', chunk.toolUseId, typeof chunk.content, JSON.stringify(chunk.content)?.slice(0, 200))
       const activityId = toolUseToActivity.get(chunk.toolUseId)
+      const meta = toolUseMeta.get(chunk.toolUseId)
+
+      // Normalize result content to string
+      const resultStr = typeof chunk.content === 'string'
+        ? chunk.content
+        : Array.isArray(chunk.content)
+          ? chunk.content.map(c => c.text || '').join('')
+          : JSON.stringify(chunk.content)
+
       if (activityId) {
-        // Pass result content for classification (may be string or array)
-        const resultStr = typeof chunk.content === 'string'
-          ? chunk.content
-          : Array.isArray(chunk.content)
-            ? chunk.content.map(c => c.text || '').join('')
-            : JSON.stringify(chunk.content)
         markActivityDone(activityId, resultStr)
+      }
+
+      // Persist as role:'tool' message (same shape as OpenRouter path)
+      if (meta) {
+        const toolMsg = sanitizeForDB({
+          sessionId,
+          role: 'tool',
+          toolCallId: activityId || chunk.toolUseId,
+          toolName: meta.name,
+          toolArgs: meta.args,
+          content: resultStr,
+          resultType: classifyResult(meta.name, resultStr),
+          timestamp: Date.now()
+        })
+        const toolMsgId = await db.messages.add(toolMsg)
+        toolMsg.id = toolMsgId
+        sessionState.messages.value.push(toolMsg)
       }
     }
   }

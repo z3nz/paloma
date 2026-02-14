@@ -44,6 +44,12 @@
         @click="handleContentClick"
       />
 
+      <!-- Interrupted indicator -->
+      <div v-if="message.interrupted" class="mt-2 inline-flex items-center gap-1.5 px-2 py-1 text-xs text-text-muted bg-bg-tertiary rounded opacity-80">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+        <span>Response interrupted</span>
+      </div>
+
       <!-- Token/cost annotation -->
       <div v-if="message.usage" class="mt-2 text-xs text-text-muted flex items-center gap-3">
         <span>{{ formatTokens(message.usage.totalTokens) }} tokens</span>
@@ -103,6 +109,12 @@
         v-html="renderedHtml"
         @click="handleContentClick"
       />
+
+      <!-- Interrupted indicator -->
+      <div v-if="message.role === 'assistant' && message.interrupted" class="mt-2 inline-flex items-center gap-1.5 px-2 py-1 text-xs text-text-muted bg-bg-tertiary rounded opacity-80">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+        <span>Response interrupted</span>
+      </div>
 
       <!-- Token/cost annotation for assistant messages -->
       <div v-if="message.role === 'assistant' && message.usage" class="mt-2 text-xs text-text-muted flex items-center gap-3">

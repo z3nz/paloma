@@ -39,7 +39,8 @@ function createSessionState() {
     toolActivity: ref([]),
     pendingToolConfirmation: ref(null),
     pendingChanges: ref([]),
-    cliRequestId: null
+    cliRequestId: null,
+    streamInterrupted: false
   }
 }
 

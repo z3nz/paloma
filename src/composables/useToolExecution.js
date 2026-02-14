@@ -23,6 +23,7 @@ export function useToolExecution(sessionState) {
       entry.status = 'done'
       entry.duration = Date.now() - entry.startedAt
       if (result !== undefined) {
+        entry.result = result
         entry.resultType = classifyResult(entry.name, result)
       }
       toolActivity.value = [...toolActivity.value]
@@ -41,6 +42,7 @@ export function useToolExecution(sessionState) {
       args: a.args,
       status: a.status,
       duration: a.duration || null,
+      result: a.result || null,
       resultType: a.resultType || null
     }))
     // JSON round-trip strips functions, symbols, undefined, circular refs —
@@ -55,6 +57,7 @@ export function useToolExecution(sessionState) {
         args: {},
         status: a.status,
         duration: a.duration || null,
+        result: a.result || null,
         resultType: a.resultType || null
       }))
     }
