@@ -19,6 +19,8 @@ let mcpProxy = null
 const pendingAskUser = new Map()
 // Pending tool confirmation requests: id → { resolve }
 const pendingToolConfirm = new Map()
+// CLI requestId → originating WebSocket (for targeted sends)
+const cliRequestToWs = new Map()
 
 async function main() {
   const servers = await loadConfig()
@@ -34,22 +36,32 @@ async function main() {
     }
   }
 
+  // Send to the originating tab if known, otherwise broadcast to all
+  function sendToOrigin(cliRequestId, msg) {
+    const ws = cliRequestToWs.get(cliRequestId)
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify(msg))
+    } else {
+      broadcast(msg)
+    }
+  }
+
   // Start MCP proxy server for CLI tool access
   mcpProxy = new McpProxyServer(manager, {
     port: proxyPort,
-    onToolConfirmation(toolName, args) {
+    onToolConfirmation(toolName, args, cliRequestId) {
       const id = randomUUID()
-      broadcast({ type: 'cli_tool_confirmation', id, toolName, args })
+      sendToOrigin(cliRequestId, { type: 'cli_tool_confirmation', id, toolName, args })
       return new Promise(resolve => {
         pendingToolConfirm.set(id, { resolve })
       })
     },
-    onToolActivity(toolName, args, status) {
-      broadcast({ type: 'cli_tool_activity', toolName, args, status })
+    onToolActivity(toolName, args, status, cliRequestId) {
+      sendToOrigin(cliRequestId, { type: 'cli_tool_activity', toolName, args, status })
     },
-    onAskUser(question, options) {
+    onAskUser(question, options, cliRequestId) {
       const id = randomUUID()
-      broadcast({ type: 'ask_user', id, question, options })
+      sendToOrigin(cliRequestId, { type: 'ask_user', id, question, options })
       return new Promise(resolve => {
         pendingAskUser.set(id, { resolve })
       })
@@ -98,8 +110,14 @@ async function main() {
           (event) => {
             if (ws.readyState !== 1) return // OPEN
             ws.send(JSON.stringify({ ...event, id: msg.id }))
+            // Clean up mapping when CLI session ends
+            if (event.type === 'claude_done' || event.type === 'claude_error') {
+              cliRequestToWs.delete(requestId)
+            }
           }
         )
+        // Map this CLI request to the originating WebSocket
+        cliRequestToWs.set(requestId, ws)
         ws.send(JSON.stringify({ type: 'claude_ack', id: msg.id, requestId, sessionId }))
       } else if (msg.type === 'export_chats') {
         try {
@@ -147,6 +165,7 @@ async function main() {
         await search(homedir(), 0)
         ws.send(JSON.stringify({ type: 'resolved_path', id: msg.id, path: found }))
       } else if (msg.type === 'claude_stop') {
+        cliRequestToWs.delete(msg.requestId)
         cliManager.stop(msg.requestId)
       } else if (msg.type === 'ask_user_response') {
         const pending = pendingAskUser.get(msg.id)
@@ -169,7 +188,13 @@ async function main() {
       }
     })
 
-    ws.on('close', () => console.log('Client disconnected'))
+    ws.on('close', () => {
+      // Remove all CLI request mappings for this socket
+      for (const [id, mappedWs] of cliRequestToWs) {
+        if (mappedWs === ws) cliRequestToWs.delete(id)
+      }
+      console.log('Client disconnected')
+    })
   })
 
   // Graceful shutdown

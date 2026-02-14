@@ -265,3 +265,398 @@ html, body, #app {
 @keyframes blink {
   50% { opacity: 0; }
 }
+
+/* ============================================
+   Tool Call Group, Item, and Result Styles
+   ============================================ */
+
+/* --- ToolCallGroup --- */
+.tool-call-group {
+  margin: 0.5rem 0;
+}
+
+.tool-call-group__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  text-align: left;
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+}
+
+.tool-call-group__header:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border);
+}
+
+.tool-call-group__chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+  color: var(--color-text-muted);
+}
+
+.tool-call-group__chevron--open {
+  transform: rotate(90deg);
+}
+
+.tool-call-group__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tool-call-group__dot--running {
+  background: var(--color-accent);
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.tool-call-group__dot--done {
+  background: var(--color-success);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+.tool-call-group__summary {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+
+.tool-call-group__count {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.tool-call-group__running-badge {
+  background: var(--color-accent-muted);
+  color: var(--color-accent-hover);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.tool-call-group__total-time {
+  color: var(--color-text-muted);
+}
+
+.tool-call-group__servers {
+  display: flex;
+  gap: 0.3rem;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.tool-call-group__server-pill {
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-weight: 500;
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+.tool-call-group__items {
+  margin-top: 0.35rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* --- ToolCallItem --- */
+.tool-call-item {
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.tool-call-item:last-child {
+  border-bottom: none;
+}
+
+.tool-call-item__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-bg-secondary);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+  transition: background 0.1s;
+}
+
+.tool-call-item__row:hover {
+  background: var(--color-bg-tertiary);
+}
+
+.tool-call-item__row:disabled {
+  cursor: default;
+}
+
+.tool-call-item--running .tool-call-item__row {
+  background: var(--color-bg-secondary);
+}
+
+.tool-call-item__status {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.tool-call-item__spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: tool-spin 0.7s linear infinite;
+}
+
+@keyframes tool-spin {
+  to { transform: rotate(360deg); }
+}
+
+.tool-call-item__badge {
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-weight: 500;
+  border: 1px solid;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tool-call-item__name {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.75rem;
+  color: var(--color-text-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tool-call-item__summary {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-call-item__duration {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tool-call-item__size {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tool-call-item__chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+  color: var(--color-text-muted);
+}
+
+.tool-call-item__chevron--open {
+  transform: rotate(90deg);
+}
+
+.tool-call-item__result {
+  position: relative;
+  border-top: 1px solid var(--color-border-light);
+  padding: 0.5rem 0.75rem;
+  background: var(--color-bg-primary);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.tool-call-item__copy {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  cursor: pointer;
+  z-index: 1;
+  transition: background 0.1s, color 0.1s;
+}
+
+.tool-call-item__copy:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+/* --- ToolResult --- */
+.tool-result {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.tool-result__pre {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-text-secondary);
+}
+
+.tool-result__pre code {
+  font-family: inherit;
+  font-size: inherit;
+  background: transparent;
+  padding: 0;
+}
+
+/* Error result */
+.tool-result--error .tool-result__pre {
+  color: var(--color-danger);
+}
+
+.tool-result__error {
+  background: rgba(248, 81, 73, 0.08);
+  border-radius: 4px;
+  padding: 0.5rem;
+}
+
+/* Diff result */
+.tool-result__diff {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.tool-result__diff-line {
+  display: flex;
+  padding: 0 0.5rem;
+}
+
+.tool-result__diff-line--add {
+  background: rgba(63, 185, 80, 0.12);
+}
+
+.tool-result__diff-line--remove {
+  background: rgba(248, 81, 73, 0.12);
+}
+
+.tool-result__diff-line--hunk {
+  color: var(--color-accent);
+  background: var(--color-accent-muted);
+  padding: 0.15rem 0.5rem;
+  margin: 0.25rem 0;
+}
+
+.tool-result__diff-line--header {
+  color: var(--color-text-muted);
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+}
+
+.tool-result__diff-marker {
+  width: 1.25rem;
+  flex-shrink: 0;
+  text-align: center;
+  user-select: none;
+}
+
+.tool-result__diff-line--add .tool-result__diff-marker {
+  color: var(--color-success);
+}
+
+.tool-result__diff-line--remove .tool-result__diff-marker {
+  color: var(--color-danger);
+}
+
+.tool-result__diff-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* JSON result */
+.tool-result__json .tool-result__pre {
+  padding: 0.25rem 0;
+}
+
+/* File content result */
+.tool-result__file .tool-result__pre {
+  padding: 0.25rem 0;
+}
+
+/* Directory result */
+.tool-result__dir {
+  padding: 0.25rem 0;
+}
+
+.tool-result__dir-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.1rem 0;
+  font-size: 0.75rem;
+}
+
+.tool-result__dir-icon {
+  font-size: 0.8rem;
+  flex-shrink: 0;
+  width: 1.25rem;
+  text-align: center;
+}
+
+/* Truncation / Show more */
+.tool-result__truncated {
+  padding: 0.35rem 0.5rem;
+  color: var(--color-accent);
+  cursor: pointer;
+  font-size: 0.7rem;
+  transition: color 0.1s;
+}
+
+.tool-result__truncated:hover {
+  color: var(--color-accent-hover);
+}
+
+/* Empty result */
+.tool-result__empty {
+  padding: 0.25rem 0;
+  font-size: 0.75rem;
+}

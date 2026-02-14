@@ -32,7 +32,8 @@ export class McpProxyServer {
         return
       }
 
-      if (req.method === 'GET' && req.url === '/sse') {
+      const pathname = new URL(req.url, `http://localhost:${this.port}`).pathname
+      if (req.method === 'GET' && pathname === '/sse') {
         this._handleSSE(req, res)
       } else if (req.method === 'POST' && req.url?.startsWith('/messages')) {
         this._handlePost(req, res)
@@ -98,9 +99,9 @@ export class McpProxyServer {
     return tools
   }
 
-  async _handleToolCall(name, args) {
+  async _handleToolCall(name, args, cliRequestId) {
     if (name === 'ask_user') {
-      return this._handleAskUser(args)
+      return this._handleAskUser(args, cliRequestId)
     }
 
     // Parse proxy tool name: serverName__toolName
@@ -112,17 +113,17 @@ export class McpProxyServer {
     const toolName = name.slice(sepIdx + 2)
 
     // Ask browser for confirmation before executing
-    this.onToolActivity(name, args, 'pending')
+    this.onToolActivity(name, args, 'pending', cliRequestId)
     try {
       const decision = await Promise.race([
-        this.onToolConfirmation(name, args),
+        this.onToolConfirmation(name, args, cliRequestId),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('timeout')), CONFIRMATION_TIMEOUT)
         )
       ])
 
       if (!decision.approved) {
-        this.onToolActivity(name, args, 'denied')
+        this.onToolActivity(name, args, 'denied', cliRequestId)
         return {
           content: [{ type: 'text', text: `Tool denied by user: ${decision.reason || 'No reason given'}` }],
           isError: true
@@ -130,24 +131,24 @@ export class McpProxyServer {
       }
 
       // User approved — execute the tool
-      this.onToolActivity(name, args, 'running')
+      this.onToolActivity(name, args, 'running', cliRequestId)
 
       // If the browser already executed the tool and returned a result, use that
       if (decision.result !== undefined) {
-        this.onToolActivity(name, args, 'done')
+        this.onToolActivity(name, args, 'done', cliRequestId)
         const text = typeof decision.result === 'string' ? decision.result : JSON.stringify(decision.result)
         return { content: [{ type: 'text', text }] }
       }
 
       // Otherwise execute via mcpManager
       const result = await this.mcpManager.callTool(serverName, toolName, args)
-      this.onToolActivity(name, args, 'done')
+      this.onToolActivity(name, args, 'done', cliRequestId)
       if (result.content) {
         return { content: result.content, isError: result.isError || false }
       }
       return { content: [{ type: 'text', text: 'OK' }] }
     } catch (e) {
-      this.onToolActivity(name, args, 'error')
+      this.onToolActivity(name, args, 'error', cliRequestId)
       if (e.message === 'timeout') {
         return {
           content: [{ type: 'text', text: 'Tool confirmation timed out (5 minutes)' }],
@@ -161,10 +162,10 @@ export class McpProxyServer {
     }
   }
 
-  async _handleAskUser(args) {
+  async _handleAskUser(args, cliRequestId) {
     try {
       const answer = await Promise.race([
-        this.onAskUser(args.question, args.options || []),
+        this.onAskUser(args.question, args.options || [], cliRequestId),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('timeout')), CONFIRMATION_TIMEOUT)
         )
@@ -181,7 +182,7 @@ export class McpProxyServer {
     }
   }
 
-  _createServer() {
+  _createServer(cliRequestId) {
     const server = new Server(
       { name: 'paloma-proxy', version: '1.0.0' },
       { capabilities: { tools: {} } }
@@ -202,14 +203,16 @@ export class McpProxyServer {
     // tools/call — route to the appropriate handler
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params
-      return this._handleToolCall(name, args || {})
+      return this._handleToolCall(name, args || {}, cliRequestId)
     })
 
     return server
   }
 
   async _handleSSE(req, res) {
-    const server = this._createServer()
+    const url = new URL(req.url, `http://localhost:${this.port}`)
+    const cliRequestId = url.searchParams.get('cliRequestId')
+    const server = this._createServer(cliRequestId)
     const transport = new SSEServerTransport('/messages', res)
     this.transports.set(transport.sessionId, { transport, server })
 
@@ -218,7 +221,7 @@ export class McpProxyServer {
       console.log(`[mcp-proxy] SSE session closed: ${transport.sessionId}`)
     }
 
-    console.log(`[mcp-proxy] SSE session started: ${transport.sessionId}`)
+    console.log(`[mcp-proxy] SSE session started: ${transport.sessionId}, cliRequestId=${cliRequestId}`)
     await server.connect(transport)
   }
 

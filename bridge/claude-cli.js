@@ -35,7 +35,7 @@ export class ClaudeCliManager {
         mcpServers: {
           paloma: {
             type: 'sse',
-            url: `http://localhost:${this.mcpProxyPort}/sse`
+            url: `http://localhost:${this.mcpProxyPort}/sse?cliRequestId=${requestId}`
           }
         }
       }

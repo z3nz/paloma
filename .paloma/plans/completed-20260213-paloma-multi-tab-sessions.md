@@ -1,6 +1,7 @@
 # Plan: Multi-Tab Parallel Sessions
 
-**Status:** active
+**Status:** completed (Phase 1 — client-side session isolation)
+**Completed:** 2026-02-13
 **Created:** 2026-02-13
 **Scope:** paloma
 **Impact:** Major — architectural research needed, touches bridge, MCP proxy, session management
@@ -141,9 +142,31 @@ Each tab needs a unique identity so the bridge can route responses correctly. Op
 
 ## Success Criteria
 
-- [ ] Two tabs can connect to bridge simultaneously
-- [ ] Each tab can run independent CLI conversations
-- [ ] Tool confirmations route to the correct tab
-- [ ] Different projects in different tabs don't interfere
-- [ ] Closing a tab cleans up its CLI subprocess
-- [ ] Session list in sidebar is consistent across tabs (shared DB, not stale)
+- [x] Per-session state isolation (messages, streaming, tools, errors) — no cross-talk within a single tab
+- [x] Sidebar shows per-session streaming/tool activity indicators
+- [x] Switching sessions preserves each session's state independently
+- [x] LRU eviction prevents memory bloat (max 10 loaded sessions)
+- [ ] Two tabs can connect to bridge simultaneously (Phase 2 — bridge routing)
+- [ ] Each tab can run independent CLI conversations (Phase 2)
+- [ ] Tool confirmations route to the correct tab (Phase 3)
+- [ ] Different projects in different tabs don't interfere (Phase 3)
+- [ ] Closing a tab cleans up its CLI subprocess (Phase 4)
+- [ ] Session list in sidebar is consistent across tabs (Phase 4)
+
+---
+
+## Completion Notes (Phase 1)
+
+**What was built:**
+- `useSessionState.js` — central session state registry using `shallowReactive(Map)`
+- Refactored 6 composables from module-level singletons to session-aware architecture
+- Sidebar indicators: pulsing blue (streaming) > pulsing purple (tools) > static phase dot
+- MessageList streaming label: "Assistant" → "Paloma" (purple)
+
+**Key lessons learned:**
+- `shallowReactive()` not `reactive()` for Maps holding ref-containing objects
+- Computed getters must be pure reads — no `Map.set()` side effects
+- Fallback state must be a stable singleton for identity tracking
+- See `memory/vue-reactivity-pitfalls.md` for full writeup
+
+**Remaining work (Phases 2-4):** Bridge-side connection routing, MCP proxy isolation, multi-tab testing. These are separate concerns that build on this foundation.

@@ -15,6 +15,7 @@ export async function runOpenRouterLoop({
   apiKey, model, apiMessages, tools, sessionId,
   isAutoApproved, mcpConfig, callMcpTool, searchFn, dirHandle,
   onContent, onToolCall, onSaveAssistant, onSaveTool, onResetStreaming,
+  onToolsComplete,
   sessionState
 }) {
   const { addActivity, markActivityDone, requestToolConfirmation } = useToolExecution(sessionState)
@@ -86,10 +87,9 @@ export async function runOpenRouterLoop({
           result = await requestToolConfirmation(toolName, args, dirHandle)
         }
 
-        markActivityDone(activityId)
-
         // Save tool result message
         const content = typeof result === 'string' ? result : JSON.stringify(result)
+        markActivityDone(activityId, content)
         await onSaveTool(call.id, toolName, args, content)
         apiMessages.push({
           role: 'tool',
@@ -97,6 +97,9 @@ export async function runOpenRouterLoop({
           content
         })
       }
+
+      // Attach tool activity to the assistant message now that tools are done
+      if (onToolsComplete) await onToolsComplete(assistantMsg)
 
       // Reset for next round
       onResetStreaming()

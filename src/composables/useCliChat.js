@@ -18,7 +18,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   }
 
   const { sendClaudeChat } = useMCP()
-  const { addActivity, markActivityDone } = useToolExecution(sessionState)
+  const { addActivity, markActivityDone, toolActivity } = useToolExecution(sessionState)
 
   const session = await db.sessions.get(sessionId)
   const existingCliSession = session?.cliSessionId || null
@@ -55,7 +55,23 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
       toolUseToActivity.set(chunk.id, activityId)
     } else if (chunk.type === 'tool_result') {
       const activityId = toolUseToActivity.get(chunk.toolUseId)
-      if (activityId) markActivityDone(activityId)
+      if (activityId) {
+        // Pass result content for classification (may be string or array)
+        const resultStr = typeof chunk.content === 'string'
+          ? chunk.content
+          : Array.isArray(chunk.content)
+            ? chunk.content.map(c => c.text || '').join('')
+            : JSON.stringify(chunk.content)
+        markActivityDone(activityId, resultStr)
+      }
+    }
+  }
+
+  // Safety net: mark any still-running activities as done when stream ends.
+  // CLI stream-json may not always emit explicit tool_result events for every tool_use.
+  for (const activity of toolActivity.value) {
+    if (activity.status === 'running') {
+      markActivityDone(activity.id)
     }
   }
 

@@ -17,11 +17,12 @@
       </button>
     </div>
 
-    <!-- Messages -->
+    <!-- Messages (tool messages consumed by their parent assistant get filtered out) -->
     <MessageItem
-      v-for="msg in visibleMessages"
+      v-for="msg in displayMessages"
       :key="msg.id"
       :message="msg"
+      :tool-messages="getToolMessagesFor(msg)"
       @apply-code="payload => $emit('apply-code', payload)"
     />
 
@@ -39,8 +40,13 @@
       </div>
     </div>
 
-    <!-- Tool activity -->
-    <ToolActivity v-if="toolActivity.length" :activities="toolActivity" />
+    <!-- Live tool activity (during streaming) -->
+    <ToolCallGroup
+      v-if="toolActivity.length"
+      :activities="toolActivity"
+      :live="true"
+      class="px-6 py-2"
+    />
 
     <!-- Error -->
     <div v-if="error" class="px-6 py-4">
@@ -57,7 +63,7 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { marked } from 'marked'
 import MessageItem from './MessageItem.vue'
-import ToolActivity from './ToolActivity.vue'
+import ToolCallGroup from './ToolCallGroup.vue'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
@@ -86,6 +92,65 @@ const visibleMessages = computed(() => {
   return props.messages.slice(-VISIBLE_LIMIT)
 })
 
+/**
+ * Build a set of tool message IDs that are "consumed" by an assistant message
+ * with toolActivity — these should not render as standalone messages.
+ */
+const consumedToolIds = computed(() => {
+  const consumed = new Set()
+  const msgs = visibleMessages.value
+  for (let i = 0; i < msgs.length; i++) {
+    const msg = msgs[i]
+    if (msg.role === 'assistant' && msg.toolActivity?.length) {
+      // Collect all tool messages that follow this assistant message
+      // until the next non-tool message
+      for (let j = i + 1; j < msgs.length; j++) {
+        if (msgs[j].role === 'tool') {
+          consumed.add(msgs[j].id)
+        } else {
+          break
+        }
+      }
+      // Also look backwards for tool messages from earlier tool-call rounds
+      // (in OpenRouter multi-round loops, pattern is: assistant+tools, assistant+tools, ...)
+      // Actually tool messages always come AFTER their parent assistant message, so forward-only is correct.
+    }
+  }
+  return consumed
+})
+
+/**
+ * Messages to display — filters out tool messages that are consumed by ToolCallGroup.
+ */
+const displayMessages = computed(() => {
+  return visibleMessages.value.filter(msg => {
+    if (msg.role === 'tool' && consumedToolIds.value.has(msg.id)) {
+      return false
+    }
+    return true
+  })
+})
+
+/**
+ * Get tool messages that belong to a given assistant message.
+ */
+function getToolMessagesFor(msg) {
+  if (msg.role !== 'assistant' || !msg.toolActivity?.length) return []
+  const msgs = visibleMessages.value
+  const idx = msgs.indexOf(msg)
+  if (idx === -1) return []
+
+  const toolMsgs = []
+  for (let j = idx + 1; j < msgs.length; j++) {
+    if (msgs[j].role === 'tool') {
+      toolMsgs.push(msgs[j])
+    } else {
+      break
+    }
+  }
+  return toolMsgs
+}
+
 function checkScrollPosition() {
   if (!container.value) return
   const { scrollTop, scrollHeight, clientHeight } = container.value
@@ -107,9 +172,6 @@ function scrollToBottom(behavior = 'smooth') {
 }
 
 // --- Streaming markdown safety ---
-// During streaming, code fences may be half-received (opening ``` but no closing ```).
-// marked will produce broken HTML in that case. This helper detects unclosed fences
-// and appends a closing one so the parser always sees valid markdown.
 function closeOpenFences(text) {
   const fencePattern = /^(`{3,})/gm
   let open = false
@@ -133,8 +195,6 @@ let throttleTimer = null
 function renderAndScroll() {
   const safeContent = closeOpenFences(props.streamingContent)
   streamingHtmlThrottled.value = marked.parse(safeContent, { breaks: true }) + '<span class="streaming-cursor"></span>'
-  // Scroll after render, using instant during streaming to avoid
-  // smooth-scroll animation setting isNearBottom=false mid-flight
   if (isNearBottom.value) {
     scrollToBottom('instant')
   }

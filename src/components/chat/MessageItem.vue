@@ -1,7 +1,7 @@
 <template>
-  <!-- Tool message -->
+  <!-- Tool message: hidden if parent assistant has toolActivity (rendered inside ToolCallGroup instead) -->
   <div
-    v-if="message.role === 'tool'"
+    v-if="message.role === 'tool' && !message._consumed"
     class="px-6 py-1.5"
   >
     <div class="max-w-3xl mx-auto flex items-start gap-2 text-xs text-text-muted">
@@ -10,7 +10,7 @@
         @click="expanded = !expanded"
         class="font-mono hover:text-text-secondary text-left"
       >
-        {{ message.toolName }}({{ formatArgs }}) {{ expanded ? '▾' : '▸' }}
+        {{ message.toolName }}({{ formatArgs }}) {{ expanded ? '&#x25BE;' : '&#x25B8;' }}
       </button>
     </div>
     <div v-if="expanded" class="max-w-3xl mx-auto mt-1 ml-10">
@@ -18,9 +18,43 @@
     </div>
   </div>
 
-  <!-- Assistant message with tool calls but no content -->
+  <!-- Assistant message with toolActivity (new rich display) -->
   <div
-    v-else-if="message.role === 'assistant' && message.toolCalls && !message.content"
+    v-else-if="message.role === 'assistant' && hasToolActivity"
+    class="px-6"
+    :class="message.content ? 'py-4 bg-bg-secondary/50' : 'py-2'"
+  >
+    <div class="max-w-3xl mx-auto">
+      <!-- Role label (only if there's content) -->
+      <div v-if="message.content" class="flex items-center gap-2 mb-2">
+        <span class="text-xs font-medium uppercase tracking-wider text-purple-400">Paloma</span>
+      </div>
+
+      <!-- Tool call group -->
+      <ToolCallGroup
+        :activities="message.toolActivity"
+        :tool-messages="toolMessages"
+      />
+
+      <!-- Content (if any) -->
+      <div
+        v-if="message.content"
+        class="message-content text-sm text-text-primary mt-3"
+        v-html="renderedHtml"
+        @click="handleContentClick"
+      />
+
+      <!-- Token/cost annotation -->
+      <div v-if="message.usage" class="mt-2 text-xs text-text-muted flex items-center gap-3">
+        <span>{{ formatTokens(message.usage.totalTokens) }} tokens</span>
+        <span>{{ formatCost(messageCost) }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Assistant message with legacy toolCalls but no toolActivity and no content -->
+  <div
+    v-else-if="message.role === 'assistant' && message.toolCalls && !message.toolActivity && !message.content"
     class="px-6 py-1.5"
   >
     <div class="max-w-3xl mx-auto">
@@ -84,9 +118,11 @@ import { computed, ref } from 'vue'
 import { marked } from 'marked'
 import hljs from 'highlight.js'
 import { useCostTracking } from '../../composables/useCostTracking.js'
+import ToolCallGroup from './ToolCallGroup.vue'
 
 const props = defineProps({
-  message: { type: Object, required: true }
+  message: { type: Object, required: true },
+  toolMessages: { type: Array, default: () => [] }  // role:'tool' messages that belong to this assistant message
 })
 
 const emit = defineEmits(['apply-code'])
@@ -98,7 +134,11 @@ const expanded = ref(false)
 const { formatCost, formatTokens, calculateMessageCost } = useCostTracking()
 const messageCost = computed(() => calculateMessageCost(props.message))
 
-// Format tool args for compact display
+const hasToolActivity = computed(() =>
+  props.message.role === 'assistant' && props.message.toolActivity?.length > 0
+)
+
+// Format tool args for compact display (legacy tool messages)
 const formatArgs = computed(() => {
   if (props.message.role !== 'tool') return ''
   const args = props.message.toolArgs
@@ -108,7 +148,7 @@ const formatArgs = computed(() => {
   return Object.entries(args).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')
 })
 
-// Truncate tool result for display
+// Truncate tool result for display (legacy tool messages)
 const truncatedResult = computed(() => {
   if (props.message.role !== 'tool') return ''
   const content = props.message.content || ''

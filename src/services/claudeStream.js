@@ -85,12 +85,30 @@ export async function* streamClaudeChat(sendFn, options) {
             yield { type: 'tool_result', toolUseId: block.tool_use_id, content: block.content }
           }
         }
+      } else if (event.type === 'content_block_start') {
+        // CLI stream-json emits content_block_start for tool_use blocks
+        if (event.content_block?.type === 'tool_use') {
+          yield {
+            type: 'tool_use',
+            id: event.content_block.id,
+            name: event.content_block.name,
+            input: event.content_block.input || {}
+          }
+        }
       } else if (event.type === 'content_block_delta') {
         if (event.delta?.type === 'text_delta' && event.delta.text) {
           yield { type: 'content', text: event.delta.text }
         }
       } else if (event.type === 'result') {
         if (event.subtype === 'done') continue // handled by done flag
+        // Result event may contain tool_result blocks in its content
+        if (event.result?.content) {
+          for (const block of (Array.isArray(event.result.content) ? event.result.content : [])) {
+            if (block.type === 'tool_result') {
+              yield { type: 'tool_result', toolUseId: block.tool_use_id, content: block.content }
+            }
+          }
+        }
         // Result event with usage stats
         if (event.usage) {
           yield {

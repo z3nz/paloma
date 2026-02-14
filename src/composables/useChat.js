@@ -12,6 +12,12 @@ import { useToolExecution } from './useToolExecution.js'
 import { useSessionState } from './useSessionState.js'
 import { runOpenRouterLoop } from './useOpenRouterChat.js'
 import { runCliChat, stopCli, clearCliRequestId } from './useCliChat.js'
+import { classifyResult } from '../utils/toolClassifier.js'
+
+/** Strip non-cloneable values (Vue reactive proxies, functions, etc.) for IndexedDB. */
+function sanitizeForDB(obj) {
+  try { return JSON.parse(JSON.stringify(obj)) } catch { return obj }
+}
 
 export function useChat() {
   const { getState, activeState, activeId } = useSessionState()
@@ -48,7 +54,7 @@ export function useChat() {
   async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions, activePlans, searchFn, mcpConfig) {
     const s = getState(sessionId)
     s.error.value = null
-    const { clearActivity } = useToolExecution(s)
+    const { clearActivity, snapshotActivity } = useToolExecution(s)
     clearActivity()
 
     // Build file contents for attached files
@@ -81,9 +87,10 @@ export function useChat() {
       files: attachedFiles.map(f => ({ path: f.path, name: f.name })),
       timestamp: Date.now()
     }
-    const userMsgId = await db.messages.add(userMsg)
-    userMsg.id = userMsgId
-    s.messages.value.push(userMsg)
+    const safeUserMsg = sanitizeForDB(userMsg)
+    const userMsgId = await db.messages.add(safeUserMsg)
+    safeUserMsg.id = userMsgId
+    s.messages.value.push(safeUserMsg)
 
     // Resolve MCP tools
     const { getEnabledTools, callMcpTool } = useMCP()
@@ -127,7 +134,7 @@ export function useChat() {
           sessionState: s
         })
 
-        await saveAssistantMessage(sessionId, s, cliContent, null, usage, model)
+        await saveAssistantMessage(sessionId, s, cliContent, null, usage, model, snapshotActivity())
         checkContextUsage(s, usage, model)
 
         if (s.messages.value.filter(m => m.role === 'user').length === 1) {
@@ -146,27 +153,40 @@ export function useChat() {
           onContent(text) { s.streamingContent.value = text },
           onResetStreaming() { s.streamingContent.value = '' },
           async onSaveAssistant(content, toolCalls, usage, model) {
+            // Don't attach toolActivity here — tools haven't executed yet.
+            // We'll update the message after tool execution via onUpdateAssistantActivity.
             return saveAssistantMessage(sessionId, s, content, toolCalls, usage, model)
           },
           async onSaveTool(callId, toolName, args, content) {
-            const toolMsg = {
+            const toolMsg = sanitizeForDB({
               sessionId,
               role: 'tool',
               toolCallId: callId,
               toolName,
               toolArgs: args,
               content,
+              resultType: classifyResult(toolName, content),
               timestamp: Date.now()
-            }
+            })
             const toolMsgId = await db.messages.add(toolMsg)
             toolMsg.id = toolMsgId
             s.messages.value.push(toolMsg)
+          },
+          async onToolsComplete(assistantMsg) {
+            // Attach the tool activity snapshot now that all tools have finished
+            const snapshot = snapshotActivity()
+            if (snapshot.length && assistantMsg?.id) {
+              assistantMsg.toolActivity = snapshot
+              await db.messages.update(assistantMsg.id, { toolActivity: snapshot })
+              // Trigger reactivity
+              s.messages.value = [...s.messages.value]
+            }
           },
           sessionState: s
         })
 
         if (result) {
-          await saveAssistantMessage(sessionId, s, result.content, null, result.usage, result.model)
+          await saveAssistantMessage(sessionId, s, result.content, null, result.usage, result.model, snapshotActivity())
           checkContextUsage(s, result.usage, model)
 
           if (s.messages.value.filter(m => m.role === 'user').length === 1) {
@@ -182,22 +202,29 @@ export function useChat() {
       s.streamingContent.value = ''
       s.abortController = null
       clearCliRequestId(s)
+      // Clear live tool activity — persisted snapshot is now on the assistant message
+      clearActivity()
     }
 
     return null
   }
 
-  async function saveAssistantMessage(sessionId, s, content, toolCalls, usage, model) {
-    const assistantMsg = {
+  async function saveAssistantMessage(sessionId, s, content, toolCalls, usage, model, toolActivitySnapshot) {
+    const raw = {
       sessionId,
       role: 'assistant',
       content,
-      usage,
       model,
       files: [],
       timestamp: Date.now()
     }
-    if (toolCalls) assistantMsg.toolCalls = toolCalls
+    if (usage) raw.usage = usage
+    if (toolCalls) raw.toolCalls = toolCalls
+    if (toolActivitySnapshot?.length) raw.toolActivity = toolActivitySnapshot
+
+    // JSON round-trip the entire message to strip reactive proxies, functions,
+    // and anything else that would cause DataCloneError in IndexedDB
+    const assistantMsg = sanitizeForDB(raw)
     const id = await db.messages.add(assistantMsg)
     assistantMsg.id = id
     s.messages.value.push(assistantMsg)
