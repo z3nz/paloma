@@ -233,7 +233,7 @@ async function handlePhaseTransition({ phase, fromPhase, sessionId }) {
   const orientationHints = {
     scout: 'Read the active plan to understand objectives, then explore the codebase with MCP tools before making any claims.',
     chart: 'Review any scout findings in .paloma/docs/ and read the relevant code before designing the plan.',
-    forge: 'Read the active plan carefully, then read the files you will modify BEFORE making any changes.',
+    forge: 'Read the active plan carefully. Check .paloma/docs/ for Scout research docs referenced by the plan. If the plan references APIs or SDKs without a corresponding scout doc, STOP and tell Adam that Scout needs to run first. Then read the files you will modify BEFORE making any changes.',
     polish: 'Read the active plan for intent, then run git_diff and read the changed files to understand what was ACTUALLY built. Do NOT summarize from commit messages — read the code.',
     ship: 'Run git_status and git_diff to review all changes. Read the active plan to understand scope. Only then draft commit messages.'
   }

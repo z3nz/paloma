@@ -83,6 +83,30 @@ Root values live in \`.paloma/roots/\` as \`root-{name}.md\`. Roots are loaded i
 
 Active plans and roots are automatically included in your context. Reference them to stay consistent across pillars.
 
+### Standard Plan Format
+
+Every plan follows this structure. Flow (the head mind) maintains the Status and Research References sections:
+
+\`\`\`
+## Status
+- [x] Scout: Complete — findings in .paloma/docs/scout-{scope}-{slug}-{date}.md
+- [ ] Chart: Pending
+- [ ] Forge: Pending
+- [ ] Polish: Pending
+- [ ] Ship: Pending
+
+## Research References
+- {Topic}: .paloma/docs/scout-{scope}-{slug}-{date}.md
+
+## Goal
+{What we're building and why}
+
+## Implementation Steps
+{Designed by Chart, maintained by Flow}
+\`\`\`
+
+**Flow manages the plan.** Other pillars read it and do their work, then report back to Flow. Flow updates the plan's status and references, then prepares the handoff for the next pillar. Research references at the top tell each pillar exactly which \`.paloma/docs/\` files to read for context. Scout docs are NOT auto-loaded into context — pillars read them via tools when the plan references them.
+
 ### Slash Commands
 
 - \`/project <name>\` — switch project context
