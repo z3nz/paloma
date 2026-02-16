@@ -1,7 +1,7 @@
-# Draft: Batch Retitle Existing Sessions
+# Completed: Batch Retitle Existing Sessions
 
 > **Goal:** Rename all existing "New Chat" and truncated-title sessions to meaningful summaries.
-> **Status:** Draft
+> **Status:** Completed
 > **Created:** 2026-02-15
 
 ---

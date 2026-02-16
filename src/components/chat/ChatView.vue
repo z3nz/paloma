@@ -17,6 +17,7 @@
       @send="handleSend"
       @stop="stopStreaming"
       @update-session="handleUpdateSession"
+      @transition-phase="handleTransitionPhase"
     />
 
     <DiffPreview
@@ -70,7 +71,7 @@ const props = defineProps({
   session: { type: Object, default: null }
 })
 
-const emit = defineEmits(['update-session'])
+const emit = defineEmits(['update-session', 'transition-phase'])
 
 const {
   messages, streaming, streamingContent, toolActivity, error,
@@ -79,7 +80,7 @@ const {
 } = useChat()
 const { detectChanges, loadSessionChanges } = useChanges()
 const { apiKey } = useSettings()
-const { dirHandle, projectRoot, projectInstructions, activePlans, mcpConfig, refreshActivePlans } = useProject()
+const { dirHandle, projectRoot, projectInstructions, activePlans, roots, mcpConfig, refreshActivePlans } = useProject()
 const { search: searchFiles } = useFileIndex()
 const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool } = useMCP()
 const { isAutoApproved, approveForSession, approveToolForSession } = usePermissions()
@@ -226,7 +227,8 @@ async function handleSend({ content, files }) {
     projectInstructions.value,
     activePlans.value,
     searchFiles,
-    mcpConfig.value
+    mcpConfig.value,
+    roots.value
   )
 
   if (title) {
@@ -236,6 +238,10 @@ async function handleSend({ content, files }) {
 
 function handleUpdateSession(updates) {
   emit('update-session', props.session.id, updates)
+}
+
+function handleTransitionPhase({ phase, fromPhase }) {
+  emit('transition-phase', { phase, fromPhase, sessionId: props.session?.id })
 }
 
 /** Read a file via MCP, returns content string or null */

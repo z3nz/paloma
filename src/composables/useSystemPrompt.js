@@ -1,7 +1,7 @@
 import { BASE_INSTRUCTIONS } from '../prompts/base.js'
 import { PHASE_INSTRUCTIONS } from '../prompts/phases.js'
 
-export function buildSystemPrompt(phase, projectInstructions, activePlans, enabledMcpTools = []) {
+export function buildSystemPrompt(phase, projectInstructions, activePlans, enabledMcpTools = [], roots = []) {
   let prompt = BASE_INSTRUCTIONS
 
   if (enabledMcpTools.length > 0) {
@@ -21,6 +21,15 @@ export function buildSystemPrompt(phase, projectInstructions, activePlans, enabl
     prompt += '\n\n## Active Plans\n\n'
     prompt += activePlans.map(p =>
       `<plan name="${p.name}">\n${p.content}\n</plan>`
+    ).join('\n\n')
+  }
+
+  // Layer 4.5: Roots — foundational values that inform all decisions
+  if (roots?.length > 0) {
+    prompt += '\n\n## Roots\n\n'
+    prompt += 'These are Paloma\'s foundational values. They inform all decisions and interactions.\n\n'
+    prompt += roots.map(r =>
+      `<root name="${r.name}">\n${r.content}\n</root>`
     ).join('\n\n')
   }
 

@@ -139,7 +139,7 @@ export function useChat() {
     s.messages.value = result
   }
 
-  async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions, activePlans, searchFn, mcpConfig) {
+  async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions, activePlans, searchFn, mcpConfig, roots) {
     const s = getState(sessionId)
     s.error.value = null
     s.streamInterrupted = false
@@ -190,7 +190,7 @@ export function useChat() {
     const apiMessages = []
     apiMessages.push({
       role: 'system',
-      content: buildSystemPrompt(phase, projectInstructions, activePlans, enabledMcpTools)
+      content: buildSystemPrompt(phase, projectInstructions, activePlans, enabledMcpTools, roots)
     })
     for (const msg of s.messages.value) {
       if (msg.role === 'user' || msg.role === 'assistant') {
@@ -225,7 +225,7 @@ export function useChat() {
         // === CLI path ===
         const { content: cliContent, usage } = await runCliChat({
           sessionId, model, fullContent,
-          phase, projectInstructions, activePlans,
+          phase, projectInstructions, activePlans, roots,
           onContent(text) { s.streamingContent.value = text },
           sessionState: s
         })

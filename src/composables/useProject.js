@@ -55,6 +55,7 @@ const projectRoot = ref(_saved?.projectRoot ?? null)
 const projectInstructions = ref(_saved?.projectInstructions ?? null)
 const activePlans = ref(_saved?.activePlans ?? [])
 const mcpConfig = ref(_saved?.mcpConfig ?? null)
+const roots = ref(_saved?.roots ?? [])
 const projectLoading = ref(false)
 
 const needsReconnect = computed(() => false) // No longer needed — MCP-based
@@ -81,11 +82,12 @@ if (import.meta.hot) {
       projectRoot: projectRoot.value,
       projectInstructions: projectInstructions.value,
       activePlans: activePlans.value,
+      roots: roots.value,
       mcpConfig: mcpConfig.value
     }
   }
   save()
-  watch([dirHandle, projectName, projectRoot, projectInstructions, activePlans, mcpConfig], save, { flush: 'sync' })
+  watch([dirHandle, projectName, projectRoot, projectInstructions, activePlans, roots, mcpConfig], save, { flush: 'sync' })
 }
 
 // --- MCP-based file reading helpers ---
@@ -126,6 +128,27 @@ async function mcpListDir(callMcpTool, path) {
   }
 }
 
+/**
+ * Load root values from .paloma/roots/root-*.md.
+ * Exported for reuse by sub-agent birth protocol.
+ */
+async function loadRoots(callMcpTool, root) {
+  const rootEntries = await mcpListDir(callMcpTool, `${root}/.paloma/roots`)
+  const loaded = []
+  for (const entry of rootEntries) {
+    if (entry.kind === 'file' && entry.name.startsWith('root-') && entry.name.endsWith('.md')) {
+      const content = await mcpReadFile(callMcpTool, `${root}/.paloma/roots/${entry.name}`)
+      if (content) {
+        // Extract root name from filename: root-faith.md → faith
+        const name = entry.name.replace(/^root-/, '').replace(/\.md$/, '')
+        loaded.push({ name, content })
+      }
+    }
+  }
+  loaded.sort((a, b) => a.name.localeCompare(b.name))
+  return loaded
+}
+
 async function loadProjectContext(callMcpTool, root) {
   // Read instructions
   const instructions = await mcpReadFile(callMcpTool, `${root}/.paloma/instructions.md`)
@@ -143,6 +166,9 @@ async function loadProjectContext(callMcpTool, root) {
   }
   plans.sort((a, b) => a.name.localeCompare(b.name))
 
+  // Read roots
+  const rootValues = await loadRoots(callMcpTool, root)
+
   // Read MCP config
   let mcp = null
   const mcpRaw = await mcpReadFile(callMcpTool, `${root}/.paloma/mcp.json`)
@@ -150,7 +176,7 @@ async function loadProjectContext(callMcpTool, root) {
     try { mcp = JSON.parse(mcpRaw) } catch { /* invalid json */ }
   }
 
-  return { instructions, plans, mcp }
+  return { instructions, plans, roots: rootValues, mcp }
 }
 
 export function useProject() {
@@ -178,13 +204,14 @@ export function useProject() {
       }
 
       // Load all context via MCP
-      const { instructions, plans, mcp } = await loadProjectContext(callMcpTool, root)
+      const { instructions, plans, roots: rootValues, mcp } = await loadProjectContext(callMcpTool, root)
 
       // Update state
       projectName.value = name
       projectRoot.value = root
       projectInstructions.value = instructions
       activePlans.value = plans
+      roots.value = rootValues
       mcpConfig.value = mcp
       dirHandle.value = null // Not using browser handles anymore
 
@@ -315,6 +342,7 @@ export function useProject() {
     projectRoot.value = null
     projectInstructions.value = null
     activePlans.value = []
+    roots.value = []
     mcpConfig.value = null
     setHash('', null)
   }
@@ -333,6 +361,7 @@ export function useProject() {
     projectRoot,
     projectInstructions,
     activePlans,
+    roots,
     mcpConfig,
     projectLoading,
     needsReconnect,
@@ -340,6 +369,7 @@ export function useProject() {
     switchProject,
     listProjects,
     refreshActivePlans,
+    loadRoots: (callMcpTool) => loadRoots(callMcpTool, projectRoot.value),
     detachProject,
     // Legacy methods (kept for backward compat)
     openProject,

@@ -16,7 +16,7 @@ function sanitizeForDB(obj) {
  * Runs a CLI chat turn: streams Claude CLI output and returns { content, usage }.
  * Also persists the cliSessionId on the DB session.
  */
-export async function runCliChat({ sessionId, model, fullContent, phase, projectInstructions, activePlans, onContent, sessionState }) {
+export async function runCliChat({ sessionId, model, fullContent, phase, projectInstructions, activePlans, roots, onContent, sessionState }) {
   // If no sessionState, fall back to active
   if (!sessionState) {
     const { activeState } = useSessionState()
@@ -34,7 +34,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     prompt: fullContent,
     model: getCliModelName(model),
     sessionId: existingCliSession,
-    systemPrompt: existingCliSession || isDirectCliModel(model) ? undefined : buildSystemPrompt(phase, projectInstructions, activePlans),
+    systemPrompt: existingCliSession || isDirectCliModel(model) ? undefined : buildSystemPrompt(phase, projectInstructions, activePlans, [], roots),
     cwd: useProject().projectRoot.value || undefined
   }
 

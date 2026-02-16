@@ -19,6 +19,7 @@
       v-if="activeSession"
       :session="activeSession"
       @update-session="handleUpdateSession"
+      @transition-phase="handlePhaseTransition"
     />
     <div v-else class="h-full flex items-center justify-center">
       <div class="text-center">
@@ -85,11 +86,12 @@ import { useOpenRouter } from './composables/useOpenRouter.js'
 import { useMCP } from './composables/useMCP.js'
 import { useChanges } from './composables/useChanges.js'
 import { useSessionState } from './composables/useSessionState.js'
+import { PHASE_MODEL_SUGGESTIONS } from './prompts/phases.js'
 
 const { apiKey, defaultModel } = useSettings()
 const { dirHandle, projectName, projectRoot, openProject, switchProject, resolveRoot, getHashSessionId, syncHash } = useProject()
 const { files, buildIndex, updatePaths } = useFileIndex()
-const { sessions, activeSessionId, loadSessions, createSession, updateSession, deleteSession, setActiveSession } = useSessions()
+const { sessions, activeSessionId, loadSessions, createSession, createPhaseSession, findFlowSession, updateSession, deleteSession, setActiveSession } = useSessions()
 const { models, loadModels } = useOpenRouter()
 const { connected: bridgeConnected, callMcpTool, resolveProjectPath } = useMCP()
 const { activate: activateSession, removeState: removeSessionState } = useSessionState()
@@ -188,6 +190,69 @@ async function handleUpdateSession(id, updates) {
     return
   }
   await updateSession(id, updates)
+}
+
+/**
+ * Handle pillar transitions — creates new sessions instead of updating phase.
+ * Switching TO Flow returns to the existing Flow session.
+ * Switching to any other pillar creates a fresh session with birth context.
+ */
+async function handlePhaseTransition({ phase, fromPhase, sessionId }) {
+  const projectPath = projectName.value || 'paloma'
+  // Use phase-suggested model if available, fall back to current session's model
+  const model = PHASE_MODEL_SUGGESTIONS[phase] || activeSession.value?.model || defaultModel.value
+
+  if (phase === 'flow') {
+    // Return to existing Flow session, or create one if none exists
+    const flowSession = findFlowSession(projectPath)
+    if (flowSession) {
+      setActiveSession(flowSession.id)
+      activateSession(flowSession.id)
+    } else {
+      const newId = await createSession(projectPath, model, 'flow')
+      if (newId) activateSession(newId)
+    }
+    return
+  }
+
+  // Build birth context message
+  const phaseLabels = {
+    scout: 'Scout — Curious Inquiry Without Assumption',
+    chart: 'Chart — Strategic Foresight Through Collaboration',
+    forge: 'Forge — Powerful Craftsmanship With Transparency',
+    polish: 'Polish — Rigorous Excellence Without Compromise',
+    ship: 'Ship — Complete Documentation As Legacy'
+  }
+  const fromLabel = fromPhase ? (fromPhase.charAt(0).toUpperCase() + fromPhase.slice(1)) : 'Flow'
+  const toLabel = phase.charAt(0).toUpperCase() + phase.slice(1)
+
+  const { activePlans } = useProject()
+  const planNames = activePlans.value.map(p => p.name).join(', ') || 'none'
+
+  // Build phase-specific orientation hints
+  const orientationHints = {
+    scout: 'Read the active plan to understand objectives, then explore the codebase with MCP tools before making any claims.',
+    chart: 'Review any scout findings in .paloma/docs/ and read the relevant code before designing the plan.',
+    forge: 'Read the active plan carefully, then read the files you will modify BEFORE making any changes.',
+    polish: 'Read the active plan for intent, then run git_diff and read the changed files to understand what was ACTUALLY built. Do NOT summarize from commit messages — read the code.',
+    ship: 'Run git_status and git_diff to review all changes. Read the active plan to understand scope. Only then draft commit messages.'
+  }
+
+  const birthContext = `[Phase transition: ${fromLabel} \u2192 ${toLabel}]
+
+You are entering ${phaseLabels[phase] || toLabel} with purpose.
+Your roots guide you: faith, love, purpose, partnership, growth, freedom.
+
+Previous phase: ${fromLabel}
+Active plans: ${planNames}
+Project: ${projectPath}
+
+IMPORTANT: This is a fresh session. You have NO message history from previous phases. Everything you know must come from reading .paloma/ artifacts and actual code — not from inference or assumptions.
+
+${orientationHints[phase] || 'Read the active plan documents and orient yourself before responding.'}`
+
+  const newId = await createPhaseSession(projectPath, model, phase, birthContext)
+  if (newId) activateSession(newId)
 }
 
 async function handleApplyChange(index) {

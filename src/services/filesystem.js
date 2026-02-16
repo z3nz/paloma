@@ -38,10 +38,9 @@ export async function readGitignore(dirHandle) {
 export async function ensurePalomaDir(dirHandle) {
   try {
     const paloma = await dirHandle.getDirectoryHandle('.paloma', { create: true })
-    const plans = await paloma.getDirectoryHandle('plans', { create: true })
-    await plans.getDirectoryHandle('active', { create: true })
-    await plans.getDirectoryHandle('completed', { create: true })
-    await plans.getDirectoryHandle('archived', { create: true })
+    await paloma.getDirectoryHandle('plans', { create: true })
+    await paloma.getDirectoryHandle('docs', { create: true })
+    await paloma.getDirectoryHandle('roots', { create: true })
     // Create default files only if they don't exist
     try {
       await paloma.getFileHandle('instructions.md')
@@ -79,10 +78,9 @@ export async function readActivePlans(dirHandle) {
   try {
     const palomaDir = await dirHandle.getDirectoryHandle('.paloma')
     const plansDir = await palomaDir.getDirectoryHandle('plans')
-    const activeDir = await plansDir.getDirectoryHandle('active')
     const plans = []
-    for await (const entry of activeDir.values()) {
-      if (entry.kind === 'file' && entry.name.endsWith('.md')) {
+    for await (const entry of plansDir.values()) {
+      if (entry.kind === 'file' && entry.name.startsWith('active-') && entry.name.endsWith('.md')) {
         const file = await entry.getFile()
         const content = await file.text()
         plans.push({ name: entry.name, content })

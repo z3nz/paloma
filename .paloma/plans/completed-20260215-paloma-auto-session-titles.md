@@ -1,7 +1,7 @@
-# Active: Auto Session Titles via `set_chat_title` Tool
+# Completed: Auto Session Titles via `set_chat_title` Tool
 
 > **Goal:** Model names its own conversation on the first response using a tool call.
-> **Status:** Active
+> **Status:** Completed
 > **Created:** 2026-02-13
 > **Overhauled:** 2026-02-15
 

@@ -134,7 +134,7 @@ const props = defineProps({
   streaming: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['send', 'stop', 'update-session'])
+const emit = defineEmits(['send', 'stop', 'update-session', 'transition-phase'])
 
 const { search, indexing } = useFileIndex()
 const { models, modelsError } = useOpenRouter()
@@ -628,6 +628,6 @@ function onModelChange(model) {
 }
 
 function onPhaseChange(phase) {
-  emit('update-session', { phase })
+  emit('transition-phase', { phase, fromPhase: currentPhase.value })
 }
 </script>

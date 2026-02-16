@@ -24,7 +24,8 @@
       "tools": [
         "git_diff",
         "git_log",
-        "git_status"
+        "git_status",
+        "git_set_working_dir"
       ]
     },
     {
