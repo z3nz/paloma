@@ -1,7 +1,7 @@
 # Paloma — Bash Execution MCP Server (`exec.js`)
 
 > **Purpose:** Give Paloma the ability to run shell commands through the bridge, enabling builds, deploys, and scripts without relying on the Claude Code CLI's native Bash tool.
-> **Status:** Draft
+> **Status:** Completed
 > **Created:** 2026-02-15
 > **Scope:** Paloma infrastructure
 
