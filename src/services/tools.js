@@ -109,12 +109,29 @@ export const WRITE_TOOLS = [
   }
 ]
 
+export const SYSTEM_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'set_chat_title',
+      description: 'Set the title of the current conversation. Call this once during your first response to give the chat a concise, descriptive title (5-8 words).',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Concise descriptive title (5-8 words)' }
+        },
+        required: ['title']
+      }
+    }
+  }
+]
+
 export const AUTO_EXECUTE_TOOLS = new Set([
-  'readFile', 'listDirectory', 'searchFiles', 'fileExists'
+  'readFile', 'listDirectory', 'searchFiles', 'fileExists', 'set_chat_title'
 ])
 
 export function getAllTools(mcpTools = []) {
-  return [...READ_TOOLS, ...WRITE_TOOLS, ...mcpTools]
+  return [...READ_TOOLS, ...WRITE_TOOLS, ...SYSTEM_TOOLS, ...mcpTools]
 }
 
 export async function executeTool(name, args, dirHandle, searchFn) {

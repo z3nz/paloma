@@ -13,7 +13,10 @@
     {
       "server": "shell",
       "tools": [
-        "shell_find"
+        "shell_find",
+        "shell_whereis",
+        "shell_nslookup",
+        "shell_dig"
       ]
     },
     {
@@ -22,6 +25,18 @@
         "git_diff",
         "git_log",
         "git_status"
+      ]
+    },
+    {
+      "server": "cloudflare-dns",
+      "tools": [
+        "list_dns_records"
+      ]
+    },
+    {
+      "server": "web",
+      "tools": [
+        "web_fetch"
       ]
     }
   ]

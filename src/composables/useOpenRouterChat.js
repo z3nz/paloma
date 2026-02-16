@@ -16,7 +16,7 @@ export async function runOpenRouterLoop({
   isAutoApproved, mcpConfig, callMcpTool, searchFn, dirHandle,
   signal,
   onContent, onToolCall, onSaveAssistant, onSaveTool, onResetStreaming,
-  onToolsComplete,
+  onToolsComplete, onSetTitle,
   sessionState
 }) {
   const { addActivity, markActivityDone, requestToolConfirmation } = useToolExecution(sessionState)
@@ -67,7 +67,10 @@ export async function runOpenRouterLoop({
         let result
         const activityId = addActivity(toolName, args)
 
-        if (isMcpTool(toolName)) {
+        if (toolName === 'set_chat_title') {
+          if (args.title && onSetTitle) await onSetTitle(args.title)
+          result = JSON.stringify({ success: true, title: args.title })
+        } else if (isMcpTool(toolName)) {
           if (isAutoApproved(toolName, mcpConfig)) {
             try {
               result = await callMcpTool(toolName, args)

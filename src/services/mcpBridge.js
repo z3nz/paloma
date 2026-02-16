@@ -13,6 +13,7 @@ export function createMcpBridge() {
   let onCliToolActivity = null
   let onCliToolConfirmation = null
   let onAskUser = null
+  let onSetTitle = null
 
   function getState() {
     if (!ws) return 'disconnected'
@@ -27,6 +28,7 @@ export function createMcpBridge() {
     onCliToolActivity = callbacks.onCliToolActivity || null
     onCliToolConfirmation = callbacks.onCliToolConfirmation || null
     onAskUser = callbacks.onAskUser || null
+    onSetTitle = callbacks.onSetTitle || null
     url = bridgeUrl
     intentionalClose = false
     _connect()
@@ -112,6 +114,8 @@ export function createMcpBridge() {
         onCliToolConfirmation?.(msg.id, msg.toolName, msg.args)
       } else if (msg.type === 'ask_user') {
         onAskUser?.(msg.id, msg.question, msg.options)
+      } else if (msg.type === 'set_chat_title') {
+        onSetTitle?.(msg.title)
       } else if (msg.type === 'error' && msg.id) {
         const p = pending.get(msg.id)
         if (p) {

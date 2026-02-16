@@ -65,6 +65,9 @@ async function main() {
       return new Promise(resolve => {
         pendingAskUser.set(id, { resolve })
       })
+    },
+    onSetTitle(title, cliRequestId) {
+      sendToOrigin(cliRequestId, { type: 'set_chat_title', title })
     }
   })
   await mcpProxy.start()

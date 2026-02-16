@@ -1,5 +1,5 @@
 <template>
-  <div class="w-[280px] bg-bg-secondary border-r border-border flex flex-col h-full">
+  <div class="bg-bg-secondary flex flex-col h-full shrink-0" :style="{ width: width + 'px' }">
     <!-- Project indicator + New chat -->
     <div class="p-3 space-y-2">
       <div v-if="projectPath && projectPath !== 'paloma'" class="flex items-center gap-2 px-2 py-1.5 bg-bg-primary/50 rounded-md">
@@ -93,7 +93,8 @@ import { useSessionState } from '../../composables/useSessionState.js'
 const props = defineProps({
   sessions: { type: Array, default: () => [] },
   activeSessionId: { type: Number, default: null },
-  projectPath: { type: String, default: '' }
+  projectPath: { type: String, default: '' },
+  width: { type: Number, default: 280 }
 })
 
 defineEmits(['new-chat', 'select-session', 'delete-session'])

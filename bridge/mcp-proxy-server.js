@@ -9,12 +9,13 @@ import {
 const CONFIRMATION_TIMEOUT = 5 * 60 * 1000 // 5 minutes
 
 export class McpProxyServer {
-  constructor(mcpManager, { port = 19192, onToolConfirmation, onToolActivity, onAskUser }) {
+  constructor(mcpManager, { port = 19192, onToolConfirmation, onToolActivity, onAskUser, onSetTitle }) {
     this.mcpManager = mcpManager
     this.port = port
     this.onToolConfirmation = onToolConfirmation || (() => Promise.resolve({ approved: true }))
     this.onToolActivity = onToolActivity || (() => {})
     this.onAskUser = onAskUser || (() => Promise.resolve('No handler'))
+    this.onSetTitle = onSetTitle || (() => {})
     this.httpServer = null
     this.transports = new Map() // sessionId → { transport, server }
   }
@@ -78,6 +79,19 @@ export class McpProxyServer {
       }
     }
 
+    // Add set_chat_title tool
+    tools.push({
+      name: 'set_chat_title',
+      description: 'Set the title of the current conversation. Call this once during your first response to give the chat a concise, descriptive title (5-8 words).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Concise descriptive title (5-8 words)' }
+        },
+        required: ['title']
+      }
+    })
+
     // Add ask_user tool
     tools.push({
       name: 'ask_user',
@@ -100,6 +114,11 @@ export class McpProxyServer {
   }
 
   async _handleToolCall(name, args, cliRequestId) {
+    if (name === 'set_chat_title') {
+      this.onSetTitle(args.title, cliRequestId)
+      return { content: [{ type: 'text', text: `Chat titled: ${args.title}` }] }
+    }
+
     if (name === 'ask_user') {
       return this._handleAskUser(args, cliRequestId)
     }

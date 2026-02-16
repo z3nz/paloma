@@ -12,6 +12,7 @@ import { useToolExecution } from './useToolExecution.js'
 import { useSessionState } from './useSessionState.js'
 import { runOpenRouterLoop } from './useOpenRouterChat.js'
 import { runCliChat, stopCli, clearCliRequestId } from './useCliChat.js'
+import { useSessions } from './useSessions.js'
 import { classifyResult } from '../utils/toolClassifier.js'
 
 /** Strip non-cloneable values (Vue reactive proxies, functions, etc.) for IndexedDB. */
@@ -236,7 +237,10 @@ export function useChat() {
           completed = true
 
           if (s.messages.value.filter(m => m.role === 'user').length === 1) {
-            return generateTitle(content)
+            const session = await db.sessions.get(sessionId)
+            if (!session?.title || session.title === 'New Chat') {
+              return generateTitle(content)
+            }
           }
         } else {
           completed = true
@@ -284,6 +288,10 @@ export function useChat() {
               s.messages.value = [...s.messages.value]
             }
           },
+          async onSetTitle(title) {
+            const { updateSession } = useSessions()
+            await updateSession(sessionId, { title })
+          },
           sessionState: s
         })
 
@@ -294,7 +302,10 @@ export function useChat() {
             completed = true
 
             if (s.messages.value.filter(m => m.role === 'user').length === 1) {
-              return generateTitle(content)
+              const session = await db.sessions.get(sessionId)
+              if (!session?.title || session.title === 'New Chat') {
+                return generateTitle(content)
+              }
             }
           }
         } else {

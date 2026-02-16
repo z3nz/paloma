@@ -1,5 +1,6 @@
 import { ref, computed, watch } from 'vue'
 import { createMcpBridge } from '../services/mcpBridge.js'
+import { useSessions } from './useSessions.js'
 import db from '../services/db.js'
 
 const _saved = import.meta.hot ? window.__PALOMA_MCP__ : undefined
@@ -92,6 +93,12 @@ export function useMCP() {
       },
       onAskUser(id, question, options) {
         pendingAskUser.value = { id, question, options }
+      },
+      onSetTitle(title) {
+        const { activeSessionId, updateSession } = useSessions()
+        if (activeSessionId.value && title) {
+          updateSession(activeSessionId.value, { title })
+        }
       }
     })
   }

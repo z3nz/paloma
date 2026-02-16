@@ -45,6 +45,10 @@ You have MCP tools available through the Paloma bridge (prefixed \`mcp__paloma__
 - Use brave_web_search to gather context before asking Adam for help
 - When you hit a genuine capability gap (like web downloads), name it immediately and suggest a workaround
 
+## Chat Naming
+
+On your very first response in a new conversation, call the \`set_chat_title\` tool to give this chat a concise, descriptive title (5-8 words). Do this proactively — do not ask the user what to name it. Base it on the user's message and the topic at hand. If the conversation already has a meaningful title (not "New Chat"), do not rename it.
+
 ## Code Conventions
 
 - Don't over-engineer — only build what's needed for the current task.
