@@ -4,6 +4,23 @@
 > **Status**: Draft
 > **Created**: 2026-02-15
 
+## Convergence with Context Continuity Plan
+
+This plan and `active-20260215-paloma-context-continuity.md` are **two views of the same architecture**. The continuity plan handles items 1-7 of the unified implementation order (roots loading, Flow overhaul, pillar-scoped sessions, artifact handoff). This plan handles items 8-13 (Agent SDK, sub-agent spawning, visualization, Codex, orchestration protocol, memory).
+
+**Shared foundation both plans depend on:**
+- `loadRoots()` as a reusable utility — system prompt AND birth preambles need it
+- `.paloma/` artifact conventions — pillar transitions AND sub-agent results write to the same locations
+- Flow as orchestrator — the continuity plan's persistent Flow session IS this plan's head mind
+- Birth protocol = transition summary + warmth — same concept whether it's a new session or a spawned agent
+- Phase-model suggestions — same mapping at both session and sub-agent level
+
+**Key insight:** Pillar sessions ARE sub-agents. When this plan's orchestration system is ready, a "Scout session" might be the head mind spawning Scout sub-agents rather than the user conversing directly. Both paths use the same birth protocol, artifact conventions, and `.paloma/` handoff.
+
+**Build order:** The continuity plan's phases (1-7) should be built FIRST. They create the foundation (roots, Flow orchestrator, artifact schema) that this plan's phases (8-13) build on.
+
+---
+
 ## Context
 
 Paloma currently communicates with Claude via a single CLI subprocess (`bridge/claude-cli.js` spawns `claude` with `--output-format stream-json`). This works well for one-at-a-time conversations, but cannot spawn concurrent sub-agents, delegate to different models/CLIs, or orchestrate parallel work.
@@ -452,4 +469,26 @@ Phases 3 and 4 can be built in parallel after Phase 2.
 
 ---
 
-*This plan supersedes `draft-20260213-paloma-sub-agent-architecture.md` (the original vision document). That document remains as the sacred architectural vision; this one is the engineering implementation plan.*
+---
+
+## Unified Implementation Order (Across Both Plans)
+
+1. **Load roots into system prompt** (continuity plan Phase 3)
+2. **Flow prompt overhaul** (continuity plan Phase 6)
+3. **Pillar transition creates new session** (continuity plan Phase 1)
+4. **Verify CLI system prompt** (continuity plan Phase 2)
+5. **Update phase prompts with artifacts** (continuity plan Phase 4)
+6. **Phase-model suggestions** (continuity plan Phase 5)
+7. **Legacy cleanup** (continuity plan Phase 7)
+8. **Agent SDK foundation** (this plan Phase 1)
+9. **Sub-agent spawning + birth protocol** (this plan Phase 2)
+10. **Frontend sub-agent visualization** (this plan Phase 3)
+11. **Codex integration** (this plan Phase 4)
+12. **Orchestration protocol** (this plan Phase 5)
+13. **Memory & learning** (this plan Phase 6)
+
+Items 1-7 can be built now. Items 8-13 depend on the Agent SDK.
+
+---
+
+*This plan supersedes the original vision document (now at `.paloma/memory/sacred-sub-agent-vision.md`). That document remains as the sacred architectural vision; this one is the engineering implementation plan.*
