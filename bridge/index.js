@@ -7,6 +7,7 @@ import { loadConfig } from './config.js'
 import { McpManager } from './mcp-manager.js'
 import { ClaudeCliManager } from './claude-cli.js'
 import { McpProxyServer } from './mcp-proxy-server.js'
+import { PillarManager } from './pillar-manager.js'
 
 const port = parseInt(process.argv.find((_, i, a) => a[i - 1] === '--port') || '19191', 10)
 const proxyPort = 19192
@@ -14,6 +15,7 @@ const proxyPort = 19192
 const manager = new McpManager()
 const cliManager = new ClaudeCliManager()
 let mcpProxy = null
+let pillarManager = null
 
 // Pending ask_user requests: id → { resolve }
 const pendingAskUser = new Map()
@@ -47,6 +49,8 @@ async function main() {
   }
 
   // Start MCP proxy server for CLI tool access
+  // broadcast and sendToOrigin are defined below after wss is created,
+  // but we need the proxy server reference first — pillarManager is wired after
   mcpProxy = new McpProxyServer(manager, {
     port: proxyPort,
     onToolConfirmation(toolName, args, cliRequestId) {
@@ -72,6 +76,13 @@ async function main() {
   })
   await mcpProxy.start()
   cliManager.mcpProxyPort = proxyPort
+
+  // Wire PillarManager — needs broadcast/sendToOrigin which reference wss
+  pillarManager = new PillarManager(cliManager, {
+    projectRoot: process.cwd(),
+    broadcast
+  })
+  mcpProxy.pillarManager = pillarManager
 
   wss.on('connection', (ws) => {
     console.log('Client connected')
@@ -167,6 +178,11 @@ async function main() {
         }
         await search(homedir(), 0)
         ws.send(JSON.stringify({ type: 'resolved_path', id: msg.id, path: found }))
+      } else if (msg.type === 'pillar_db_session_id') {
+        // Frontend created the IndexedDB session — store the ID on the pillar
+        if (pillarManager) {
+          pillarManager.setDbSessionId(msg.pillarId, msg.dbSessionId)
+        }
       } else if (msg.type === 'claude_stop') {
         cliRequestToWs.delete(msg.requestId)
         cliManager.stop(msg.requestId)
@@ -203,6 +219,7 @@ async function main() {
   // Graceful shutdown
   const shutdown = async () => {
     console.log('\nShutting down...')
+    if (pillarManager) pillarManager.shutdown()
     cliManager.shutdown()
     if (mcpProxy) await mcpProxy.shutdown()
     await manager.shutdown()

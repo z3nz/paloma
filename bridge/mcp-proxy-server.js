@@ -16,6 +16,7 @@ export class McpProxyServer {
     this.onToolActivity = onToolActivity || (() => {})
     this.onAskUser = onAskUser || (() => Promise.resolve('No handler'))
     this.onSetTitle = onSetTitle || (() => {})
+    this.pillarManager = null // set by bridge/index.js after construction
     this.httpServer = null
     this.transports = new Map() // sessionId → { transport, server }
   }
@@ -110,6 +111,82 @@ export class McpProxyServer {
       }
     })
 
+    // --- Pillar orchestration tools (only available when PillarManager is wired) ---
+    if (this.pillarManager) {
+      tools.push({
+        name: 'pillar_spawn',
+        description: 'Spawn a new pillar CLI session as a background process. The pillar will work autonomously on the given prompt. Returns immediately with a pillarId handle.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pillar: { type: 'string', enum: ['scout', 'chart', 'forge', 'polish', 'ship'], description: 'Which pillar to spawn' },
+            prompt: { type: 'string', description: 'The initial message/task for the pillar' },
+            model: { type: 'string', enum: ['opus', 'sonnet', 'haiku'], description: 'Optional model override (defaults to phase suggestion)' }
+          },
+          required: ['pillar', 'prompt']
+        }
+      })
+
+      tools.push({
+        name: 'pillar_message',
+        description: 'Send a follow-up message to a running pillar session. If the pillar is busy, the message is queued.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pillarId: { type: 'string', description: 'The pillar session ID returned by pillar_spawn' },
+            message: { type: 'string', description: 'The message to send' }
+          },
+          required: ['pillarId', 'message']
+        }
+      })
+
+      tools.push({
+        name: 'pillar_read_output',
+        description: "Read the pillar's accumulated output. Use since='all' for full history or 'last' for most recent.",
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pillarId: { type: 'string', description: 'The pillar session ID' },
+            since: { type: 'string', enum: ['last', 'all'], description: "'last' for most recent output, 'all' for full history. Default: 'last'" }
+          },
+          required: ['pillarId']
+        }
+      })
+
+      tools.push({
+        name: 'pillar_status',
+        description: 'Quick status check on a pillar session. Returns running/idle/completed/error/stopped.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pillarId: { type: 'string', description: 'The pillar session ID' }
+          },
+          required: ['pillarId']
+        }
+      })
+
+      tools.push({
+        name: 'pillar_list',
+        description: 'List all active pillar sessions managed by Flow.',
+        inputSchema: {
+          type: 'object',
+          properties: {}
+        }
+      })
+
+      tools.push({
+        name: 'pillar_stop',
+        description: 'Stop a running pillar session. Kills the CLI process if running.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pillarId: { type: 'string', description: 'The pillar session ID' }
+          },
+          required: ['pillarId']
+        }
+      })
+    }
+
     return tools
   }
 
@@ -121,6 +198,11 @@ export class McpProxyServer {
 
     if (name === 'ask_user') {
       return this._handleAskUser(args, cliRequestId)
+    }
+
+    // --- Pillar orchestration tools ---
+    if (name.startsWith('pillar_') && this.pillarManager) {
+      return this._handlePillarTool(name, args, cliRequestId)
     }
 
     // Parse proxy tool name: serverName__toolName
@@ -198,6 +280,37 @@ export class McpProxyServer {
         content: [{ type: 'text', text: `Error: ${e.message}` }],
         isError: true
       }
+    }
+  }
+
+  async _handlePillarTool(name, args, cliRequestId) {
+    try {
+      let result
+      switch (name) {
+        case 'pillar_spawn':
+          result = await this.pillarManager.spawn({ ...args, flowRequestId: cliRequestId })
+          break
+        case 'pillar_message':
+          result = this.pillarManager.sendMessage(args)
+          break
+        case 'pillar_read_output':
+          result = this.pillarManager.readOutput(args)
+          break
+        case 'pillar_status':
+          result = this.pillarManager.getStatus(args)
+          break
+        case 'pillar_list':
+          result = this.pillarManager.list()
+          break
+        case 'pillar_stop':
+          result = this.pillarManager.stop(args)
+          break
+        default:
+          return { content: [{ type: 'text', text: `Unknown pillar tool: ${name}` }], isError: true }
+      }
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
+    } catch (e) {
+      return { content: [{ type: 'text', text: `Pillar tool error: ${e.message}` }], isError: true }
     }
   }
 

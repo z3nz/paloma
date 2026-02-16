@@ -127,12 +127,47 @@ export function useSessions() {
     return id
   }
 
+  /**
+   * Create a session for a pillar spawned by Flow (sub-agent orchestration).
+   * Does NOT set it as active — pillar sessions run in the background.
+   * Returns the new dbSessionId.
+   */
+  async function createPillarSession(projectPath, model, phase, pillarId, flowRequestId, prompt) {
+    const resolvedPath = projectPath || 'paloma'
+    const phaseLabel = phase.charAt(0).toUpperCase() + phase.slice(1)
+    const id = await db.sessions.add({
+      projectPath: resolvedPath,
+      title: `${phaseLabel} (spawned)`,
+      model,
+      phase,
+      pillarId,
+      parentFlowSessionId: flowRequestId, // links child to parent Flow
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    })
+
+    // Inject the birth/prompt message
+    if (prompt) {
+      await db.messages.add({
+        sessionId: id,
+        role: 'user',
+        content: prompt,
+        files: [],
+        timestamp: Date.now()
+      })
+    }
+
+    await loadSessions(resolvedPath)
+    return id
+  }
+
   return {
     sessions,
     activeSessionId,
     loadSessions,
     createSession,
     createPhaseSession,
+    createPillarSession,
     findFlowSession,
     updateSession,
     deleteSession,

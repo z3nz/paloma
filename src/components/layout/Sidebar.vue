@@ -35,7 +35,15 @@
           ? 'bg-bg-hover text-text-primary'
           : 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary'"
       >
-        <div class="text-sm truncate">{{ session.title }}</div>
+        <div class="text-sm truncate flex items-center gap-1.5">
+          <!-- Spawned pillar badge -->
+          <span v-if="session.pillarId"
+            class="inline-flex items-center px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded"
+            :class="pillarBadgeColor(session.phase)"
+            :title="`Spawned by Flow (${session.pillarId.slice(0, 8)})`"
+          >⚙</span>
+          {{ session.title }}
+        </div>
         <div class="flex items-center gap-2 mt-1">
           <!-- Streaming indicator -->
           <span v-if="isStreaming(session.id)"
@@ -146,6 +154,17 @@ function formatModel(model) {
     return model.split(':').pop() + ' (CLI)'
   }
   return model.split('/').pop()
+}
+
+function pillarBadgeColor(phase) {
+  const colors = {
+    scout: 'bg-cyan-500/20 text-cyan-400',
+    chart: 'bg-yellow-500/20 text-yellow-400',
+    forge: 'bg-orange-500/20 text-orange-400',
+    polish: 'bg-pink-500/20 text-pink-400',
+    ship: 'bg-green-500/20 text-green-400'
+  }
+  return colors[phase] || 'bg-blue-500/20 text-blue-400'
 }
 
 function formatTime(ts) {

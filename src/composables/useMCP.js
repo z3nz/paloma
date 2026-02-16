@@ -1,7 +1,12 @@
 import { ref, computed, watch } from 'vue'
 import { createMcpBridge } from '../services/mcpBridge.js'
 import { useSessions } from './useSessions.js'
+import { useSessionState } from './useSessionState.js'
+import { useProject } from './useProject.js'
 import db from '../services/db.js'
+
+// Map pillarId → dbSessionId for routing stream events
+const pillarSessionMap = new Map()
 
 const _saved = import.meta.hot ? window.__PALOMA_MCP__ : undefined
 
@@ -13,6 +18,7 @@ const autoConnect = ref(_saved?.autoConnect ?? (localStorage.getItem('paloma:mcp
 
 const pendingAskUser = ref(_saved?.pendingAskUser ?? null)
 const pendingCliToolConfirmation = ref(_saved?.pendingCliToolConfirmation ?? null)
+const cliToolConfirmationQueue = _saved?.cliToolConfirmationQueue ?? []
 
 let bridge = _saved?.bridge ?? null
 
@@ -29,6 +35,7 @@ if (import.meta.hot) {
       autoConnect: autoConnect.value,
       pendingAskUser: pendingAskUser.value,
       pendingCliToolConfirmation: pendingCliToolConfirmation.value,
+      cliToolConfirmationQueue,
       bridge
     }
   }
@@ -89,7 +96,12 @@ export function useMCP() {
         // CLI tool activity is surfaced via useToolExecution in useCliChat
       },
       onCliToolConfirmation(id, toolName, args) {
-        pendingCliToolConfirmation.value = { id, toolName, args }
+        if (pendingCliToolConfirmation.value) {
+          // Queue concurrent confirmations instead of overwriting
+          cliToolConfirmationQueue.push({ id, toolName, args })
+        } else {
+          pendingCliToolConfirmation.value = { id, toolName, args }
+        }
       },
       onAskUser(id, question, options) {
         pendingAskUser.value = { id, question, options }
@@ -98,6 +110,87 @@ export function useMCP() {
         const { activeSessionId, updateSession } = useSessions()
         if (activeSessionId.value && title) {
           updateSession(activeSessionId.value, { title })
+        }
+      },
+      async onPillarSessionCreated(msg) {
+        // Create a real session in IndexedDB for the pillar
+        const { createPillarSession } = useSessions()
+        const { projectName } = useProject()
+        const projectPath = projectName.value || 'paloma'
+        const dbSessionId = await createPillarSession(
+          projectPath,
+          msg.model,
+          msg.pillar,
+          msg.pillarId,
+          msg.flowRequestId,
+          msg.prompt
+        )
+        // Map pillarId to dbSessionId for stream routing
+        pillarSessionMap.set(msg.pillarId, dbSessionId)
+        // Tell the bridge about the dbSessionId
+        if (bridge) {
+          bridge.sendPillarDbSessionId(msg.pillarId, dbSessionId)
+        }
+      },
+      onPillarStream(pillarId, event) {
+        const dbSessionId = pillarSessionMap.get(pillarId)
+        if (!dbSessionId) return
+        const { getState } = useSessionState()
+        const state = getState(dbSessionId)
+        state.streaming.value = true
+
+        // Accumulate text content from stream events
+        if (event.type === 'assistant' && event.message?.content) {
+          for (const block of event.message.content) {
+            if (block.type === 'text' && block.text) {
+              state.streamingContent.value += block.text
+            }
+          }
+        } else if (event.type === 'content_block_delta') {
+          if (event.delta?.type === 'text_delta' && event.delta.text) {
+            state.streamingContent.value += event.delta.text
+          }
+        }
+      },
+      async onPillarMessageSaved(msg) {
+        const dbSessionId = pillarSessionMap.get(msg.pillarId)
+        if (!dbSessionId) return
+        const { getState } = useSessionState()
+        const state = getState(dbSessionId)
+
+        // Persist the message to IndexedDB
+        const dbMsg = {
+          sessionId: dbSessionId,
+          role: msg.role,
+          content: msg.content || '',
+          files: [],
+          timestamp: Date.now()
+        }
+        const msgId = await db.messages.add(dbMsg)
+        dbMsg.id = msgId
+        state.messages.value.push(dbMsg)
+
+        // Reset streaming state after assistant message is saved
+        if (msg.role === 'assistant') {
+          state.streaming.value = false
+          state.streamingContent.value = ''
+        }
+
+        // Update session timestamp
+        const { updateSession } = useSessions()
+        await updateSession(dbSessionId, {})
+      },
+      onPillarDone(msg) {
+        const dbSessionId = pillarSessionMap.get(msg.pillarId)
+        if (!dbSessionId) return
+        const { getState } = useSessionState()
+        const state = getState(dbSessionId)
+        state.streaming.value = false
+        state.streamingContent.value = ''
+
+        // If stopped or error, clean up the map
+        if (msg.status === 'stopped' || msg.status === 'error') {
+          pillarSessionMap.delete(msg.pillarId)
         }
       }
     })
@@ -153,16 +246,24 @@ export function useMCP() {
     pendingAskUser.value = null
   }
 
+  function _advanceConfirmationQueue() {
+    if (cliToolConfirmationQueue.length > 0) {
+      pendingCliToolConfirmation.value = cliToolConfirmationQueue.shift()
+    } else {
+      pendingCliToolConfirmation.value = null
+    }
+  }
+
   function approveCliTool(result) {
     if (!pendingCliToolConfirmation.value || !bridge) return
     bridge.respondToToolConfirmation(pendingCliToolConfirmation.value.id, true, result)
-    pendingCliToolConfirmation.value = null
+    _advanceConfirmationQueue()
   }
 
   function denyCliTool(reason) {
     if (!pendingCliToolConfirmation.value || !bridge) return
     bridge.respondToToolConfirmation(pendingCliToolConfirmation.value.id, false, undefined, reason)
-    pendingCliToolConfirmation.value = null
+    _advanceConfirmationQueue()
   }
 
   async function resolveProjectPath(name) {
