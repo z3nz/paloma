@@ -119,6 +119,9 @@ watch(bridgeConnected, async (isConnected) => {
         if (hashSessionId && sessions.value.some(s => s.id === hashSessionId)) {
           setActiveSession(hashSessionId)
           activateSession(hashSessionId)
+        } else if (activeSessionId.value && sessions.value.some(s => s.id === activeSessionId.value)) {
+          // Restore from sessionStorage — activate so useChat picks it up
+          activateSession(activeSessionId.value)
         }
       } catch (e) {
         console.warn('[Recovery] Project recovery failed, loading default sessions:', e)

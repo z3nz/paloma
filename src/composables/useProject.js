@@ -47,6 +47,10 @@ if (!initialProjectName && hashState.project) {
     // Ignore errors
   }
 }
+// Default to paloma if nothing else resolved
+if (!initialProjectName) {
+  initialProjectName = 'paloma'
+}
 
 // Keep dirHandle for backward compat (Phase 2 migration — will be removed later)
 const dirHandle = shallowRef(_saved?.dirHandle ?? null)
