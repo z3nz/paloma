@@ -271,7 +271,11 @@ export function createMcpBridge() {
     _send({ type: 'pillar_db_session_id', pillarId, dbSessionId })
   }
 
-  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, getState }
+  function registerFlowSession(cliSessionId, model, cwd) {
+    _send({ type: 'register_flow_session', cliSessionId, model, cwd })
+  }
+
+  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, getState }
 }
 
 // Enable HMR boundary — errors here don't cascade to full reload

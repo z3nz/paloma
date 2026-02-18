@@ -240,6 +240,10 @@ export function useMCP() {
     if (bridge) bridge.stopClaudeChat(requestId)
   }
 
+  function registerFlowSession(cliSessionId, model, cwd) {
+    if (bridge) bridge.registerFlowSession(cliSessionId, model, cwd)
+  }
+
   function respondToAskUser(answer) {
     if (!pendingAskUser.value || !bridge) return
     bridge.respondToAskUser(pendingAskUser.value.id, answer)
@@ -338,7 +342,8 @@ export function useMCP() {
     resolveProjectPath,
     exportChats,
     getEnabledTools,
-    getAutoExecuteServers
+    getAutoExecuteServers,
+    registerFlowSession
   }
 }
 

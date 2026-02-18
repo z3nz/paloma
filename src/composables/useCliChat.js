@@ -57,6 +57,14 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
       if (!existingCliSession && chunk.sessionId) {
         await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId })
       }
+      // Register Flow sessions for pillar auto-callback notifications
+      if (phase === 'flow') {
+        const cliSessionIdToRegister = chunk.sessionId || existingCliSession
+        if (cliSessionIdToRegister) {
+          const { registerFlowSession } = useMCP()
+          registerFlowSession(cliSessionIdToRegister, getCliModelName(model), cliOptions.cwd)
+        }
+      }
     } else if (chunk.type === 'tool_use') {
       console.log('[cli] GOT tool_use:', chunk.id, chunk.name, JSON.stringify(chunk.input)?.slice(0, 200))
       const activityId = addActivity(chunk.name, chunk.input)
