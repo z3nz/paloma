@@ -189,6 +189,7 @@ async function main() {
         ws.send(JSON.stringify({ type: 'resolved_path', id: msg.id, path: found }))
       } else if (msg.type === 'register_flow_session') {
         // Frontend is registering a Flow session for callback notifications
+        console.log('[bridge] Received register_flow_session:', JSON.stringify({ cliSessionId: msg.cliSessionId, model: msg.model, cwd: msg.cwd }))
         if (pillarManager) {
           pillarManager.registerFlowSession({
             cliSessionId: msg.cliSessionId,
