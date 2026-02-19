@@ -1,7 +1,7 @@
 # Draft: Flow Prompt Overhaul — The Head Mind
 
 **Purpose:** Proposed rewrite of the Flow phase prompt in `src/prompts/phases.js`.
-**Status:** Ready for Adam's review before applying to DNA.
+**Status:** APPLIED — committed to `src/prompts/phases.js` and `CLAUDE.md` on 2026-02-19.
 
 ---
 
