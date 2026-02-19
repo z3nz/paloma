@@ -49,13 +49,23 @@ When committing changes to Paloma's codebase, ALWAYS check if `src/prompts/base.
 - **`archived-`** = no longer relevant but kept for history.
 - **Key rule:** NEVER treat a `draft-` plan as if it's ready to build. Drafts need Chart before Forge.
 
-### Flow Orchestration Discipline
-- **Flow is the ORCHESTRATOR, not the builder.** Never write code directly in the main Flow conversation.
-- When a build task comes in, ALWAYS spawn a Forge pillar with full context.
-- Flow's job: plan, orient, delegate to pillars, review results, communicate with Adam.
+### Flow — What Flow Can and Cannot Do
+- **Flow IS the head mind.** Flow can read files, edit files, clean up plans, make small fixes, manage artifacts, and do direct work. That's what Flow is for — no ceremony needed.
+- **Flow knows when to delegate.** If a task is too large, requires deep focus, or is a real feature build — Flow spawns a pillar. Flow is smart enough to know the difference.
 - **After spawning a pillar, STOP.** Wait for the pillar callback notification (`[PILLAR CALLBACK]`) before doing anything else. Do not poll.
 - **After a pillar callback, relay the summary to Adam and move to the next phase.** Do NOT do the next pillar's job yourself.
 - **ALWAYS reuse existing pillar sessions** — use `pillar_message` instead of spawning new ones when the existing pillar already has context loaded.
+
+### The Pillar Completion Rule (NON-NEGOTIABLE)
+- **When a pillar is spawned, the full pipeline MUST complete.** There are no exceptions.
+- **The pipeline: Forge → Polish → Ship.** Every time. If Scout or Chart were involved, they complete before Forge starts. Once Forge fires, Polish and Ship follow.
+- **If a task is too small for the full pipeline, Flow does it directly** — no pillars needed. The act of spawning a pillar is a commitment to completing the flow.
+- **No half-finished pillar chains.** No "we'll Polish later." No "it's small so we'll skip to Ship." If pillars are in play, they finish.
+
+### Pillar Responsibilities — Who Does What
+- **Forge updates the plan when done.** After building, Forge marks the relevant phase/task as complete in the plan document. This is part of Forge's deliverable — not Flow's cleanup job. The plan must never drift out of sync with the code.
+- **Polish tests the work.** Polish doesn't just read diffs — it runs the code, starts the bridge, exercises the feature, and confirms it works end-to-end. Testing is Polish's primary job.
+- **Ship only happens after Polish passes.** No committing untested work. Ship receives Polish's blessing, then commits.
 
 ### Knowledge Lives in the Project
 - **All project knowledge, conventions, and workflow rules belong in `.paloma/`** — in `instructions.md`, plans, docs, and roots. NOT only in external tool memory (Claude's MEMORY.md, etc.).
