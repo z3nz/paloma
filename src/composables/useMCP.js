@@ -309,6 +309,12 @@ export function useMCP() {
     }
   }
 
+  function sendPillarUserMessage(pillarId, message) {
+    if (bridge && connected.value) {
+      bridge.sendPillarUserMessage(pillarId, message)
+    }
+  }
+
   function respondToAskUser(answer) {
     if (!pendingAskUser.value || !bridge) return
     bridge.respondToAskUser(pendingAskUser.value.id, answer)
@@ -408,7 +414,8 @@ export function useMCP() {
     exportChats,
     getEnabledTools,
     getAutoExecuteServers,
-    registerFlowSession
+    registerFlowSession,
+    sendPillarUserMessage
   }
 }
 

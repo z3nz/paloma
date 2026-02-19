@@ -204,6 +204,15 @@ async function main() {
         if (pillarManager) {
           pillarManager.setDbSessionId(msg.pillarId, msg.dbSessionId)
         }
+      } else if (msg.type === 'pillar_user_message') {
+        // Adam sent a message directly to a pillar session — CC Flow
+        if (pillarManager) {
+          const session = pillarManager.pillars.get(msg.pillarId)
+          if (session) {
+            const notification = pillarManager._buildNotificationMessage('adam_cc', session, { userMessage: msg.message })
+            pillarManager.notifyFlow(notification, msg.pillarId)
+          }
+        }
       } else if (msg.type === 'claude_stop') {
         cliRequestToWs.delete(msg.requestId)
         cliManager.stop(msg.requestId)
