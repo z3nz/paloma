@@ -11,9 +11,12 @@
 - [x] Scout: Complete — `.paloma/docs/scout-paloma-pillar-system-redesign-20260219.md`
 - [x] Chart: Complete — this document
 - [x] Forge: WU-1, WU-2, WU-3 complete (commits 621fafa, 016d28c)
-- [ ] Forge: WU-4, WU-5 pending
+- [x] Forge: WU-4, WU-5 complete (commits 8050d4c, ec2d082)
 - [x] Polish: WU-1, WU-2, WU-3 passed (ready for ship)
+- [x] Polish: WU-4, WU-5 passed (ready for ship)
 - [x] Ship: WU-1, WU-2, WU-3 shipped (commit 016d28c, lessons extracted)
+- [x] Ship: WU-4 shipped (commit ec2d082)
+- [x] Ship: WU-5 shipped (commit 8050d4c — lessons folder created)
 
 ## Research References
 
@@ -864,20 +867,22 @@ No code changes — the lessons system is convention-based, powered by Ship's id
 - **Result:** base.js slimmed by removing orchestration rules, plan format specs, and slash commands (moved to Flow's phase prompt). Added "The Pillar Pipeline" shared section (13 lines). Plan Documents section reduced to naming convention only. Flow's phase prompt now has Orchestration Discipline and Pillar Tools sections.
 
 #### WU-4: Slim CLAUDE.md and instructions.md
-- **Status:** pending
+- **Status:** completed
 - **Depends on:** WU-3
 - **Files:** `CLAUDE.md`, `.paloma/instructions.md`
 - **Scope:** Reduce CLAUDE.md to pointer role (~4-5 KB from 9.2 KB). Remove rules from instructions.md that now live in DNA. Phase 3 of the plan.
 - **Acceptance:** CLAUDE.md is under 5 KB and doesn't duplicate rules from base.js/phases.js. instructions.md has no pillar-specific rules (completion rule, flow role, pillar responsibilities removed).
+- **Result:** CLAUDE.md reduced 75% (9.2KB → 2.3KB), instructions.md reduced 26% (3.5KB → 2.6KB). All pillar-specific rules removed from both files, now living authoritatively in DNA. Added "Source of Truth" section to CLAUDE.md pointing to base.js/phases.js. Shipped as commit ec2d082.
 
 ### Feature: Lessons System
 
 #### WU-5: Create lessons folder and seed files
-- **Status:** pending
+- **Status:** completed
 - **Depends on:** WU-2 (Ship's identity must include lessons workflow first)
 - **Files:** `.paloma/lessons/forge-workflow.md`, `.paloma/lessons/testing.md`, `.paloma/lessons/prompt-engineering.md`, `.paloma/lessons/architecture.md`, `.paloma/lessons/process.md`
 - **Scope:** Create the `.paloma/lessons/` folder with 5 seed files per Phase 4 design.
 - **Acceptance:** Folder exists with 5 files, each containing the standard header. Ship's prompt references the lesson format.
+- **Result:** Lessons folder created with all 5 topic files. Each file contains header plus first lessons extracted from WU-1, WU-2, WU-3 work. All lessons marked as Applied. Shipped as commit 8050d4c.
 
 ---
 
