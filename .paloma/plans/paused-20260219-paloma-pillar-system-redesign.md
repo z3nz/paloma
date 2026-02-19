@@ -10,9 +10,10 @@
 
 - [x] Scout: Complete — `.paloma/docs/scout-paloma-pillar-system-redesign-20260219.md`
 - [x] Chart: Complete — this document
-- [ ] Forge: Pending (4 phases, recommend as work units)
-- [ ] Polish: Pending
-- [ ] Ship: Pending
+- [x] Forge: WU-1, WU-2, WU-3 complete (commits 621fafa, 016d28c)
+- [ ] Forge: WU-4, WU-5 pending
+- [x] Polish: WU-1, WU-2, WU-3 passed (ready for ship)
+- [x] Ship: WU-1, WU-2, WU-3 shipped (commit 016d28c, lessons extracted)
 
 ## Research References
 
@@ -882,9 +883,10 @@ No code changes — the lessons system is convention-based, powered by Ship's id
 
 ## Implementation Notes
 
-**Completed:** WU-1, WU-2, WU-3 (2026-02-19)
+**Shipped:** WU-1, WU-2, WU-3 (2026-02-19, commit 016d28c)
+**Pending:** WU-4, WU-5
 
-### What Was Built
+### What Was Built (WU-1, WU-2, WU-3)
 
 **WU-1: Critical Fixes**
 - Fixed all 3 contradictions in the DNA files
@@ -911,8 +913,20 @@ No code changes — the lessons system is convention-based, powered by Ship's id
 ### Template Literal Escaping
 All backticks in the prompt content were properly escaped as \` since phases.js uses template literals.
 
+### Lessons Extracted (Ship Phase)
+
+Created `.paloma/lessons/` folder with 5 topic files documenting key insights:
+
+1. **prompt-engineering.md** — DNA contradictions are critical bugs, pillar identities need soul AND boundaries, Ship needs real reasoning (haiku → sonnet), shared base should only contain what ALL pillars need
+2. **forge-workflow.md** — Forge must own the plan update (it's Forge's deliverable, not Flow's cleanup job)
+3. **testing.md** — Polish is QA, not a code reviewer (must RUN code and TEST end-to-end, not just review diffs)
+4. **architecture.md** — Establish a single source of truth for rules (the DNA hierarchy prevents drift)
+5. **process.md** — The Pillar Completion Rule prevents half-finished work (must be in DNA where every pillar sees it)
+
+All lessons marked as Applied — the DNA changes are in commit 016d28c.
+
 ### What's Next
-WU-4 and WU-5 remain (slim CLAUDE.md/instructions.md, create lessons folder). These are separate scopes and can wait for Polish review of WU-1-3.
+WU-4 and WU-5 remain (slim CLAUDE.md/instructions.md, create lessons folder seed files — folder already created). These are separate scopes.
 
 ## Execution Strategy
 
