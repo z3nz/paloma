@@ -206,7 +206,7 @@ async function main() {
         }
       } else if (msg.type === 'pillar_user_message') {
         // Adam sent a message directly to a pillar session — CC Flow
-        if (pillarManager) {
+        if (pillarManager && msg.pillarId && msg.message) {
           const session = pillarManager.pillars.get(msg.pillarId)
           if (session) {
             const notification = pillarManager._buildNotificationMessage('adam_cc', session, { userMessage: msg.message })
