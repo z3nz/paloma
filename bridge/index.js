@@ -127,11 +127,20 @@ async function main() {
             // Clean up mapping when CLI session ends
             if (event.type === 'claude_done' || event.type === 'claude_error') {
               cliRequestToWs.delete(requestId)
+              // If this was the Flow session, mark it as no longer streaming
+              // so queued notifications can be processed
+              if (pillarManager?.flowSession?.cliSessionId === sessionId) {
+                pillarManager.onFlowTurnComplete()
+              }
             }
           }
         )
         // Map this CLI request to the originating WebSocket
         cliRequestToWs.set(requestId, ws)
+        // If this is a message to the registered Flow session, mark it as streaming
+        if (pillarManager?.flowSession?.cliSessionId === (msg.sessionId || sessionId)) {
+          pillarManager.flowSession.currentlyStreaming = true
+        }
         ws.send(JSON.stringify({ type: 'claude_ack', id: msg.id, requestId, sessionId }))
       } else if (msg.type === 'export_chats') {
         try {
@@ -178,6 +187,18 @@ async function main() {
         }
         await search(homedir(), 0)
         ws.send(JSON.stringify({ type: 'resolved_path', id: msg.id, path: found }))
+      } else if (msg.type === 'register_flow_session') {
+        // Frontend is registering a Flow session for callback notifications
+        console.log('[bridge] Received register_flow_session:', JSON.stringify({ cliSessionId: msg.cliSessionId, model: msg.model, cwd: msg.cwd }))
+        if (pillarManager) {
+          pillarManager.registerFlowSession({
+            cliSessionId: msg.cliSessionId,
+            model: msg.model,
+            cwd: msg.cwd,
+            wsClient: ws
+          })
+          ws.send(JSON.stringify({ type: 'flow_session_registered', id: msg.id }))
+        }
       } else if (msg.type === 'pillar_db_session_id') {
         // Frontend created the IndexedDB session — store the ID on the pillar
         if (pillarManager) {

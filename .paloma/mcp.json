@@ -16,7 +16,8 @@
         "shell_find",
         "shell_whereis",
         "shell_nslookup",
-        "shell_dig"
+        "shell_dig",
+        "shell_grep"
       ]
     },
     {
@@ -39,6 +40,12 @@
       "server": "web",
       "tools": [
         "web_fetch"
+      ]
+    },
+    {
+      "server": "exec",
+      "tools": [
+        "bash_exec"
       ]
     }
   ]

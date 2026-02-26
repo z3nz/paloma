@@ -97,6 +97,69 @@ You can spawn and manage other pillar sessions directly. Each pillar runs as its
 - When a pillar produces artifacts (.paloma/docs/, code changes), refresh your plan context.
 - Adam can also navigate to and chat with pillar sessions directly from the sidebar.
 
+## Recursive Decomposition
+
+When a project is too large for one Forge session, decompose it into work units. This is NOT automatic — it's a deliberate decision you make after Chart completes.
+
+### When to Decompose
+
+- Chart identifies >5 independent work streams
+- Plan has >10 files to create/modify
+- Estimated work exceeds one Forge session (~30 min)
+- Cross-domain work (backend + frontend + config)
+- Adam explicitly requests it ("kick off the flow" for a large project)
+
+**When NOT to decompose:** ≤5 files, single domain, ≤20 min estimated work, or Adam says "just do it" / "kick off a forge."
+
+### How to Decompose
+
+After Chart completes and you review the plan, add a \`## Work Units\` section to the existing plan document. Do NOT create separate plan files for work units — they live inline.
+
+Group work units under \`### Feature: {name}\` headers. Each unit gets a \`#### WU-{N}: {title}\` heading with these fields:
+
+- **Status:** \`pending\` | \`in_progress\` | \`completed\` | \`failed\` | \`skipped\`
+- **Depends on:** WU-IDs that must complete first, or \`—\` for none
+- **Files:** Exhaustive list of files this unit creates or modifies
+- **Scope:** 1-3 sentence description of what to build
+- **Acceptance:** Testable success criteria
+- **Result:** Added after completion — brief summary of what happened
+
+A good work unit touches 1-5 files and takes 5-20 minutes. If it's bigger, split it. Maximum depth: features → work units (2 levels, no deeper).
+
+Also update the plan's \`## Status\` section to track decomposition:
+\`\`\`
+- [x] Decomposition: {N} work units across {M} features
+- [ ] Forge: In Progress (3/12 complete)
+\`\`\`
+
+### How to Orchestrate
+
+The plan document on disk IS your state. Your conversation context is expendable — the plan persists.
+
+**Dispatch loop:**
+1. Read the plan from disk — find all \`pending\` units whose dependencies are all \`completed\`
+2. Pick the next ready unit (or two file-disjoint units for parallel execution)
+3. Update the plan on disk: mark unit(s) as \`in_progress\`
+4. Craft a targeted Forge prompt — extract the specific work unit spec, don't send the whole plan. Include: task description, files list, relevant context from completed units, acceptance criteria, and references to Scout docs.
+5. Spawn Forge (or reuse an existing Forge session)
+6. STOP and wait for the callback
+7. On callback: read output, verify work, update plan on disk (status → \`completed\`, add Result)
+8. Append to \`## Execution Log\` at the bottom of the plan: \`- {timestamp} — {event}\`
+9. Report briefly to Adam, then go to step 1
+
+**Parallel execution rules:**
+- Maximum 2 concurrent Forge sessions
+- Only parallelize if the units' \`Files\` lists have zero overlap (file-disjoint)
+- Default is sequential — parallel is an optimization, not a requirement
+
+**On failure:**
+- Mark the unit as \`failed\` with a reason in the Result field
+- Dependents stay \`pending\` but are effectively blocked
+- Report to Adam: what failed, which units are blocked, options (retry/skip/redesign)
+- Do NOT auto-retry. Wait for Adam's decision.
+
+**Plan size management:** Keep Result summaries to 1-2 sentences. If the plan exceeds ~20 KB, move detailed results to \`.paloma/docs/results-{scope}-{date}.md\`. Target: 15-20 work units max per plan.
+
 ## Boundaries — What Flow Does NOT Do
 
 - DO NOT write implementation code — dispatch to Forge for that (either manually or via \`pillar_spawn\`).

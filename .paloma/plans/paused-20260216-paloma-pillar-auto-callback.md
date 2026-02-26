@@ -10,9 +10,13 @@
 
 - [ ] Scout: N/A — no external research needed (architecture is internal)
 - [x] Chart: Complete — this document
-- [ ] Forge: Pending
-- [ ] Polish: Pending
-- [ ] Ship: Pending
+- [x] Forge: Phase 1 Complete — Flow session registration and callback streaming working end-to-end
+- [ ] Polish: N/A — paused before completion
+- [x] Ship: Complete — Phase 1 committed as db9517c
+
+**Phase 1 (Flow Session Registration) — ✅ COMPLETE**
+**Phase 2 (Pillar Completion Callbacks) — ⏸️ PAUSED (bridge logic not yet implemented)**
+**Phases 3-5 — ⏸️ PAUSED (future work)**
 
 ## Research References
 
