@@ -10,9 +10,9 @@
 
 - [ ] Scout: N/A — no external research needed (architecture is internal)
 - [x] Chart: Complete — this document
-- [x] Forge: Phases 1-3 Complete
-- [ ] Polish: Pending
-- [x] Ship: Phases 1-3 committed (db9517c, fd64704, c596c6c)
+- [x] Forge: Phases 1-4 Complete
+- [x] Polish: Complete — clean, well-structured, airtight data flow. Three non-blocking notes for future improvement (stuck indicator on WS disconnect, error notification naming, HMR state preservation).
+- [x] Ship: Phases 1-4 committed (db9517c, fd64704, c596c6c, dab7482)
 
 **Phase 1 (Flow Session Registration) — ✅ COMPLETE**
 - Bridge receives `register_flow_session` from frontend
@@ -33,7 +33,18 @@
 - Frontend sends CC via `sendPillarUserMessage()` when Adam messages a pillar session
 - Reuses existing notifyFlow() pipeline (queueing, cooldown, rate limiting)
 
-**Phase 4 (Notification UX in Browser) — 🔲 NEXT**
+**Phase 4 (Notification UX in Browser) — ✅ COMPLETE**
+- Bridge sends `flow_notification_start` event with metadata (notificationType, pillar, pillarId) before streaming
+- `mcpBridge.js` handles `flow_notification_start` event; `useMCP.js` stores pending metadata between start/done
+- `onFlowNotificationDone` tags saved assistant messages with `isCallback`, `callbackType`, `callbackPillar`, `callbackPillarId`
+- New `CallbackBadge.vue` component renders colored badge above callback assistant messages
+  - Completion: "⚡ Scout completed" with pillar phase color border
+  - Adam CC: "💬 Adam CC'd Flow about Forge" with pillar phase color border
+  - Batched: "📡 Batched callbacks" with blue border
+- Sidebar shows cyan pulsing dot (instead of accent) when Flow is processing a callback in background
+- `flowProcessingCallback` reactive ref exported from `useMCP` for sidebar indicator
+- No changes needed to ChatView.vue — notification streaming pipeline already renders messages correctly
+
 **Phase 5 (Sidebar Pillar Tree View) — 🔲 PENDING**
 
 ## Research References
