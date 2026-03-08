@@ -26,3 +26,6 @@ dist-ssr
 # Paloma local data (client projects have their own repos)
 projects/
 kokoro_env/
+chats/
+output/
+tmp/
