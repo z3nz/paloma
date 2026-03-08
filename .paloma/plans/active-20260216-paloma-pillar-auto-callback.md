@@ -10,9 +10,31 @@
 
 - [ ] Scout: N/A — no external research needed (architecture is internal)
 - [x] Chart: Complete — this document
-- [ ] Forge: Pending
+- [x] Forge: Phases 1-3 Complete
 - [ ] Polish: Pending
-- [ ] Ship: Pending
+- [x] Ship: Phases 1-3 committed (db9517c, fd64704, c596c6c)
+
+**Phase 1 (Flow Session Registration) — ✅ COMPLETE**
+- Bridge receives `register_flow_session` from frontend
+- `useMCP` tracks `registeredFlowDbSessionId` for callback routing
+- `useCliChat` passes IndexedDB sessionId to `registerFlowSession()`
+- Callback response streaming works end-to-end (`flow_notification_stream/done/error` in mcpBridge.js)
+
+**Phase 2 (Pillar Completion Callbacks) — ✅ COMPLETE**
+- `_handleCliEvent()` in pillar-manager.js auto-calls `notifyFlow()` on both `idle` and `error` status
+- `_buildNotificationMessage('completion', session)` formats the callback message
+- Cooldown (5s per pillarId), rate limiting (10/min), queue draining all implemented
+- Batched notifications via `_buildBatchedNotification()` when Flow is busy
+- `onFlowTurnComplete()` drains queued notifications when Flow finishes a user-initiated turn
+
+**Phase 3 (Adam CC Notifications) — ✅ COMPLETE**
+- `pillar_user_message` WS handler in bridge/index.js
+- `_buildNotificationMessage('adam_cc', ...)` in pillar-manager.js
+- Frontend sends CC via `sendPillarUserMessage()` when Adam messages a pillar session
+- Reuses existing notifyFlow() pipeline (queueing, cooldown, rate limiting)
+
+**Phase 4 (Notification UX in Browser) — 🔲 NEXT**
+**Phase 5 (Sidebar Pillar Tree View) — 🔲 PENDING**
 
 ## Research References
 

@@ -7,6 +7,8 @@ import db from '../services/db.js'
 
 // Map pillarId → dbSessionId for routing stream events
 const pillarSessionMap = new Map()
+// Track the registered Flow session's dbSessionId for callback routing
+let registeredFlowDbSessionId = null
 
 const _saved = import.meta.hot ? window.__PALOMA_MCP__ : undefined
 
@@ -192,6 +194,65 @@ export function useMCP() {
         if (msg.status === 'stopped' || msg.status === 'error') {
           pillarSessionMap.delete(msg.pillarId)
         }
+      },
+      onFlowNotificationStream(event) {
+        // Flow callback response streaming — route to the registered Flow session
+        if (!registeredFlowDbSessionId) {
+          console.warn('[mcp] Flow notification stream but no registered Flow session')
+          return
+        }
+        const { getState } = useSessionState()
+        const state = getState(registeredFlowDbSessionId)
+        state.streaming.value = true
+
+        // Accumulate text content (same logic as pillar stream)
+        if (event.type === 'assistant' && event.message?.content) {
+          for (const block of event.message.content) {
+            if (block.type === 'text' && block.text) {
+              state.streamingContent.value += block.text
+            }
+          }
+        } else if (event.type === 'content_block_delta') {
+          if (event.delta?.type === 'text_delta' && event.delta.text) {
+            state.streamingContent.value += event.delta.text
+          }
+        }
+      },
+      async onFlowNotificationDone() {
+        // Flow callback response complete — save as assistant message
+        if (!registeredFlowDbSessionId) return
+        const { updateSession } = useSessions()
+        const { getState } = useSessionState()
+        const state = getState(registeredFlowDbSessionId)
+        const content = state.streamingContent.value
+
+        if (content) {
+          const dbMsg = {
+            sessionId: registeredFlowDbSessionId,
+            role: 'assistant',
+            content,
+            model: 'claude-cli:opus',
+            files: [],
+            timestamp: Date.now(),
+            isCallback: true
+          }
+          const msgId = await db.messages.add(dbMsg)
+          dbMsg.id = msgId
+          state.messages.value.push(dbMsg)
+          await updateSession(registeredFlowDbSessionId, {})
+          console.log('[mcp] Flow callback response saved, length:', content.length)
+        }
+
+        state.streaming.value = false
+        state.streamingContent.value = ''
+      },
+      onFlowNotificationError(error) {
+        console.error('[mcp] Flow notification error:', error)
+        if (!registeredFlowDbSessionId) return
+        const { getState } = useSessionState()
+        const state = getState(registeredFlowDbSessionId)
+        state.streaming.value = false
+        state.streamingContent.value = ''
       }
     })
   }
@@ -238,6 +299,20 @@ export function useMCP() {
 
   function stopClaudeChat(requestId) {
     if (bridge) bridge.stopClaudeChat(requestId)
+  }
+
+  function registerFlowSession(cliSessionId, model, cwd, dbSessionId) {
+    if (bridge) bridge.registerFlowSession(cliSessionId, model, cwd)
+    if (dbSessionId) {
+      registeredFlowDbSessionId = dbSessionId
+      console.log('[mcp] Registered Flow dbSessionId for callbacks:', dbSessionId)
+    }
+  }
+
+  function sendPillarUserMessage(pillarId, message) {
+    if (bridge && connected.value) {
+      bridge.sendPillarUserMessage(pillarId, message)
+    }
   }
 
   function respondToAskUser(answer) {
@@ -338,7 +413,9 @@ export function useMCP() {
     resolveProjectPath,
     exportChats,
     getEnabledTools,
-    getAutoExecuteServers
+    getAutoExecuteServers,
+    registerFlowSession,
+    sendPillarUserMessage
   }
 }
 

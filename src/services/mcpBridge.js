@@ -18,6 +18,9 @@ export function createMcpBridge() {
   let onPillarStream = null
   let onPillarMessageSaved = null
   let onPillarDone = null
+  let onFlowNotificationStream = null
+  let onFlowNotificationDone = null
+  let onFlowNotificationError = null
 
   function getState() {
     if (!ws) return 'disconnected'
@@ -37,6 +40,9 @@ export function createMcpBridge() {
     onPillarStream = callbacks.onPillarStream || null
     onPillarMessageSaved = callbacks.onPillarMessageSaved || null
     onPillarDone = callbacks.onPillarDone || null
+    onFlowNotificationStream = callbacks.onFlowNotificationStream || null
+    onFlowNotificationDone = callbacks.onFlowNotificationDone || null
+    onFlowNotificationError = callbacks.onFlowNotificationError || null
     url = bridgeUrl
     intentionalClose = false
     _connect()
@@ -132,6 +138,12 @@ export function createMcpBridge() {
         onPillarMessageSaved?.(msg)
       } else if (msg.type === 'pillar_done') {
         onPillarDone?.(msg)
+      } else if (msg.type === 'flow_notification_stream') {
+        onFlowNotificationStream?.(msg.event)
+      } else if (msg.type === 'flow_notification_done') {
+        onFlowNotificationDone?.()
+      } else if (msg.type === 'flow_notification_error') {
+        onFlowNotificationError?.(msg.error)
       } else if (msg.type === 'error' && msg.id) {
         const p = pending.get(msg.id)
         if (p) {
@@ -271,7 +283,15 @@ export function createMcpBridge() {
     _send({ type: 'pillar_db_session_id', pillarId, dbSessionId })
   }
 
-  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, getState }
+  function registerFlowSession(cliSessionId, model, cwd) {
+    _send({ type: 'register_flow_session', cliSessionId, model, cwd })
+  }
+
+  function sendPillarUserMessage(pillarId, message) {
+    _send({ type: 'pillar_user_message', pillarId, message })
+  }
+
+  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, sendPillarUserMessage, getState }
 }
 
 // Enable HMR boundary — errors here don't cascade to full reload

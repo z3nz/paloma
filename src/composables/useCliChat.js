@@ -43,10 +43,13 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   const toolUseToActivity = new Map()  // toolUseId → activityId
   const toolUseMeta = new Map()        // toolUseId → { name, args }
 
+  console.warn('[cli] === ABOUT TO START streamClaudeChat loop, phase:', phase, '===')
+
   for await (const chunk of streamClaudeChat(
     (opts, cbs) => sendClaudeChat(opts, cbs),
     cliOptions
   )) {
+    console.warn('[cli] chunk type:', chunk.type)
     if (chunk.type === 'content') {
       accumulatedContent += chunk.text
       onContent(accumulatedContent)
@@ -56,6 +59,20 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
       sessionState.cliRequestId = chunk.requestId
       if (!existingCliSession && chunk.sessionId) {
         await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId })
+      }
+      // Register Flow sessions for pillar auto-callback notifications
+      console.log('[cli] session_id chunk received:', { phase, chunkSessionId: chunk.sessionId, existingCliSession, requestId: chunk.requestId })
+      if (phase === 'flow') {
+        const cliSessionIdToRegister = chunk.sessionId || existingCliSession
+        console.log('[cli] Registering Flow session for callbacks:', cliSessionIdToRegister, 'model:', getCliModelName(model), 'cwd:', cliOptions.cwd)
+        if (cliSessionIdToRegister) {
+          const { registerFlowSession } = useMCP()
+          registerFlowSession(cliSessionIdToRegister, getCliModelName(model), cliOptions.cwd, sessionId)
+        } else {
+          console.warn('[cli] No cliSessionId available for Flow registration!')
+        }
+      } else {
+        console.log('[cli] Skipping Flow registration — phase is:', phase)
       }
     } else if (chunk.type === 'tool_use') {
       console.log('[cli] GOT tool_use:', chunk.id, chunk.name, JSON.stringify(chunk.input)?.slice(0, 200))

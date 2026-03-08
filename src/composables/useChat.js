@@ -181,6 +181,13 @@ export function useChat() {
     safeUserMsg.id = userMsgId
     s.messages.value.push(safeUserMsg)
 
+    // CC Flow when Adam messages a pillar session directly
+    const session = await db.sessions.get(sessionId)
+    if (session?.pillarId) {
+      const { sendPillarUserMessage } = useMCP()
+      sendPillarUserMessage(session.pillarId, content)
+    }
+
     // Resolve MCP tools
     const { getEnabledTools, callMcpTool } = useMCP()
     const { isAutoApproved } = usePermissions()
