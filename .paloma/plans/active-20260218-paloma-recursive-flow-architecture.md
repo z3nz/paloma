@@ -11,10 +11,10 @@
 - [x] Scout: Complete — `.paloma/docs/scout-paloma-recursive-flow-20260218.md`
 - [x] Chart: Complete — this document
 - [x] Forge: Phase 1 Complete (prompt updates) — committed as 63cb37e
-- [ ] Forge: Phase 2 Pending — `planFile` param on `pillar_spawn`
+- [x] Forge: Phase 2 Complete — `planFile` param on `pillar_spawn`
 - [ ] Forge: Phases 3-4 Pending — convenience tooling + orchestration automation
-- [ ] Polish: Pending
-- [ ] Ship: Phase 1 shipped
+- [x] Polish: Phase 2 Complete — clean, minimal, backward compatible
+- [x] Ship: Phase 1 shipped, Phase 2 committed as d2f2a58
 
 ## Research References
 
