@@ -23,6 +23,5 @@ dist-ssr
 *.sln
 *.sw?
 
-# Paloma local data (chat logs, client projects)
-chats/
+# Paloma local data (client projects have their own repos)
 projects/

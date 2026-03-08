@@ -121,7 +121,8 @@ export class McpProxyServer {
           properties: {
             pillar: { type: 'string', enum: ['scout', 'chart', 'forge', 'polish', 'ship'], description: 'Which pillar to spawn' },
             prompt: { type: 'string', description: 'The initial message/task for the pillar' },
-            model: { type: 'string', enum: ['opus', 'sonnet', 'haiku'], description: 'Optional model override (defaults to phase suggestion)' }
+            model: { type: 'string', enum: ['opus', 'sonnet', 'haiku'], description: 'Optional model override (defaults to phase suggestion)' },
+            planFile: { type: 'string', description: 'Optional: only load this specific plan file into the pillar system prompt (e.g., "active-20260301-verifesto-saas.md")' }
           },
           required: ['pillar', 'prompt']
         }

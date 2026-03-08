@@ -30,7 +30,7 @@ export class PillarManager {
    * Spawn a new pillar CLI session.
    * Returns immediately with pillarId and metadata.
    */
-  async spawn({ pillar, prompt, model, flowRequestId }) {
+  async spawn({ pillar, prompt, model, flowRequestId, planFile }) {
     const pillarId = randomUUID()
     const cliSessionId = randomUUID()
 
@@ -38,7 +38,7 @@ export class PillarManager {
     const resolvedModel = model || this._defaultModel(pillar)
 
     // Build system prompt from disk
-    const systemPrompt = await this._buildSystemPrompt(pillar)
+    const systemPrompt = await this._buildSystemPrompt(pillar, { planFilter: planFile })
 
     // Compose the full first message with birth protocol
     const fullPrompt = `${BIRTH_MESSAGE}\n\n${prompt}`
@@ -610,7 +610,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
    * Build the system prompt for a pillar session by reading .paloma/ files from disk.
    * Mirrors the frontend's buildSystemPrompt() but uses fs instead of MCP/browser APIs.
    */
-  async _buildSystemPrompt(pillar) {
+  async _buildSystemPrompt(pillar, { planFilter } = {}) {
     let prompt = BASE_INSTRUCTIONS
 
     // Read project instructions
@@ -622,7 +622,10 @@ This is informational — Adam is communicating directly with the pillar. Decide
 
     // Read active plans
     const plansDir = join(this.projectRoot, '.paloma', 'plans')
-    const plans = await this._readActiveFiles(plansDir, 'active-')
+    let plans = await this._readActiveFiles(plansDir, 'active-')
+    if (planFilter) {
+      plans = plans.filter(p => p.name === planFilter)
+    }
     if (plans.length > 0) {
       prompt += '\n\n## Active Plans\n\n'
       prompt += plans.map(p => `<plan name="${p.name}">\n${p.content}\n</plan>`).join('\n\n')
