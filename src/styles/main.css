@@ -660,3 +660,61 @@ html, body, #app {
   padding: 0.25rem 0;
   font-size: 0.75rem;
 }
+
+/* ============================================
+   Pillar Tree View
+   ============================================ */
+
+.pillar-tree-children {
+  margin-left: 0.75rem;
+}
+
+.pillar-tree-child {
+  position: relative;
+  padding-left: 1rem;
+}
+
+/* Vertical connector line */
+.pillar-tree-child::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--connector-color, var(--color-border));
+  opacity: 0.3;
+}
+
+/* Horizontal branch line */
+.pillar-tree-child::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  width: 10px;
+  height: 1px;
+  background: var(--connector-color, var(--color-border));
+  opacity: 0.3;
+}
+
+/* Last child — vertical line stops at branch point */
+.pillar-tree-child--last::before {
+  bottom: 50%;
+}
+
+/* Brighten connectors on hover */
+.pillar-tree-child:hover::before,
+.pillar-tree-child:hover::after {
+  opacity: 0.6;
+}
+
+/* Pillar status spinner */
+.pillar-status-spinner {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: tool-spin 0.7s linear infinite;
+}

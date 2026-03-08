@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import db from '../services/db.js'
 
 const _saved = import.meta.hot ? window.__PALOMA_SESSIONS__ : undefined
@@ -161,8 +161,34 @@ export function useSessions() {
     return id
   }
 
+  const sessionTree = computed(() => {
+    const childMap = new Map()
+    const parentIds = new Set(sessions.value.map(s => s.id))
+
+    for (const session of sessions.value) {
+      if (session.parentFlowSessionId && parentIds.has(session.parentFlowSessionId)) {
+        const siblings = childMap.get(session.parentFlowSessionId) || []
+        siblings.push(session)
+        childMap.set(session.parentFlowSessionId, siblings)
+      }
+    }
+
+    const topLevel = []
+    for (const session of sessions.value) {
+      const isOrphan = session.parentFlowSessionId && !parentIds.has(session.parentFlowSessionId)
+      if (!session.parentFlowSessionId || isOrphan) {
+        const children = (childMap.get(session.id) || [])
+          .sort((a, b) => a.createdAt - b.createdAt)
+        topLevel.push({ ...session, children })
+      }
+    }
+
+    return topLevel
+  })
+
   return {
     sessions,
+    sessionTree,
     activeSessionId,
     loadSessions,
     createSession,

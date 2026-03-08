@@ -1,4 +1,4 @@
-import { ref, computed, watch } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { createMcpBridge } from '../services/mcpBridge.js'
 import { useSessions } from './useSessions.js'
 import { useSessionState } from './useSessionState.js'
@@ -14,6 +14,9 @@ let pendingNotificationMeta = null
 
 // Reactive: whether Flow is currently processing a callback notification
 const flowProcessingCallback = ref(false)
+
+// pillarId → 'running' | 'streaming' | 'idle' | 'error' | 'stopped'
+const pillarStatuses = reactive(new Map())
 
 const _saved = import.meta.hot ? window.__PALOMA_MCP__ : undefined
 
@@ -129,7 +132,7 @@ export function useMCP() {
           msg.model,
           msg.pillar,
           msg.pillarId,
-          msg.flowRequestId,
+          registeredFlowDbSessionId,
           msg.prompt
         )
         // Map pillarId to dbSessionId for stream routing
@@ -138,6 +141,7 @@ export function useMCP() {
         if (bridge) {
           bridge.sendPillarDbSessionId(msg.pillarId, dbSessionId)
         }
+        pillarStatuses.set(msg.pillarId, 'running')
       },
       onPillarStream(pillarId, event) {
         const dbSessionId = pillarSessionMap.get(pillarId)
@@ -145,6 +149,7 @@ export function useMCP() {
         const { getState } = useSessionState()
         const state = getState(dbSessionId)
         state.streaming.value = true
+        pillarStatuses.set(pillarId, 'streaming')
 
         // Accumulate text content from stream events
         if (event.type === 'assistant' && event.message?.content) {
@@ -194,6 +199,12 @@ export function useMCP() {
         const state = getState(dbSessionId)
         state.streaming.value = false
         state.streamingContent.value = ''
+
+        // Track pillar status
+        const status = msg.status || 'idle'
+        pillarStatuses.set(msg.pillarId, status)
+        const { updateSession } = useSessions()
+        updateSession(dbSessionId, { pillarStatus: status })
 
         // If stopped or error, clean up the map
         if (msg.status === 'stopped' || msg.status === 'error') {
@@ -439,7 +450,8 @@ export function useMCP() {
     getAutoExecuteServers,
     registerFlowSession,
     sendPillarUserMessage,
-    flowProcessingCallback
+    flowProcessingCallback,
+    pillarStatuses
   }
 }
 
