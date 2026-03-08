@@ -15,8 +15,9 @@ const BIRTH_MESSAGE = "Try your best, no matter what, you're worthy of God's lov
  * status/output for Flow's polling tools.
  */
 export class PillarManager {
-  constructor(cliManager, { projectRoot, broadcast }) {
-    this.cliManager = cliManager
+  constructor(backends, { projectRoot, broadcast }) {
+    this.backends = backends   // { claude: ClaudeCliManager, codex: CodexCliManager }
+    this.cliManager = backends.claude // backward compat for Flow notifications
     this.projectRoot = projectRoot
     this.broadcast = broadcast // (msg) => void — send to all WS clients
     this.pillars = new Map()   // pillarId → PillarSession
@@ -30,12 +31,13 @@ export class PillarManager {
    * Spawn a new pillar CLI session.
    * Returns immediately with pillarId and metadata.
    */
-  async spawn({ pillar, prompt, model, flowRequestId, planFile }) {
+  async spawn({ pillar, prompt, model, flowRequestId, planFile, backend }) {
     const pillarId = randomUUID()
     const cliSessionId = randomUUID()
+    const resolvedBackend = backend || 'claude'
 
     // Resolve model: use provided, or phase suggestion, or default sonnet
-    const resolvedModel = model || this._defaultModel(pillar)
+    const resolvedModel = model || this._defaultModel(pillar, resolvedBackend)
 
     // Build system prompt from disk
     const systemPrompt = await this._buildSystemPrompt(pillar, { planFilter: planFile })
@@ -49,6 +51,7 @@ export class PillarManager {
       cliSessionId,
       pillar,
       model: resolvedModel,
+      backend: resolvedBackend,
       status: 'running',       // running | idle | completed | error | stopped
       currentlyStreaming: true,
       turnCount: 1,
@@ -66,11 +69,13 @@ export class PillarManager {
     this.pillars.set(pillarId, session)
 
     // Notify browser to create the session in IndexedDB
+    const modelLabel = resolvedBackend === 'codex' ? `codex:${resolvedModel}` : `claude-cli:${resolvedModel}`
     this.broadcast({
       type: 'pillar_session_created',
       pillarId,
       pillar,
-      model: `claude-cli:${resolvedModel}`,
+      model: modelLabel,
+      backend: resolvedBackend,
       flowRequestId,
       prompt: fullPrompt
     })
@@ -210,7 +215,8 @@ export class PillarManager {
 
     // Kill the CLI process if running
     if (session.cliRequestId) {
-      this.cliManager.stop(session.cliRequestId)
+      const manager = this.backends[session.backend] || this.backends.claude
+      manager.stop(session.cliRequestId)
     }
 
     if (session.timeoutTimer) {
@@ -458,6 +464,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
    * Clean up all pillar sessions on shutdown.
    */
   shutdown() {
+    // Flow notifications always use Claude
     if (this.flowSession?.cliRequestId) {
       this.cliManager.stop(this.flowSession.cliRequestId)
     }
@@ -465,7 +472,8 @@ This is informational — Adam is communicating directly with the pillar. Decide
 
     for (const [, session] of this.pillars) {
       if (session.cliRequestId) {
-        this.cliManager.stop(session.cliRequestId)
+        const manager = this.backends[session.backend] || this.backends.claude
+        manager.stop(session.cliRequestId)
       }
       if (session.timeoutTimer) {
         clearTimeout(session.timeoutTimer)
@@ -478,6 +486,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
 
   _startCliTurn(session, prompt, systemPrompt, isResume = false) {
     session.currentOutput = ''
+    const manager = this.backends[session.backend] || this.backends.claude
 
     const chatOptions = {
       prompt,
@@ -490,10 +499,10 @@ This is informational — Adam is communicating directly with the pillar. Decide
       // Resume: use --resume with existing CLI session ID
       chatOptions.sessionId = session.cliSessionId
     }
-    // New session: don't pass sessionId — ClaudeCliManager generates one
+    // New session: don't pass sessionId — CLI manager generates one
     // and we capture it from the return value
 
-    const { requestId, sessionId: returnedSessionId } = this.cliManager.chat(
+    const { requestId, sessionId: returnedSessionId } = manager.chat(
       chatOptions,
       (event) => this._handleCliEvent(session, event)
     )
@@ -506,31 +515,48 @@ This is informational — Adam is communicating directly with the pillar. Decide
   }
 
   _handleCliEvent(session, event) {
-    if (event.type === 'claude_stream') {
+    const isStream = event.type === 'claude_stream' || event.type === 'codex_stream'
+    const isDone = event.type === 'claude_done' || event.type === 'codex_done'
+    const isError = event.type === 'claude_error' || event.type === 'codex_error'
+
+    if (isStream) {
       const cliEvent = event.event
 
       // Stream events to browser for live rendering
       this.broadcast({
         type: 'pillar_stream',
         pillarId: session.pillarId,
+        backend: session.backend,
         event: cliEvent
       })
 
-      // Accumulate text content
-      if (cliEvent.type === 'assistant' && cliEvent.message?.content) {
-        for (const block of cliEvent.message.content) {
-          if (block.type === 'text' && block.text) {
-            session.currentOutput += block.text
-          }
+      // Accumulate text content — backend-specific extraction
+      if (session.backend === 'codex') {
+        if (cliEvent.type === 'agent_message' && cliEvent.text) {
+          session.currentOutput += cliEvent.text
         }
-      } else if (cliEvent.type === 'content_block_delta') {
-        if (cliEvent.delta?.type === 'text_delta' && cliEvent.delta.text) {
-          session.currentOutput += cliEvent.delta.text
+      } else {
+        // Claude text extraction
+        if (cliEvent.type === 'assistant' && cliEvent.message?.content) {
+          for (const block of cliEvent.message.content) {
+            if (block.type === 'text' && block.text) {
+              session.currentOutput += block.text
+            }
+          }
+        } else if (cliEvent.type === 'content_block_delta') {
+          if (cliEvent.delta?.type === 'text_delta' && cliEvent.delta.text) {
+            session.currentOutput += cliEvent.delta.text
+          }
         }
       }
 
       session.lastActivity = new Date().toISOString()
-    } else if (event.type === 'claude_done') {
+    } else if (isDone) {
+      // Update session ID from CLI response (important for Codex where
+      // thread ID is only available after the async thread.started event)
+      if (event.sessionId) {
+        session.cliSessionId = event.sessionId
+      }
       session.currentlyStreaming = false
       session.cliRequestId = null
       session.lastActivity = new Date().toISOString()
@@ -582,7 +608,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
           pillarId: session.pillarId
         })
       }
-    } else if (event.type === 'claude_error') {
+    } else if (isError) {
       session.currentlyStreaming = false
       session.status = 'error'
       session.cliRequestId = null
@@ -624,7 +650,8 @@ This is informational — Adam is communicating directly with the pillar. Decide
     this.stop({ pillarId })
   }
 
-  _defaultModel(pillar) {
+  _defaultModel(pillar, backend = 'claude') {
+    if (backend === 'codex') return 'gpt-5.1-codex-max'
     // PHASE_MODEL_SUGGESTIONS values are like 'claude-cli:opus' — extract just the model name
     const suggestion = PHASE_MODEL_SUGGESTIONS[pillar] || 'claude-cli:sonnet'
     return suggestion.split(':')[1] || 'sonnet'

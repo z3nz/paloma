@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto'
 import { loadConfig } from './config.js'
 import { McpManager } from './mcp-manager.js'
 import { ClaudeCliManager } from './claude-cli.js'
+import { CodexCliManager } from './codex-cli.js'
 import { McpProxyServer } from './mcp-proxy-server.js'
 import { PillarManager } from './pillar-manager.js'
 
@@ -14,6 +15,7 @@ const proxyPort = 19192
 
 const manager = new McpManager()
 const cliManager = new ClaudeCliManager()
+const codexManager = new CodexCliManager()
 let mcpProxy = null
 let pillarManager = null
 
@@ -76,9 +78,11 @@ async function main() {
   })
   await mcpProxy.start()
   cliManager.mcpProxyPort = proxyPort
+  codexManager.mcpProxyPort = proxyPort
 
-  // Wire PillarManager — needs broadcast/sendToOrigin which reference wss
-  pillarManager = new PillarManager(cliManager, {
+  // Wire PillarManager with multi-backend support
+  const backends = { claude: cliManager, codex: codexManager }
+  pillarManager = new PillarManager(backends, {
     projectRoot: process.cwd(),
     broadcast
   })
@@ -255,6 +259,7 @@ async function main() {
     console.log('\nShutting down...')
     if (pillarManager) pillarManager.shutdown()
     cliManager.shutdown()
+    codexManager.shutdown()
     if (mcpProxy) await mcpProxy.shutdown()
     await manager.shutdown()
     wss.close()

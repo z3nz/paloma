@@ -121,8 +121,9 @@ export class McpProxyServer {
           properties: {
             pillar: { type: 'string', enum: ['scout', 'chart', 'forge', 'polish', 'ship'], description: 'Which pillar to spawn' },
             prompt: { type: 'string', description: 'The initial message/task for the pillar' },
-            model: { type: 'string', enum: ['opus', 'sonnet', 'haiku'], description: 'Optional model override (defaults to phase suggestion)' },
-            planFile: { type: 'string', description: 'Optional: only load this specific plan file into the pillar system prompt (e.g., "active-20260301-verifesto-saas.md")' }
+            model: { type: 'string', description: 'Optional model override (e.g., "opus", "sonnet" for Claude; "gpt-5.1-codex-max" for Codex). Defaults to phase suggestion.' },
+            planFile: { type: 'string', description: 'Optional: only load this specific plan file into the pillar system prompt (e.g., "active-20260301-verifesto-saas.md")' },
+            backend: { type: 'string', enum: ['claude', 'codex'], description: 'AI backend for this pillar session (default: claude). Use codex for focused coding or code review.' }
           },
           required: ['pillar', 'prompt']
         }

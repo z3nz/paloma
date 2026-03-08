@@ -135,7 +135,7 @@ export function createMcpBridge() {
       } else if (msg.type === 'pillar_session_created') {
         onPillarSessionCreated?.(msg)
       } else if (msg.type === 'pillar_stream') {
-        onPillarStream?.(msg.pillarId, msg.event)
+        onPillarStream?.(msg.pillarId, msg.event, msg.backend)
       } else if (msg.type === 'pillar_message_saved') {
         onPillarMessageSaved?.(msg)
       } else if (msg.type === 'pillar_done') {

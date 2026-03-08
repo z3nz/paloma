@@ -143,7 +143,7 @@ export function useMCP() {
         }
         pillarStatuses.set(msg.pillarId, 'running')
       },
-      onPillarStream(pillarId, event) {
+      onPillarStream(pillarId, event, backend) {
         const dbSessionId = pillarSessionMap.get(pillarId)
         if (!dbSessionId) return
         const { getState } = useSessionState()
@@ -151,16 +151,24 @@ export function useMCP() {
         state.streaming.value = true
         pillarStatuses.set(pillarId, 'streaming')
 
-        // Accumulate text content from stream events
-        if (event.type === 'assistant' && event.message?.content) {
-          for (const block of event.message.content) {
-            if (block.type === 'text' && block.text) {
-              state.streamingContent.value += block.text
-            }
+        // Accumulate text content from stream events — backend-specific
+        if (backend === 'codex') {
+          // Codex emits complete items (not streaming deltas)
+          if (event.type === 'agent_message' && event.text) {
+            state.streamingContent.value += event.text
           }
-        } else if (event.type === 'content_block_delta') {
-          if (event.delta?.type === 'text_delta' && event.delta.text) {
-            state.streamingContent.value += event.delta.text
+        } else {
+          // Claude streaming events
+          if (event.type === 'assistant' && event.message?.content) {
+            for (const block of event.message.content) {
+              if (block.type === 'text' && block.text) {
+                state.streamingContent.value += block.text
+              }
+            }
+          } else if (event.type === 'content_block_delta') {
+            if (event.delta?.type === 'text_delta' && event.delta.text) {
+              state.streamingContent.value += event.delta.text
+            }
           }
         }
       },
