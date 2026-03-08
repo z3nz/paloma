@@ -2,17 +2,29 @@
 
 ## Paloma — AI Development Partner
 
-Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to Claude CLI and MCP tool servers.
+Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI CLI agents (Claude CLI, Codex CLI) and MCP tool servers.
 
 ### Architecture
 - **Frontend:** Vue 3 + Vite + Tailwind CSS (`src/`)
 - **Bridge:** Node.js WebSocket server (`bridge/`) on port 19191
 - **MCP Proxy:** SSE transport (`bridge/mcp-proxy-server.js`) on port 19192
 - **Custom MCP Servers:** `mcp-servers/` (version-controlled, travel with git clone)
+- **AI Backends:** Claude CLI (`bridge/claude-cli.js`) and Codex CLI (`bridge/codex-cli.js`) as subprocess-managed sessions
+
+### Multi-Backend Architecture
+- PillarManager accepts a `backends` map: `{ claude: ClaudeCliManager, codex: CodexCliManager }`
+- Each pillar session has a `backend` field — selected via `pillar_spawn({ backend: 'codex' })`
+- Flow always runs on Claude (needs MCP tool loop for pillar orchestration)
+- Claude emits `claude_stream`/`claude_done`/`claude_error`; Codex emits `codex_stream`/`codex_done`/`codex_error`
+- Both event types handled in `_handleCliEvent` with backend-specific text extraction
+- Browser receives `backend` field in `pillar_stream` events for format-aware rendering
+- Codex also available as MCP tool (`codex`/`codex-reply`) for Claude pillars to call
+- `AGENTS.md` = Codex's project instruction file (equivalent of `CLAUDE.md`)
+- ChatGPT login restricts Codex to GPT-5.1-Codex family. API key auth needed for o3/o4-mini.
 
 ### Key Patterns
 - Composables use module-level singleton refs with HMR state preservation via `window.__PALOMA_*__`
-- Two model paths: OpenRouter (browser-side tool loop) and Claude CLI (subprocess via bridge)
+- Three model paths: OpenRouter (browser-side tool loop), Claude CLI (subprocess via bridge), Codex CLI (subprocess via bridge)
 - MCP tools proxied through bridge — both paths show ToolConfirmation.vue dialog in browser
 - Permission system: session-level (in-memory Set) + project-level (.paloma/mcp.json autoExecute)
 
@@ -22,6 +34,7 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to Cl
 - Phase transitions inject birth context messages with warmth and purpose
 - Artifacts in `.paloma/` (plans, docs, roots) are the handoff mechanism between sessions
 - Pillar behavior is defined in DNA files: `src/prompts/base.js` (shared) and `src/prompts/phases.js` (per-pillar)
+- Pillars can run on either Claude or Codex backend — selected at spawn time
 
 ### Self-Evolution Rule
 When committing changes to Paloma's codebase, ALWAYS check if `src/prompts/base.js` and `src/prompts/phases.js` need updating. These files are Paloma's DNA.
