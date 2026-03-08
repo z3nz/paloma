@@ -9,6 +9,11 @@ import db from '../services/db.js'
 const pillarSessionMap = new Map()
 // Track the registered Flow session's dbSessionId for callback routing
 let registeredFlowDbSessionId = null
+// Track pending notification metadata between start and done events
+let pendingNotificationMeta = null
+
+// Reactive: whether Flow is currently processing a callback notification
+const flowProcessingCallback = ref(false)
 
 const _saved = import.meta.hot ? window.__PALOMA_MCP__ : undefined
 
@@ -195,6 +200,16 @@ export function useMCP() {
           pillarSessionMap.delete(msg.pillarId)
         }
       },
+      onFlowNotificationStart(msg) {
+        // Store metadata for tagging the saved message when done
+        pendingNotificationMeta = {
+          notificationType: msg.notificationType,
+          pillar: msg.pillar,
+          pillarId: msg.pillarId
+        }
+        flowProcessingCallback.value = true
+        console.log('[mcp] Flow notification start:', pendingNotificationMeta)
+      },
       onFlowNotificationStream(event) {
         // Flow callback response streaming — route to the registered Flow session
         if (!registeredFlowDbSessionId) {
@@ -227,6 +242,7 @@ export function useMCP() {
         const content = state.streamingContent.value
 
         if (content) {
+          const meta = pendingNotificationMeta || {}
           const dbMsg = {
             sessionId: registeredFlowDbSessionId,
             role: 'assistant',
@@ -234,20 +250,27 @@ export function useMCP() {
             model: 'claude-cli:opus',
             files: [],
             timestamp: Date.now(),
-            isCallback: true
+            isCallback: true,
+            callbackType: meta.notificationType || null,
+            callbackPillar: meta.pillar || null,
+            callbackPillarId: meta.pillarId || null
           }
           const msgId = await db.messages.add(dbMsg)
           dbMsg.id = msgId
           state.messages.value.push(dbMsg)
           await updateSession(registeredFlowDbSessionId, {})
-          console.log('[mcp] Flow callback response saved, length:', content.length)
+          console.log('[mcp] Flow callback response saved, length:', content.length, 'meta:', meta)
         }
 
+        pendingNotificationMeta = null
+        flowProcessingCallback.value = false
         state.streaming.value = false
         state.streamingContent.value = ''
       },
       onFlowNotificationError(error) {
         console.error('[mcp] Flow notification error:', error)
+        pendingNotificationMeta = null
+        flowProcessingCallback.value = false
         if (!registeredFlowDbSessionId) return
         const { getState } = useSessionState()
         const state = getState(registeredFlowDbSessionId)
@@ -415,7 +438,8 @@ export function useMCP() {
     getEnabledTools,
     getAutoExecuteServers,
     registerFlowSession,
-    sendPillarUserMessage
+    sendPillarUserMessage,
+    flowProcessingCallback
   }
 }
 

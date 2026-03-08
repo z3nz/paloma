@@ -18,6 +18,7 @@ export function createMcpBridge() {
   let onPillarStream = null
   let onPillarMessageSaved = null
   let onPillarDone = null
+  let onFlowNotificationStart = null
   let onFlowNotificationStream = null
   let onFlowNotificationDone = null
   let onFlowNotificationError = null
@@ -40,6 +41,7 @@ export function createMcpBridge() {
     onPillarStream = callbacks.onPillarStream || null
     onPillarMessageSaved = callbacks.onPillarMessageSaved || null
     onPillarDone = callbacks.onPillarDone || null
+    onFlowNotificationStart = callbacks.onFlowNotificationStart || null
     onFlowNotificationStream = callbacks.onFlowNotificationStream || null
     onFlowNotificationDone = callbacks.onFlowNotificationDone || null
     onFlowNotificationError = callbacks.onFlowNotificationError || null
@@ -138,6 +140,8 @@ export function createMcpBridge() {
         onPillarMessageSaved?.(msg)
       } else if (msg.type === 'pillar_done') {
         onPillarDone?.(msg)
+      } else if (msg.type === 'flow_notification_start') {
+        onFlowNotificationStart?.(msg)
       } else if (msg.type === 'flow_notification_stream') {
         onFlowNotificationStream?.(msg.event)
       } else if (msg.type === 'flow_notification_done') {

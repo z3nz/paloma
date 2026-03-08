@@ -25,6 +25,9 @@
     :class="message.content ? 'py-4 bg-bg-secondary/50' : 'py-2'"
   >
     <div class="max-w-3xl mx-auto">
+      <!-- Callback badge -->
+      <CallbackBadge v-if="message.isCallback" :message="message" />
+
       <!-- Role label (only if there's content) -->
       <div v-if="message.content" class="flex items-center gap-2 mb-2">
         <span class="text-xs font-medium uppercase tracking-wider text-purple-400">Paloma</span>
@@ -77,6 +80,9 @@
     :class="message.role === 'user' ? 'bg-bg-primary' : 'bg-bg-secondary/50'"
   >
     <div class="max-w-3xl mx-auto">
+      <!-- Callback badge -->
+      <CallbackBadge v-if="message.role === 'assistant' && message.isCallback" :message="message" />
+
       <!-- Role label -->
       <div class="flex items-center gap-2 mb-2">
         <span
@@ -131,6 +137,7 @@ import { marked } from 'marked'
 import hljs from 'highlight.js'
 import { useCostTracking } from '../../composables/useCostTracking.js'
 import ToolCallGroup from './ToolCallGroup.vue'
+import CallbackBadge from './CallbackBadge.vue'
 
 const props = defineProps({
   message: { type: Object, required: true },

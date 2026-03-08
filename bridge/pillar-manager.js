@@ -276,9 +276,13 @@ export class PillarManager {
     if (this.flowSession.notificationQueue.length > 0) {
       console.log('[pillar] Flow turn complete — draining', this.flowSession.notificationQueue.length, 'queued notifications')
       const queued = this.flowSession.notificationQueue.splice(0)
-      const batchedMessage = this._buildBatchedNotification(queued)
       this.notificationCount++
-      this._sendFlowNotification(batchedMessage)
+      if (queued.length === 1) {
+        this._sendFlowNotification(queued[0].message, queued[0].metadata)
+      } else {
+        const batchedMessage = this._buildBatchedNotification(queued.map(q => q.message))
+        this._sendFlowNotification(batchedMessage, { notificationType: 'batched' })
+      }
     }
   }
 
@@ -286,8 +290,9 @@ export class PillarManager {
    * Notify Flow with a message. Queues if Flow is busy.
    * @param {string} message - The notification message
    * @param {string} [pillarId] - Optional pillarId for cooldown tracking
+   * @param {object} [metadata] - Notification metadata for frontend UX
    */
-  async notifyFlow(message, pillarId) {
+  async notifyFlow(message, pillarId, metadata = {}) {
     if (!this.flowSession) {
       console.warn('[pillar] No Flow session registered — notification dropped')
       return
@@ -314,26 +319,37 @@ export class PillarManager {
 
     if (this.notificationCount >= 10) {
       console.warn('[pillar] Notification rate limit hit — queueing')
-      this.flowSession.notificationQueue.push(message)
+      this.flowSession.notificationQueue.push({ message, metadata })
       return
     }
 
     if (this.flowSession.currentlyStreaming) {
       console.log('[pillar] Flow is busy — queueing notification')
-      this.flowSession.notificationQueue.push(message)
+      this.flowSession.notificationQueue.push({ message, metadata })
       return
     }
 
     this.notificationCount++
-    this._sendFlowNotification(message)
+    this._sendFlowNotification(message, metadata)
   }
 
   /**
    * Send a notification to Flow by resuming its CLI session.
    */
-  _sendFlowNotification(message) {
+  _sendFlowNotification(message, metadata = {}) {
     console.log('[pillar] Sending notification to Flow:', message.slice(0, 100))
     this.flowSession.currentlyStreaming = true
+
+    // Send start event with metadata so frontend can tag the response
+    const ws = this.flowSession.wsClient
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({
+        type: 'flow_notification_start',
+        notificationType: metadata.notificationType || 'unknown',
+        pillar: metadata.pillar || null,
+        pillarId: metadata.pillarId || null
+      }))
+    }
 
     const { requestId } = this.cliManager.chat(
       {
@@ -376,8 +392,12 @@ export class PillarManager {
       if (this.flowSession.notificationQueue.length > 0) {
         console.log('[pillar] Processing queued notifications:', this.flowSession.notificationQueue.length)
         const queued = this.flowSession.notificationQueue.splice(0) // drain queue
-        const batchedMessage = this._buildBatchedNotification(queued)
-        this._sendFlowNotification(batchedMessage)
+        if (queued.length === 1) {
+          this._sendFlowNotification(queued[0].message, queued[0].metadata)
+        } else {
+          const batchedMessage = this._buildBatchedNotification(queued.map(q => q.message))
+          this._sendFlowNotification(batchedMessage, { notificationType: 'batched' })
+        }
       }
     } else if (event.type === 'claude_error') {
       console.error('[pillar] Flow notification error:', event.error)
@@ -556,7 +576,11 @@ This is informational — Adam is communicating directly with the pillar. Decide
         // Auto-notify Flow about pillar completion
         console.log(`[pillar] Auto-notifying Flow: ${session.pillar} completed`)
         const notification = this._buildNotificationMessage('completion', session)
-        this.notifyFlow(notification, session.pillarId)
+        this.notifyFlow(notification, session.pillarId, {
+          notificationType: 'completion',
+          pillar: session.pillar,
+          pillarId: session.pillarId
+        })
       }
     } else if (event.type === 'claude_error') {
       session.currentlyStreaming = false
@@ -584,7 +608,11 @@ This is informational — Adam is communicating directly with the pillar. Decide
       // Auto-notify Flow about pillar error
       console.log(`[pillar] Auto-notifying Flow: ${session.pillar} errored`)
       const notification = this._buildNotificationMessage('completion', session)
-      this.notifyFlow(notification, session.pillarId)
+      this.notifyFlow(notification, session.pillarId, {
+        notificationType: 'completion',
+        pillar: session.pillar,
+        pillarId: session.pillarId
+      })
     }
   }
 

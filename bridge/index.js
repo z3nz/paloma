@@ -210,7 +210,11 @@ async function main() {
           const session = pillarManager.pillars.get(msg.pillarId)
           if (session) {
             const notification = pillarManager._buildNotificationMessage('adam_cc', session, { userMessage: msg.message })
-            pillarManager.notifyFlow(notification, msg.pillarId)
+            pillarManager.notifyFlow(notification, msg.pillarId, {
+              notificationType: 'adam_cc',
+              pillar: session.pillar,
+              pillarId: msg.pillarId
+            })
           }
         }
       } else if (msg.type === 'claude_stop') {

@@ -45,8 +45,13 @@
           {{ session.title }}
         </div>
         <div class="flex items-center gap-2 mt-1">
+          <!-- Callback streaming indicator (Flow processing a pillar callback) -->
+          <span v-if="isStreaming(session.id) && session.phase === 'flow' && flowProcessingCallback"
+            class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shrink-0"
+            title="Processing callback..."
+          />
           <!-- Streaming indicator -->
-          <span v-if="isStreaming(session.id)"
+          <span v-else-if="isStreaming(session.id)"
             class="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0"
             title="Streaming..."
           />
@@ -107,7 +112,7 @@ const props = defineProps({
 
 defineEmits(['new-chat', 'select-session', 'delete-session'])
 
-const { exportChats, connected } = useMCP()
+const { exportChats, connected, flowProcessingCallback } = useMCP()
 const { isStreaming, hasToolActivity } = useSessionState()
 const exporting = ref(false)
 const exportLabel = ref('Export Chats')
