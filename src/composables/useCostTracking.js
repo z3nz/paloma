@@ -71,5 +71,14 @@ export function useCostTracking() {
     return count.toString()
   }
 
-  return { sessionCost, sessionTokens, getContextUsage, getProjectCost, calculateMessageCost, formatCost, formatTokens }
+  function formatTokenBreakdown(usage) {
+    if (!usage) return ''
+    const parts = []
+    if (usage.promptTokens) parts.push(`Prompt: ${formatTokens(usage.promptTokens)}`)
+    if (usage.completionTokens) parts.push(`Completion: ${formatTokens(usage.completionTokens)}`)
+    if (usage.totalTokens) parts.push(`Total: ${formatTokens(usage.totalTokens)}`)
+    return parts.join(' | ')
+  }
+
+  return { sessionCost, sessionTokens, getContextUsage, getProjectCost, calculateMessageCost, formatCost, formatTokens, formatTokenBreakdown }
 }

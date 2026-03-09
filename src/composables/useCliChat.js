@@ -86,12 +86,17 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
       const activityId = toolUseToActivity.get(chunk.toolUseId)
       const meta = toolUseMeta.get(chunk.toolUseId)
 
-      // Normalize result content to string
-      const resultStr = typeof chunk.content === 'string'
-        ? chunk.content
-        : Array.isArray(chunk.content)
-          ? chunk.content.map(c => c.text || '').join('')
-          : JSON.stringify(chunk.content)
+      // Normalize result content to string (safe against circular refs)
+      let resultStr
+      try {
+        resultStr = typeof chunk.content === 'string'
+          ? chunk.content
+          : Array.isArray(chunk.content)
+            ? chunk.content.map(c => c.text || '').join('')
+            : JSON.stringify(chunk.content)
+      } catch {
+        resultStr = '[Error serializing tool result]'
+      }
 
       if (activityId) {
         markActivityDone(activityId, resultStr)

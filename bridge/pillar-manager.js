@@ -263,6 +263,13 @@ export class PillarManager {
    * Register Flow's session for callback notifications.
    */
   registerFlowSession({ cliSessionId, model, cwd, wsClient }) {
+    if (this.flowSession && this.flowSession.cliSessionId !== cliSessionId) {
+      console.warn('[pillar] Overwriting existing Flow session:', this.flowSession.cliSessionId, '→', cliSessionId)
+      // Drain any queued notifications to prevent silent loss
+      if (this.flowSession.notificationQueue?.length) {
+        console.warn('[pillar] Discarding', this.flowSession.notificationQueue.length, 'queued notifications from old Flow session')
+      }
+    }
     console.log('[pillar] Flow session registered:', cliSessionId)
     this.flowSession = {
       cliSessionId,

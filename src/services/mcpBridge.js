@@ -190,9 +190,9 @@ export function createMcpBridge() {
         p.reject(new Error('Bridge connection lost'))
         pending.delete(id)
       }
-      // Error all stream listeners
+      // Error all stream listeners (safe against throwing callbacks)
       for (const [id, listener] of streamListeners) {
-        listener.onError?.('Bridge connection lost')
+        try { listener.onError?.('Bridge connection lost') } catch { /* don't let one bad callback block others */ }
         streamListeners.delete(id)
       }
       if (!intentionalClose) _scheduleReconnect()

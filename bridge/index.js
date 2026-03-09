@@ -19,12 +19,32 @@ const codexManager = new CodexCliManager()
 let mcpProxy = null
 let pillarManager = null
 
-// Pending ask_user requests: id → { resolve }
+// Pending ask_user requests: id → { resolve, createdAt }
 const pendingAskUser = new Map()
-// Pending tool confirmation requests: id → { resolve }
+// Pending tool confirmation requests: id → { resolve, createdAt }
 const pendingToolConfirm = new Map()
 // CLI requestId → originating WebSocket (for targeted sends)
 const cliRequestToWs = new Map()
+
+// Auto-reject stale pending requests (5 min timeout)
+const PENDING_TIMEOUT_MS = 5 * 60 * 1000
+setInterval(() => {
+  const now = Date.now()
+  for (const [id, entry] of pendingAskUser) {
+    if (now - entry.createdAt > PENDING_TIMEOUT_MS) {
+      console.warn('[bridge] Timing out stale ask_user request:', id)
+      entry.resolve('Timed out — no response from user')
+      pendingAskUser.delete(id)
+    }
+  }
+  for (const [id, entry] of pendingToolConfirm) {
+    if (now - entry.createdAt > PENDING_TIMEOUT_MS) {
+      console.warn('[bridge] Timing out stale tool confirmation:', id)
+      entry.resolve({ approved: false, reason: 'Timed out — no response from user' })
+      pendingToolConfirm.delete(id)
+    }
+  }
+}, 60000)
 
 async function main() {
   const servers = await loadConfig()
@@ -59,7 +79,7 @@ async function main() {
       const id = randomUUID()
       sendToOrigin(cliRequestId, { type: 'cli_tool_confirmation', id, toolName, args })
       return new Promise(resolve => {
-        pendingToolConfirm.set(id, { resolve })
+        pendingToolConfirm.set(id, { resolve, createdAt: Date.now() })
       })
     },
     onToolActivity(toolName, args, status, cliRequestId) {
@@ -69,7 +89,7 @@ async function main() {
       const id = randomUUID()
       sendToOrigin(cliRequestId, { type: 'ask_user', id, question, options })
       return new Promise(resolve => {
-        pendingAskUser.set(id, { resolve })
+        pendingAskUser.set(id, { resolve, createdAt: Date.now() })
       })
     },
     onSetTitle(title, cliRequestId) {

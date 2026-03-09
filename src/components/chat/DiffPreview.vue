@@ -82,7 +82,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, onBeforeUnmount } from 'vue'
 import { diffLines as computeDiff } from 'diff'
 
 const props = defineProps({
@@ -92,7 +92,20 @@ const props = defineProps({
   error: { type: String, default: null }
 })
 
-defineEmits(['apply', 'cancel'])
+const emit = defineEmits(['apply', 'cancel'])
+
+function handleKeyDown(e) {
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    emit('cancel')
+  } else if (e.key === 'Enter' && !props.error) {
+    e.preventDefault()
+    emit('apply')
+  }
+}
+
+onMounted(() => document.addEventListener('keydown', handleKeyDown))
+onBeforeUnmount(() => document.removeEventListener('keydown', handleKeyDown))
 
 const isNewFile = computed(() => props.originalContent === null)
 

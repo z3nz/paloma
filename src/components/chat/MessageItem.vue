@@ -55,7 +55,7 @@
 
       <!-- Token/cost annotation -->
       <div v-if="message.usage" class="mt-2 text-xs text-text-muted flex items-center gap-3">
-        <span>{{ formatTokens(message.usage.totalTokens) }} tokens</span>
+        <span :title="formatTokenBreakdown(message.usage)">{{ formatTokens(message.usage.totalTokens) }} tokens</span>
         <span>{{ formatCost(messageCost) }}</span>
       </div>
     </div>
@@ -124,7 +124,7 @@
 
       <!-- Token/cost annotation for assistant messages -->
       <div v-if="message.role === 'assistant' && message.usage" class="mt-2 text-xs text-text-muted flex items-center gap-3">
-        <span>{{ formatTokens(message.usage.totalTokens) }} tokens</span>
+        <span :title="formatTokenBreakdown(message.usage)">{{ formatTokens(message.usage.totalTokens) }} tokens</span>
         <span>{{ formatCost(messageCost) }}</span>
       </div>
     </div>
@@ -146,11 +146,12 @@ const props = defineProps({
 
 const emit = defineEmits(['apply-code'])
 
+const HTML_CACHE_MAX = 100
 const htmlCache = new Map()
 
 const expanded = ref(false)
 
-const { formatCost, formatTokens, calculateMessageCost } = useCostTracking()
+const { formatCost, formatTokens, formatTokenBreakdown, calculateMessageCost } = useCostTracking()
 const messageCost = computed(() => calculateMessageCost(props.message))
 
 const hasToolActivity = computed(() =>
@@ -241,6 +242,11 @@ const renderedHtml = computed(() => {
   )
 
   codeBlocks.value = blocks
+  // LRU eviction: drop oldest entries when cache exceeds limit
+  if (htmlCache.size >= HTML_CACHE_MAX) {
+    const firstKey = htmlCache.keys().next().value
+    htmlCache.delete(firstKey)
+  }
   htmlCache.set(props.message.content, { html: result, blocks })
   return result
 })

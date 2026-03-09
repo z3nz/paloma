@@ -163,8 +163,11 @@ defineEmits(['select-session', 'delete-session'])
 const { flowProcessingCallback } = useMCP()
 const { isStreaming, hasToolActivity } = useSessionState()
 
-// Collapse state (UI-only, not persisted)
-const collapsed = reactive(new Set())
+// Collapse state — persisted to localStorage
+const COLLAPSED_KEY = 'paloma:sidebarCollapsed'
+const collapsed = reactive(new Set(
+  JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]')
+))
 
 function toggleCollapse(sessionId) {
   if (collapsed.has(sessionId)) {
@@ -172,6 +175,7 @@ function toggleCollapse(sessionId) {
   } else {
     collapsed.add(sessionId)
   }
+  localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed]))
 }
 
 function isParentHighlighted(parent) {
