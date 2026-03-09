@@ -118,6 +118,31 @@ export function createMcpBridge() {
           streamListeners.delete(msg.id)
           listener.onError?.(msg.error)
         }
+      } else if (msg.type === 'codex_ack' && msg.id) {
+        const p = pending.get(msg.id)
+        if (p) {
+          pending.delete(msg.id)
+          p.resolve({ requestId: msg.requestId, sessionId: msg.sessionId })
+        }
+      } else if (msg.type === 'codex_stream' && msg.id) {
+        const listener = streamListeners.get(msg.id)
+        if (listener) {
+          listener.onStream?.(msg.event)
+        }
+      } else if (msg.type === 'codex_done' && msg.id) {
+        console.log(`[codex] done: exitCode=${msg.exitCode}`)
+        const listener = streamListeners.get(msg.id)
+        if (listener) {
+          streamListeners.delete(msg.id)
+          listener.onDone?.(msg.sessionId, msg.exitCode)
+        }
+      } else if (msg.type === 'codex_error' && msg.id) {
+        console.error(`[codex] error:`, msg.error)
+        const listener = streamListeners.get(msg.id)
+        if (listener) {
+          streamListeners.delete(msg.id)
+          listener.onError?.(msg.error)
+        }
       } else if (msg.type === 'resolved_path' && msg.id) {
         const p = pending.get(msg.id)
         if (p) {
@@ -253,6 +278,35 @@ export function createMcpBridge() {
     _send({ type: 'claude_stop', requestId })
   }
 
+  function sendCodexChat(options, callbacks) {
+    const id = crypto.randomUUID()
+    streamListeners.set(id, {
+      onStream: callbacks.onStream,
+      onDone: callbacks.onDone,
+      onError: callbacks.onError
+    })
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject })
+      _send({
+        type: 'codex_chat',
+        id,
+        prompt: options.prompt,
+        model: options.model,
+        sessionId: options.sessionId,
+        systemPrompt: options.systemPrompt,
+        cwd: options.cwd
+      }).catch((e) => {
+        pending.delete(id)
+        streamListeners.delete(id)
+        reject(e)
+      })
+    })
+  }
+
+  function stopCodexChat(requestId) {
+    _send({ type: 'codex_stop', requestId })
+  }
+
   function exportChats(projectPath, sessions) {
     const id = crypto.randomUUID()
     return new Promise((resolve, reject) => {
@@ -295,7 +349,7 @@ export function createMcpBridge() {
     _send({ type: 'pillar_user_message', pillarId, message })
   }
 
-  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, sendPillarUserMessage, getState }
+  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, sendPillarUserMessage, getState }
 }
 
 // Enable HMR boundary — errors here don't cascade to full reload

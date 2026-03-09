@@ -4,11 +4,16 @@ export const CLI_MODELS = [
   { id: 'claude-cli:haiku', name: 'Claude Haiku (CLI)', context_length: 200000, direct: false },
   { id: 'claude-cli-direct:opus', name: 'Claude Opus (CLI Direct)', context_length: 200000, direct: true },
   { id: 'claude-cli-direct:sonnet', name: 'Claude Sonnet (CLI Direct)', context_length: 200000, direct: true },
-  { id: 'claude-cli-direct:haiku', name: 'Claude Haiku (CLI Direct)', context_length: 200000, direct: true }
+  { id: 'claude-cli-direct:haiku', name: 'Claude Haiku (CLI Direct)', context_length: 200000, direct: true },
+  { id: 'codex-cli:codex-max', name: 'GPT-5.1 Codex Max', context_length: 1000000, codex: true }
 ]
 
 export function isCliModel(modelId) {
-  return modelId?.startsWith('claude-cli:') || modelId?.startsWith('claude-cli-direct:')
+  return modelId?.startsWith('claude-cli:') || modelId?.startsWith('claude-cli-direct:') || modelId?.startsWith('codex-cli:')
+}
+
+export function isCodexModel(modelId) {
+  return modelId?.startsWith('codex-cli:')
 }
 
 export function isDirectCliModel(modelId) {
@@ -17,6 +22,15 @@ export function isDirectCliModel(modelId) {
 
 export function getCliModelName(modelId) {
   return modelId?.split(':')[1] || 'sonnet'
+}
+
+const CODEX_MODEL_MAP = {
+  'codex-max': 'gpt-5.1-codex-max'
+}
+
+export function getCodexModelName(modelId) {
+  const shortName = modelId?.split(':')[1] || 'codex-max'
+  return CODEX_MODEL_MAP[shortName] || shortName
 }
 
 /**
@@ -71,12 +85,6 @@ export async function* streamClaudeChat(sendFn, options) {
 
     while (queue.length > 0) {
       const event = queue.shift()
-
-      // Claude CLI stream-json events:
-      // { type: "assistant", message: { content: [...] } } — partial messages with content blocks
-      // { type: "result", ... } — final result with usage
-      // DEBUG: log all stream events to understand CLI format
-      console.log('[claudeStream] event:', event.type, JSON.stringify(event).slice(0, 500))
 
       if (event.type === 'assistant' && event.message?.content) {
         for (const block of event.message.content) {
@@ -133,6 +141,74 @@ export async function* streamClaudeChat(sendFn, options) {
             }
           }
         }
+      }
+    }
+  }
+}
+
+/**
+ * Async generator that bridges WebSocket Codex CLI events into the same
+ * chunk format that useChat.js expects from Claude's streamChat().
+ *
+ * Codex emits complete items (not streaming deltas like Claude).
+ * Yields: { type: 'content', text } | { type: 'session_id', sessionId }
+ */
+export async function* streamCodexChat(sendFn, options) {
+  const queue = []
+  let resolve = null
+  let done = false
+  let streamError = null
+
+  function push(item) {
+    queue.push(item)
+    if (resolve) {
+      resolve()
+      resolve = null
+    }
+  }
+
+  function waitForItem() {
+    if (queue.length > 0 || done) return Promise.resolve()
+    return new Promise(r => { resolve = r })
+  }
+
+  const { requestId, sessionId } = await sendFn(options, {
+    onStream(event) {
+      push(event)
+    },
+    onDone(sid, exitCode) {
+      push({ type: 'result', subtype: 'done', sessionId: sid, exitCode })
+      done = true
+      if (resolve) { resolve(); resolve = null }
+    },
+    onError(err) {
+      console.error(`[codex] stream error:`, err)
+      streamError = err
+      done = true
+      if (resolve) { resolve(); resolve = null }
+    }
+  })
+
+  yield { type: 'session_id', sessionId, requestId }
+
+  while (!done || queue.length > 0) {
+    await waitForItem()
+    if (streamError) throw new Error(streamError)
+
+    while (queue.length > 0) {
+      const event = queue.shift()
+
+      if (event.type === 'agent_message' && event.text) {
+        yield { type: 'content', text: event.text }
+      } else if (event.type === 'command_execution') {
+        // Surface command executions as content so user sees what Codex did
+        let text = ''
+        if (event.command) text += `\`\`\`\n$ ${event.command}\n`
+        if (event.output) text += event.output
+        text += '\n```\n'
+        yield { type: 'content', text }
+      } else if (event.type === 'result' && event.subtype === 'done') {
+        continue
       }
     }
   }

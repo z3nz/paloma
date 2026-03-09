@@ -1,4 +1,4 @@
-import { isDirectCliModel, getCliModelName, streamClaudeChat } from '../services/claudeStream.js'
+import { isDirectCliModel, isCodexModel, getCliModelName, getCodexModelName, streamClaudeChat, streamCodexChat } from '../services/claudeStream.js'
 import { useMCP } from './useMCP.js'
 import { useProject } from './useProject.js'
 import { useToolExecution } from './useToolExecution.js'
@@ -23,16 +23,22 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     sessionState = activeState()
   }
 
-  const { sendClaudeChat } = useMCP()
+  const { sendClaudeChat, sendCodexChat } = useMCP()
   const { addActivity, markActivityDone, toolActivity } = useToolExecution(sessionState)
 
+  const useCodex = isCodexModel(model)
   const session = await db.sessions.get(sessionId)
-  const existingCliSession = session?.cliSessionId || null
-  console.log(`[cli] ${existingCliSession ? 'Resuming' : 'New'} session, model=${model}`)
 
+  // If backend changed from previous session, start fresh
+  const existingBackend = session?.cliBackend || 'claude'
+  const currentBackend = useCodex ? 'codex' : 'claude'
+  const existingCliSession = (existingBackend === currentBackend) ? (session?.cliSessionId || null) : null
+  console.log(`[cli] ${existingCliSession ? 'Resuming' : 'New'} ${currentBackend} session, model=${model}`)
+
+  const resolvedModel = useCodex ? getCodexModelName(model) : getCliModelName(model)
   const cliOptions = {
     prompt: fullContent,
-    model: getCliModelName(model),
+    model: resolvedModel,
     sessionId: existingCliSession,
     systemPrompt: existingCliSession || isDirectCliModel(model) ? undefined : buildSystemPrompt(phase, projectInstructions, activePlans, [], roots),
     cwd: useProject().projectRoot.value || undefined
@@ -43,13 +49,12 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   const toolUseToActivity = new Map()  // toolUseId → activityId
   const toolUseMeta = new Map()        // toolUseId → { name, args }
 
-  console.warn('[cli] === ABOUT TO START streamClaudeChat loop, phase:', phase, '===')
+  const sendFn = useCodex
+    ? (opts, cbs) => sendCodexChat(opts, cbs)
+    : (opts, cbs) => sendClaudeChat(opts, cbs)
+  const streamGenerator = useCodex ? streamCodexChat : streamClaudeChat
 
-  for await (const chunk of streamClaudeChat(
-    (opts, cbs) => sendClaudeChat(opts, cbs),
-    cliOptions
-  )) {
-    console.warn('[cli] chunk type:', chunk.type)
+  for await (const chunk of streamGenerator(sendFn, cliOptions)) {
     if (chunk.type === 'content') {
       accumulatedContent += chunk.text
       onContent(accumulatedContent)
@@ -58,21 +63,18 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     } else if (chunk.type === 'session_id') {
       sessionState.cliRequestId = chunk.requestId
       if (!existingCliSession && chunk.sessionId) {
-        await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId })
+        await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId, cliBackend: currentBackend })
+      } else if (existingBackend !== currentBackend) {
+        // Backend changed — store new session ID and backend
+        await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId, cliBackend: currentBackend })
       }
-      // Register Flow sessions for pillar auto-callback notifications
-      console.log('[cli] session_id chunk received:', { phase, chunkSessionId: chunk.sessionId, existingCliSession, requestId: chunk.requestId })
-      if (phase === 'flow') {
+      // Register Flow sessions for pillar auto-callback notifications (Claude only)
+      if (phase === 'flow' && !useCodex) {
         const cliSessionIdToRegister = chunk.sessionId || existingCliSession
-        console.log('[cli] Registering Flow session for callbacks:', cliSessionIdToRegister, 'model:', getCliModelName(model), 'cwd:', cliOptions.cwd)
         if (cliSessionIdToRegister) {
           const { registerFlowSession } = useMCP()
           registerFlowSession(cliSessionIdToRegister, getCliModelName(model), cliOptions.cwd, sessionId)
-        } else {
-          console.warn('[cli] No cliSessionId available for Flow registration!')
         }
-      } else {
-        console.log('[cli] Skipping Flow registration — phase is:', phase)
       }
     } else if (chunk.type === 'tool_use') {
       console.log('[cli] GOT tool_use:', chunk.id, chunk.name, JSON.stringify(chunk.input)?.slice(0, 200))
@@ -125,14 +127,18 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   return { content: accumulatedContent, usage }
 }
 
-export function stopCli(sessionState) {
+export function stopCli(sessionState, model) {
   if (!sessionState) {
     const { activeState } = useSessionState()
     sessionState = activeState()
   }
   if (sessionState.cliRequestId) {
-    const { stopClaudeChat } = useMCP()
-    stopClaudeChat(sessionState.cliRequestId)
+    const { stopClaudeChat, stopCodexChat } = useMCP()
+    if (model && isCodexModel(model)) {
+      stopCodexChat(sessionState.cliRequestId)
+    } else {
+      stopClaudeChat(sessionState.cliRequestId)
+    }
     sessionState.cliRequestId = null
   }
 }
