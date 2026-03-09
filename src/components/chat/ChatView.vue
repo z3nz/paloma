@@ -159,6 +159,17 @@ async function handleSend({ content, files }) {
   try {
     const cmd = await handleSlashCommand(trimmedContent, callMcpTool, projectRoot.value)
     if (cmd.handled) {
+      // Handle special actions
+      if (cmd.action === 'clear') {
+        clearChat()
+        await db.messages.where('sessionId').equals(props.session.id).delete()
+        return
+      }
+
+      if (cmd.action === 'switch-model' && cmd.model) {
+        emit('update-session', props.session.id, { model: cmd.model })
+      }
+
       // Save user message
       const userMsg = {
         sessionId: props.session.id,
@@ -189,7 +200,7 @@ async function handleSend({ content, files }) {
     }
   } catch (e) {
     // If it looks like a slash command but execution failed, still handle it locally
-    if (trimmedContent.startsWith('/plan')) {
+    if (trimmedContent.startsWith('/')) {
       const userMsg = {
         sessionId: props.session.id,
         role: 'user',

@@ -214,9 +214,12 @@ export function useMCP() {
         const { updateSession } = useSessions()
         updateSession(dbSessionId, { pillarStatus: status })
 
-        // If stopped or error, clean up the map
+        // If stopped or error, clean up the maps
         if (msg.status === 'stopped' || msg.status === 'error') {
           pillarSessionMap.delete(msg.pillarId)
+          // Schedule pillarStatuses cleanup after a short delay
+          // (keep visible briefly for UI, then clean up to prevent unbounded growth)
+          setTimeout(() => { pillarStatuses.delete(msg.pillarId) }, 30000)
         }
       },
       onFlowNotificationStart(msg) {
@@ -343,6 +346,15 @@ export function useMCP() {
     if (bridge) bridge.stopClaudeChat(requestId)
   }
 
+  function sendCodexChat(options, callbacks) {
+    if (!bridge || !connected.value) throw new Error('Bridge not connected')
+    return bridge.sendCodexChat(options, callbacks)
+  }
+
+  function stopCodexChat(requestId) {
+    if (bridge) bridge.stopCodexChat(requestId)
+  }
+
   function registerFlowSession(cliSessionId, model, cwd, dbSessionId) {
     if (bridge) bridge.registerFlowSession(cliSessionId, model, cwd)
     if (dbSessionId) {
@@ -449,6 +461,8 @@ export function useMCP() {
     callMcpTool,
     sendClaudeChat,
     stopClaudeChat,
+    sendCodexChat,
+    stopCodexChat,
     respondToAskUser,
     approveCliTool,
     denyCliTool,

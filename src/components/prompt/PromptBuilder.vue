@@ -168,10 +168,13 @@ const planMode = ref('list') // 'list' | 'activate' | 'pause' | 'complete' | 'ar
 const planSearchRef = ref(null)
 let planAction = null // tracks what action to take on selection
 
-// Available slash commands — add more here as we build them
+// Available slash commands
 const slashCommands = [
+  { name: 'plan', description: 'List and manage plans' },
   { name: 'project', description: 'Switch project context' },
-  { name: 'plan', description: 'List and manage plans' }
+  { name: 'model', description: 'Switch AI model' },
+  { name: 'clear', description: 'Clear current chat' },
+  { name: 'help', description: 'Show commands and shortcuts' }
 ]
 
 // Track trigger positions for replacement

@@ -213,8 +213,78 @@ export async function executePlanCommand(args, callMcpTool, projectRoot) {
 }
 
 /**
+ * Execute the /clear command.
+ * Returns a signal to clear the chat — handled by ChatView.
+ */
+function executeClearCommand() {
+  return { handled: true, action: 'clear', response: 'Chat cleared.' }
+}
+
+/**
+ * Execute the /model command.
+ * Returns a signal to switch model — handled by ChatView.
+ */
+function executeModelCommand(args) {
+  const model = args.trim()
+  if (!model) {
+    return {
+      handled: true,
+      response: [
+        '**`/model` commands:**',
+        '',
+        '`/model <name>` — switch to a different model',
+        '',
+        '**CLI models:** `claude-cli:opus`, `claude-cli:sonnet`, `claude-cli:haiku`',
+        '**Codex models:** `codex:gpt-5.1-codex-max`',
+        '',
+        'Or use any OpenRouter model ID (e.g., `anthropic/claude-3.5-sonnet`).'
+      ].join('\n')
+    }
+  }
+  return { handled: true, action: 'switch-model', model, response: `Model switched to **${model}**.` }
+}
+
+/**
+ * Execute the /help command.
+ */
+function executeHelpCommand() {
+  return {
+    handled: true,
+    response: [
+      '**Paloma Commands**',
+      '',
+      '| Command | Description |',
+      '|---------|-------------|',
+      '| `/plan` | List and manage plans |',
+      '| `/plan activate <id>` | Promote a plan to active |',
+      '| `/plan pause <id>` | Pause an active plan |',
+      '| `/plan complete <id>` | Mark plan as completed |',
+      '| `/project <name>` | Switch project context |',
+      '| `/model <name>` | Switch AI model |',
+      '| `/clear` | Clear current chat history |',
+      '| `/help` | Show this help |',
+      '',
+      '**Keyboard Shortcuts**',
+      '',
+      '| Shortcut | Action |',
+      '|----------|--------|',
+      '| `Ctrl+/` | Toggle sidebar |',
+      '| `Ctrl+N` | New chat |',
+      '| `Ctrl+Enter` | Send message |',
+      '| `Escape` | Close modals / stop streaming |',
+      '| `Y` / `N` | Approve / deny tool confirmation |',
+      '| `@filename` | Attach file to message |'
+    ].join('\n')
+  }
+}
+
+/**
  * Check if a message is a slash command and execute it.
- * Returns { handled, response } or { handled: false } if not a command.
+ * Returns { handled, response, action? } or { handled: false } if not a command.
+ *
+ * Special actions returned via `action` field:
+ *   - 'clear': ChatView should clear the conversation
+ *   - 'switch-model': ChatView should switch to `result.model`
  */
 export async function handleSlashCommand(content, callMcpTool, projectRoot) {
   // Normalize: collapse all whitespace (newlines from textarea) into single spaces
@@ -224,6 +294,22 @@ export async function handleSlashCommand(content, callMcpTool, projectRoot) {
   if (trimmed === '/plan' || trimmed.startsWith('/plan ')) {
     const args = trimmed.slice('/plan'.length)
     return executePlanCommand(args, callMcpTool, projectRoot)
+  }
+
+  // /clear
+  if (trimmed === '/clear') {
+    return executeClearCommand()
+  }
+
+  // /model [name]
+  if (trimmed === '/model' || trimmed.startsWith('/model ')) {
+    const args = trimmed.slice('/model'.length)
+    return executeModelCommand(args)
+  }
+
+  // /help
+  if (trimmed === '/help') {
+    return executeHelpCommand()
   }
 
   return { handled: false }

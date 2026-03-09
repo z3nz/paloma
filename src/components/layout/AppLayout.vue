@@ -7,19 +7,35 @@
       @open-project="$emit('open-project')"
     />
     <div class="flex flex-1 overflow-hidden">
-      <Sidebar
-        :sessions="sessions"
-        :active-session-id="activeSessionId"
-        :project-path="projectName"
-        :width="sidebarWidth"
-        @new-chat="$emit('new-chat')"
-        @select-session="id => $emit('select-session', id)"
-        @delete-session="id => $emit('delete-session', id)"
-      />
-      <div
-        class="w-1 cursor-col-resize bg-border hover:bg-accent/50 active:bg-accent transition-colors shrink-0"
-        @mousedown="startResize"
-      />
+      <!-- Collapsed sidebar: thin expand strip -->
+      <button
+        v-if="sidebarCollapsed"
+        @click="$emit('toggle-sidebar')"
+        class="w-8 bg-bg-secondary border-r border-border flex flex-col items-center justify-center hover:bg-bg-hover transition-colors shrink-0 group"
+        title="Expand sidebar (Ctrl+/)"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-text-muted group-hover:text-text-primary transition-colors">
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </button>
+
+      <!-- Expanded sidebar -->
+      <template v-else>
+        <Sidebar
+          :sessions="sessions"
+          :active-session-id="activeSessionId"
+          :project-path="projectName"
+          :width="sidebarWidth"
+          @new-chat="$emit('new-chat')"
+          @select-session="id => $emit('select-session', id)"
+          @delete-session="id => $emit('delete-session', id)"
+        />
+        <div
+          class="w-1 cursor-col-resize bg-border hover:bg-accent/50 active:bg-accent transition-colors shrink-0"
+          @mousedown="startResize"
+        />
+      </template>
+
       <main class="flex-1 overflow-hidden">
         <slot />
       </main>
@@ -37,10 +53,11 @@ defineProps({
   projectName: { type: String, default: '' },
   sessions: { type: Array, default: () => [] },
   activeSessionId: { type: Number, default: null },
-  activeModel: { type: String, default: '' }
+  activeModel: { type: String, default: '' },
+  sidebarCollapsed: { type: Boolean, default: false }
 })
 
-defineEmits(['open-settings', 'open-project', 'new-chat', 'select-session', 'delete-session'])
+defineEmits(['open-settings', 'open-project', 'new-chat', 'select-session', 'delete-session', 'toggle-sidebar'])
 
 const MIN_WIDTH = 200
 const MAX_WIDTH = 500

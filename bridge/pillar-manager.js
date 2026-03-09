@@ -25,6 +25,9 @@ export class PillarManager {
     this.notificationCooldown = new Map() // pillarId → timestamp of last notification
     this.notificationCount = 0 // notifications sent in current minute
     this.notificationWindowStart = Date.now()
+
+    // Periodic cleanup of terminal sessions (every 5 min)
+    this._cleanupInterval = setInterval(() => this._cleanupTerminalSessions(), 5 * 60 * 1000)
   }
 
   /**
@@ -59,7 +62,8 @@ export class PillarManager {
       flowRequestId,           // the CLI requestId of the parent Flow session
       cliRequestId: null,      // current child CLI requestId
       output: [],              // accumulated assistant messages
-      currentOutput: '',       // current turn's streaming text
+      outputChunks: [],        // current turn's streaming chunks (joined on read)
+      _cachedOutput: '',       // cached join of outputChunks
       messageQueue: [],        // queued messages for when current turn finishes
       startTime: Date.now(),
       timeoutTimer: null,
@@ -144,15 +148,16 @@ export class PillarManager {
     }
 
     let output
+    const currentText = this._getCurrentOutput(session)
     if (since === 'all') {
       // All accumulated output + current streaming
       const allOutput = session.output.join('\n\n---\n\n')
-      output = session.currentOutput
-        ? allOutput + (allOutput ? '\n\n---\n\n' : '') + session.currentOutput
+      output = currentText
+        ? allOutput + (allOutput ? '\n\n---\n\n' : '') + currentText
         : allOutput
     } else {
       // Just the most recent completed message or current streaming
-      output = session.currentOutput || (session.output.length > 0 ? session.output[session.output.length - 1] : '')
+      output = currentText || (session.output.length > 0 ? session.output[session.output.length - 1] : '')
     }
 
     return {
@@ -229,9 +234,9 @@ export class PillarManager {
     session.lastActivity = new Date().toISOString()
 
     // Finalize any current output
-    if (session.currentOutput) {
-      session.output.push(session.currentOutput)
-      session.currentOutput = ''
+    const stoppedOutput = this._flushOutput(session)
+    if (stoppedOutput) {
+      session.output.push(stoppedOutput)
     }
 
     this.broadcast({
@@ -313,6 +318,13 @@ export class PillarManager {
         return
       }
       this.notificationCooldown.set(pillarId, now)
+
+      // Periodic cleanup: remove stale cooldown entries (older than 60s)
+      if (this.notificationCooldown.size > 20) {
+        for (const [id, ts] of this.notificationCooldown) {
+          if (now - ts > 60000) this.notificationCooldown.delete(id)
+        }
+      }
     }
 
     // Rate limiting: max 10 notifications per minute
@@ -461,9 +473,26 @@ This is informational — Adam is communicating directly with the pillar. Decide
   }
 
   /**
+   * Clean up terminal pillar sessions (stopped/error) older than 5 minutes.
+   * Prevents unbounded growth of the pillars Map.
+   */
+  _cleanupTerminalSessions() {
+    const cutoff = Date.now() - 5 * 60 * 1000
+    for (const [id, session] of this.pillars) {
+      if ((session.status === 'stopped' || session.status === 'error') && session.startTime < cutoff) {
+        this.pillars.delete(id)
+      }
+    }
+  }
+
+  /**
    * Clean up all pillar sessions on shutdown.
    */
   shutdown() {
+    if (this._cleanupInterval) {
+      clearInterval(this._cleanupInterval)
+      this._cleanupInterval = null
+    }
     // Flow notifications always use Claude
     if (this.flowSession?.cliRequestId) {
       this.cliManager.stop(this.flowSession.cliRequestId)
@@ -485,7 +514,8 @@ This is informational — Adam is communicating directly with the pillar. Decide
   // --- Internal methods ---
 
   _startCliTurn(session, prompt, systemPrompt, isResume = false) {
-    session.currentOutput = ''
+    session.outputChunks = []
+    session._cachedOutput = ''
     const manager = this.backends[session.backend] || this.backends.claude
 
     const chatOptions = {
@@ -533,19 +563,19 @@ This is informational — Adam is communicating directly with the pillar. Decide
       // Accumulate text content — backend-specific extraction
       if (session.backend === 'codex') {
         if (cliEvent.type === 'agent_message' && cliEvent.text) {
-          session.currentOutput += cliEvent.text
+          this._appendOutput(session, cliEvent.text)
         }
       } else {
         // Claude text extraction
         if (cliEvent.type === 'assistant' && cliEvent.message?.content) {
           for (const block of cliEvent.message.content) {
             if (block.type === 'text' && block.text) {
-              session.currentOutput += block.text
+              this._appendOutput(session, block.text)
             }
           }
         } else if (cliEvent.type === 'content_block_delta') {
           if (cliEvent.delta?.type === 'text_delta' && cliEvent.delta.text) {
-            session.currentOutput += cliEvent.delta.text
+            this._appendOutput(session, cliEvent.delta.text)
           }
         }
       }
@@ -562,8 +592,9 @@ This is informational — Adam is communicating directly with the pillar. Decide
       session.lastActivity = new Date().toISOString()
 
       // Save completed output
-      if (session.currentOutput) {
-        session.output.push(session.currentOutput)
+      const completedOutput = this._flushOutput(session)
+      if (completedOutput) {
+        session.output.push(completedOutput)
       }
 
       // Notify browser
@@ -571,7 +602,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
         type: 'pillar_message_saved',
         pillarId: session.pillarId,
         role: 'assistant',
-        content: session.currentOutput
+        content: completedOutput
       })
 
       // Check for queued messages
@@ -614,8 +645,9 @@ This is informational — Adam is communicating directly with the pillar. Decide
       session.cliRequestId = null
       session.lastActivity = new Date().toISOString()
 
-      if (session.currentOutput) {
-        session.output.push(session.currentOutput)
+      const errorOutput = this._flushOutput(session)
+      if (errorOutput) {
+        session.output.push(errorOutput)
       }
 
       if (session.timeoutTimer) {
@@ -655,6 +687,28 @@ This is informational — Adam is communicating directly with the pillar. Decide
     // PHASE_MODEL_SUGGESTIONS values are like 'claude-cli:opus' — extract just the model name
     const suggestion = PHASE_MODEL_SUGGESTIONS[pillar] || 'claude-cli:sonnet'
     return suggestion.split(':')[1] || 'sonnet'
+  }
+
+  /** Get the current turn's accumulated output text efficiently. */
+  _getCurrentOutput(session) {
+    if (session.outputChunks.length === 0) return ''
+    // Cache the joined result to avoid repeated joins
+    session._cachedOutput = session.outputChunks.join('')
+    return session._cachedOutput
+  }
+
+  /** Append text to the current turn's output. */
+  _appendOutput(session, text) {
+    session.outputChunks.push(text)
+    session._cachedOutput = '' // invalidate cache
+  }
+
+  /** Clear the current turn's output and return what was accumulated. */
+  _flushOutput(session) {
+    const text = this._getCurrentOutput(session)
+    session.outputChunks = []
+    session._cachedOutput = ''
+    return text
   }
 
   _capitalize(str) {
