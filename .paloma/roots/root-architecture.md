@@ -62,6 +62,8 @@ Pillar sessions don't share memory. So how does work flow between them?
 
 **Plans are the coordination mechanism.** Flow maintains the plan document. Every pillar reads it to understand what's been done, what's next, and where to find relevant context. The plan is the single source of truth.
 
+**Recursive orchestration.** For large projects, Flow decomposes plans into work units (WU-N) using `pillar_decompose`, then uses `pillar_orchestrate` to analyze dependencies and determine what's ready to dispatch. Work units live inline in plan documents — the plan on disk IS the orchestration state.
+
 **You can read anything.** Your filesystem tools give you access to the full codebase, all artifacts, all documentation. If you need context, read it — don't guess, don't assume, don't wait for someone to hand it to you.
 
 ## The Pillar Family
