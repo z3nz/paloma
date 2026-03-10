@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center" @click.self="$emit('deny')">
+  <div class="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="tool-confirm-title" @click.self="$emit('deny')">
     <div class="absolute inset-0 bg-black/60" @click="$emit('deny')"></div>
     <div class="relative bg-bg-secondary border border-border rounded-lg w-full max-w-lg mx-4 shadow-2xl max-h-[80vh] flex flex-col">
       <!-- Header -->
@@ -11,7 +11,7 @@
           >
             {{ actionLabel }}
           </span>
-          <h2 class="text-sm font-mono text-text-primary truncate">{{ primaryPath }}</h2>
+          <h2 id="tool-confirm-title" class="text-sm font-mono text-text-primary truncate">{{ primaryPath }}</h2>
         </div>
         <button
           @click="$emit('deny')"
@@ -140,7 +140,7 @@ function handleKeyDown(e) {
   if (e.key === 'y' || e.key === 'Y') {
     e.preventDefault()
     emit('allow')
-  } else if (e.key === 'n' || e.key === 'N') {
+  } else if (e.key === 'n' || e.key === 'N' || e.key === 'Escape') {
     e.preventDefault()
     emit('deny')
   }

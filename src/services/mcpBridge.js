@@ -68,7 +68,9 @@ export function createMcpBridge() {
       reconnectAttempt = 0
       onStateChange?.('connected')
       // Auto-discover tools on connect
-      discover().catch(() => {})
+      discover().catch((e) => {
+        console.warn('[bridge] Auto-discover failed:', e.message)
+      })
     }
 
     ws.onmessage = (event) => {

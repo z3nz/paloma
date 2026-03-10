@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center" @click.self="dismiss">
+  <div class="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="ask-user-title" @click.self="dismiss">
     <div class="absolute inset-0 bg-black/60" @click="dismiss"></div>
     <div class="relative bg-bg-secondary border border-border rounded-lg w-full max-w-lg mx-4 shadow-2xl flex flex-col">
       <!-- Header -->
@@ -8,7 +8,7 @@
           <span class="text-xs font-medium uppercase tracking-wider px-2 py-0.5 rounded bg-accent-muted text-accent-hover">
             Question
           </span>
-          <h2 class="text-sm font-medium text-text-primary">Agent needs your input</h2>
+          <h2 id="ask-user-title" class="text-sm font-medium text-text-primary">Agent needs your input</h2>
         </div>
         <button
           @click="dismiss"
