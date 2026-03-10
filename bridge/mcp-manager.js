@@ -36,7 +36,13 @@ export class McpManager {
     })
 
     const client = new Client({ name: `paloma-${name}`, version: '1.0.0' })
-    await client.connect(transport)
+    try {
+      await client.connect(transport)
+    } catch (e) {
+      // Clean up the spawned transport process on connection failure
+      try { await transport.close() } catch {}
+      throw e
+    }
 
     const { tools } = await client.listTools()
     console.log(`  ${name}: ${tools.length} tools discovered`)

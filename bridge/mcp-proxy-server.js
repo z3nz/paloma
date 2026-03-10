@@ -356,7 +356,12 @@ export class McpProxyServer {
     }
 
     console.log(`[mcp-proxy] SSE session started: ${transport.sessionId}, cliRequestId=${cliRequestId}`)
-    await server.connect(transport)
+    try {
+      await server.connect(transport)
+    } catch (e) {
+      console.error(`[mcp-proxy] SSE connect failed for ${transport.sessionId}:`, e.message)
+      this.transports.delete(transport.sessionId)
+    }
   }
 
   async _handlePost(req, res) {
@@ -371,6 +376,14 @@ export class McpProxyServer {
       return
     }
 
-    await entry.transport.handlePostMessage(req, res)
+    try {
+      await entry.transport.handlePostMessage(req, res)
+    } catch (e) {
+      console.error(`[mcp-proxy] Error handling POST for session ${sessionId}:`, e.message)
+      if (!res.headersSent) {
+        res.writeHead(500)
+        res.end(JSON.stringify({ error: 'Internal error' }))
+      }
+    }
   }
 }

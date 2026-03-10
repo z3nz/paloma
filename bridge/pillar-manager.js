@@ -232,6 +232,7 @@ export class PillarManager {
     session.status = 'stopped'
     session.currentlyStreaming = false
     session.lastActivity = new Date().toISOString()
+    session.messageQueue = [] // clear queued messages to prevent memory leak
 
     // Finalize any current output
     const stoppedOutput = this._flushOutput(session)
@@ -327,10 +328,8 @@ export class PillarManager {
       this.notificationCooldown.set(pillarId, now)
 
       // Periodic cleanup: remove stale cooldown entries (older than 60s)
-      if (this.notificationCooldown.size > 20) {
-        for (const [id, ts] of this.notificationCooldown) {
-          if (now - ts > 60000) this.notificationCooldown.delete(id)
-        }
+      for (const [id, ts] of this.notificationCooldown) {
+        if (now - ts > 60000) this.notificationCooldown.delete(id)
       }
     }
 
@@ -376,17 +375,26 @@ export class PillarManager {
       }))
     }
 
-    const { requestId } = this.cliManager.chat(
-      {
-        prompt: message,
-        model: this.flowSession.model,
-        sessionId: this.flowSession.cliSessionId,
-        cwd: this.flowSession.cwd
-      },
-      (event) => this._handleFlowNotificationEvent(event)
-    )
+    try {
+      const { requestId } = this.cliManager.chat(
+        {
+          prompt: message,
+          model: this.flowSession.model,
+          sessionId: this.flowSession.cliSessionId,
+          cwd: this.flowSession.cwd
+        },
+        (event) => this._handleFlowNotificationEvent(event)
+      )
 
-    this.flowSession.cliRequestId = requestId
+      this.flowSession.cliRequestId = requestId
+    } catch (e) {
+      console.error('[pillar] Failed to send Flow notification:', e.message)
+      this.flowSession.currentlyStreaming = false
+      this.flowSession.cliRequestId = null
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'flow_notification_error', error: e.message }))
+      }
+    }
   }
 
   /**

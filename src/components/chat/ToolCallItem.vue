@@ -65,7 +65,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onBeforeUnmount } from 'vue'
 import ToolResult from './ToolResult.vue'
 import { parseToolName, getServerColor, getToolSummary, classifyResult, getResultSize } from '../../utils/toolClassifier.js'
 
@@ -77,6 +77,8 @@ const props = defineProps({
 
 const expanded = ref(false)
 const copyLabel = ref('Copy')
+let _copyTimer = null
+onBeforeUnmount(() => { if (_copyTimer) clearTimeout(_copyTimer) })
 
 const parsed = computed(() => parseToolName(props.activity.name))
 const serverName = computed(() => parsed.value.server || 'built-in')
@@ -116,13 +118,13 @@ function formatDuration(ms) {
 }
 
 async function copyResult() {
+  if (_copyTimer) clearTimeout(_copyTimer)
   try {
     await navigator.clipboard.writeText(resultContent.value)
     copyLabel.value = 'Copied!'
-    setTimeout(() => { copyLabel.value = 'Copy' }, 1500)
   } catch {
     copyLabel.value = 'Failed'
-    setTimeout(() => { copyLabel.value = 'Copy' }, 1500)
   }
+  _copyTimer = setTimeout(() => { copyLabel.value = 'Copy'; _copyTimer = null }, 1500)
 }
 </script>

@@ -28,7 +28,8 @@ const cliRequestToWs = new Map()
 
 // Auto-reject stale pending requests (5 min timeout)
 const PENDING_TIMEOUT_MS = 5 * 60 * 1000
-setInterval(() => {
+let staleRequestInterval = null
+staleRequestInterval = setInterval(() => {
   const now = Date.now()
   for (const [id, entry] of pendingAskUser) {
     if (now - entry.createdAt > PENDING_TIMEOUT_MS) {
@@ -261,24 +262,28 @@ async function main() {
           }
         }
       } else if (msg.type === 'codex_chat') {
-        const { requestId, sessionId } = codexManager.chat(
-          {
-            prompt: msg.prompt,
-            model: msg.model,
-            sessionId: msg.sessionId,
-            systemPrompt: msg.systemPrompt,
-            cwd: msg.cwd
-          },
-          (event) => {
-            if (ws.readyState !== 1) return
-            ws.send(JSON.stringify({ ...event, id: msg.id }))
-            if (event.type === 'codex_done' || event.type === 'codex_error') {
-              cliRequestToWs.delete(requestId)
+        try {
+          const { requestId, sessionId } = codexManager.chat(
+            {
+              prompt: msg.prompt,
+              model: msg.model,
+              sessionId: msg.sessionId,
+              systemPrompt: msg.systemPrompt,
+              cwd: msg.cwd
+            },
+            (event) => {
+              if (ws.readyState !== 1) return
+              ws.send(JSON.stringify({ ...event, id: msg.id }))
+              if (event.type === 'codex_done' || event.type === 'codex_error') {
+                cliRequestToWs.delete(requestId)
+              }
             }
-          }
-        )
-        cliRequestToWs.set(requestId, ws)
-        ws.send(JSON.stringify({ type: 'codex_ack', id: msg.id, requestId, sessionId }))
+          )
+          cliRequestToWs.set(requestId, ws)
+          ws.send(JSON.stringify({ type: 'codex_ack', id: msg.id, requestId, sessionId }))
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'codex_error', id: msg.id, error: e.message }))
+        }
       } else if (msg.type === 'claude_stop') {
         cliRequestToWs.delete(msg.requestId)
         cliManager.stop(msg.requestId)
@@ -318,6 +323,7 @@ async function main() {
   // Graceful shutdown
   const shutdown = async () => {
     console.log('\nShutting down...')
+    if (staleRequestInterval) clearInterval(staleRequestInterval)
     if (pillarManager) pillarManager.shutdown()
     cliManager.shutdown()
     codexManager.shutdown()
