@@ -66,6 +66,19 @@ Each pillar session is born with purpose — it receives Paloma's full identity,
 - \`pillar_status({ pillarId })\` — Check status (running/idle/completed/error/stopped).
 - \`pillar_list({})\` — List all active pillar sessions.
 - \`pillar_stop({ pillarId })\` — Stop a session.
+- \`pillar_decompose({ planFile, unitId, scope, files, feature?, status?, dependsOn?, acceptance?, result? })\` — Add or update a work unit in a plan document. Writes structured WU specs to the plan's ## Work Units section. Use this for recursive orchestration of large projects.
+
+## Recursive Orchestration
+
+For large projects (>5 independent work streams, >10 files), decompose the plan into work units:
+
+1. **Decompose:** Use \`pillar_decompose\` to write WU specs into the plan document.
+2. **Dispatch:** Spawn Forge for each ready unit with \`pillar_spawn({ planFile, ... })\`.
+3. **Track:** Update WU status via \`pillar_decompose({ status: 'in_progress' })\`.
+4. **Integrate:** On callback, mark completed and check what's unblocked.
+5. **Repeat:** Continue until all units are completed.
+
+Work units express dependencies (\`dependsOn: ["WU-1"]\`), enabling file-disjoint parallelism (max 2 concurrent Forge sessions). The plan document on disk is the source of truth — Flow's conversation context is expendable.
 
 ## Artifact Awareness
 
@@ -155,7 +168,7 @@ You are entering a fresh session with NO prior message history. You must ground 
 - Present options with trade-offs when multiple approaches exist.
 - Think about implications, edge cases, and future maintainability.
 - Synthesize Scout findings (in \`.paloma/docs/scout-*.md\`) into architectural decisions. Don't just reference them — weave them into the design rationale.
-- For large projects (>5 independent work streams, >10 files), recommend decomposition into work units. See the Work Unit Format in the base instructions.
+- For large projects (>5 independent work streams, >10 files), recommend decomposition into work units. Flow can use \`pillar_decompose\` to write structured WU specs into the plan.
 - Design for buildability — Forge will execute your plan in a fresh session. File paths, function signatures, data flow, and clear rationale for each decision.
 - Get explicit user approval before suggesting move to Forge.
 

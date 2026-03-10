@@ -187,6 +187,26 @@ export class McpProxyServer {
           required: ['pillarId']
         }
       })
+
+      tools.push({
+        name: 'pillar_decompose',
+        description: 'Add or update a work unit in a plan document. Writes a formatted work unit spec to the ## Work Units section. Use this for recursive orchestration — decomposing large plans into focused work units.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            planFile: { type: 'string', description: 'Plan filename (e.g., "active-20260301-verifesto-saas.md")' },
+            unitId: { type: 'string', description: 'Work unit ID (e.g., "WU-1")' },
+            feature: { type: 'string', description: 'Feature group name (e.g., "Backend Foundation")' },
+            status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'failed', 'skipped'], description: 'Work unit status (default: pending)' },
+            dependsOn: { type: 'array', items: { type: 'string' }, description: 'WU-IDs this depends on (e.g., ["WU-1", "WU-3"])' },
+            files: { type: 'array', items: { type: 'string' }, description: 'Files to create/modify' },
+            scope: { type: 'string', description: '1-3 sentence description of what this unit does' },
+            acceptance: { type: 'string', description: 'How to verify success' },
+            result: { type: 'string', description: 'Completion summary (set after done)' }
+          },
+          required: ['planFile', 'unitId', 'scope', 'files']
+        }
+      })
     }
 
     return tools
@@ -306,6 +326,9 @@ export class McpProxyServer {
           break
         case 'pillar_stop':
           result = this.pillarManager.stop(args)
+          break
+        case 'pillar_decompose':
+          result = await this.pillarManager.decompose(args)
           break
         default:
           return { content: [{ type: 'text', text: `Unknown pillar tool: ${name}` }], isError: true }

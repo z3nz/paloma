@@ -526,6 +526,82 @@ This is informational — Adam is communicating directly with the pillar. Decide
     this.pillars.clear()
   }
 
+  /**
+   * Add or update a work unit in a plan document.
+   * Reads the plan file, finds/creates the Work Units section,
+   * and inserts or updates the work unit spec.
+   */
+  async decompose({ planFile, unitId, feature, status, dependsOn, files, scope, acceptance, result }) {
+    const planPath = join(this.projectRoot, '.paloma', 'plans', planFile)
+    let content = await this._readFileSafe(planPath)
+    if (!content) {
+      return { error: `Plan file not found: ${planFile}` }
+    }
+
+    // Validate status transitions
+    const validStatuses = ['pending', 'in_progress', 'completed', 'failed', 'skipped']
+    const resolvedStatus = status || 'pending'
+    if (!validStatuses.includes(resolvedStatus)) {
+      return { error: `Invalid status: ${resolvedStatus}. Must be one of: ${validStatuses.join(', ')}` }
+    }
+
+    // Build the work unit markdown block
+    const lines = [`#### ${unitId}: ${scope.split('.')[0].split('\n')[0].slice(0, 80)}`]
+    if (feature) lines.push(`- **Feature:** ${feature}`)
+    lines.push(`- **Status:** ${resolvedStatus}`)
+    if (dependsOn?.length) lines.push(`- **Depends on:** ${dependsOn.join(', ')}`)
+    if (files?.length) lines.push(`- **Files:** ${files.join(', ')}`)
+    lines.push(`- **Scope:** ${scope}`)
+    if (acceptance) lines.push(`- **Acceptance:** ${acceptance}`)
+    if (result) lines.push(`- **Result:** ${result}`)
+    const unitBlock = lines.join('\n')
+
+    // Find existing work unit by ID
+    const unitPattern = new RegExp(`#### ${unitId}:.*?(?=\\n#### |\\n## |$)`, 's')
+    const existingMatch = content.match(unitPattern)
+
+    if (existingMatch) {
+      // Update existing work unit
+      content = content.replace(unitPattern, unitBlock)
+    } else {
+      // Insert new work unit — find or create ## Work Units section
+      const workUnitsHeader = '## Work Units'
+      if (content.includes(workUnitsHeader)) {
+        // Append after the header and any existing units
+        const headerIdx = content.indexOf(workUnitsHeader)
+        // Find the next ## section after Work Units
+        const nextSectionMatch = content.slice(headerIdx + workUnitsHeader.length).match(/\n## /)
+        if (nextSectionMatch) {
+          const insertIdx = headerIdx + workUnitsHeader.length + nextSectionMatch.index
+          content = content.slice(0, insertIdx) + '\n\n' + unitBlock + '\n' + content.slice(insertIdx)
+        } else {
+          // No section after — append at the end
+          content = content.trimEnd() + '\n\n' + unitBlock + '\n'
+        }
+      } else {
+        // No Work Units section — create one before the last ---
+        const lastDivider = content.lastIndexOf('\n---')
+        if (lastDivider !== -1) {
+          content = content.slice(0, lastDivider) + '\n\n' + workUnitsHeader + '\n\n' + unitBlock + '\n' + content.slice(lastDivider)
+        } else {
+          content = content.trimEnd() + '\n\n' + workUnitsHeader + '\n\n' + unitBlock + '\n'
+        }
+      }
+    }
+
+    // Write back
+    const { writeFile: fsWriteFile } = await import('fs/promises')
+    await fsWriteFile(planPath, content, 'utf-8')
+
+    return {
+      unitId,
+      status: resolvedStatus,
+      action: existingMatch ? 'updated' : 'created',
+      planFile,
+      message: `Work unit ${unitId} ${existingMatch ? 'updated' : 'created'} in ${planFile}`
+    }
+  }
+
   // --- Internal methods ---
 
   _startCliTurn(session, prompt, systemPrompt, isResume = false) {
