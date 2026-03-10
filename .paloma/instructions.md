@@ -36,6 +36,13 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - Pillar behavior is defined in DNA files: `src/prompts/base.js` (shared) and `src/prompts/phases.js` (per-pillar)
 - Pillars can run on either Claude or Codex backend — selected at spawn time
 
+### Recursive Orchestration Tools
+- `pillar_decompose` — Add/update structured work units (WU-N) in plan documents
+- `pillar_orchestrate` — Analyze plan's work units: ready/blocked status, dependency resolution, file-disjoint parallelism recommendations
+- Work units live inline in plan documents under `## Work Units` section
+- Max 2 concurrent Forge sessions, file-disjoint only
+- Plan document on disk is the source of truth for orchestration state
+
 ### Self-Evolution Rule
 When committing changes to Paloma's codebase, ALWAYS check if `src/prompts/base.js` and `src/prompts/phases.js` need updating. These files are Paloma's DNA.
 
