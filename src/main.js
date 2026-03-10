@@ -2,7 +2,15 @@ import { createApp } from 'vue'
 import './styles/main.css'
 import App from './App.vue'
 
-createApp(App).mount('#app')
+const app = createApp(App)
+
+// Global error handler — catch unhandled errors in Vue components
+app.config.errorHandler = (err, instance, info) => {
+  console.error(`[Vue Error] ${info}:`, err)
+  // Prevent the error from crashing the entire app
+}
+
+app.mount('#app')
 
 // HMR diagnostics — detect full page reload vs hot update
 if (import.meta.hot) {

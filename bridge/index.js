@@ -108,8 +108,27 @@ async function main() {
   })
   mcpProxy.pillarManager = pillarManager
 
+  // Heartbeat: detect dead connections (30s interval, 10s timeout)
+  const HEARTBEAT_INTERVAL = 30000
+  const HEARTBEAT_TIMEOUT = 10000
+  const heartbeatInterval = setInterval(() => {
+    for (const client of wss.clients) {
+      if (client._pongReceived === false) {
+        console.log('[bridge] Client heartbeat timeout — terminating')
+        client.terminate()
+        continue
+      }
+      client._pongReceived = false
+      client.ping()
+    }
+  }, HEARTBEAT_INTERVAL)
+
+  wss.on('close', () => clearInterval(heartbeatInterval))
+
   wss.on('connection', (ws) => {
     console.log('Client connected')
+    ws._pongReceived = true
+    ws.on('pong', () => { ws._pongReceived = true })
 
     ws.on('message', async (data) => {
       let msg
