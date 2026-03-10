@@ -59,7 +59,8 @@ export async function runOpenRouterLoop({
         let args
         try {
           args = JSON.parse(call.function.arguments)
-        } catch {
+        } catch (e) {
+          console.warn(`[chat] Failed to parse tool arguments for ${call.function.name}:`, e.message)
           args = {}
         }
 

@@ -17,6 +17,8 @@ const flowProcessingCallback = ref(false)
 
 // pillarId → 'running' | 'streaming' | 'idle' | 'error' | 'stopped'
 const pillarStatuses = reactive(new Map())
+// Track cleanup timers to prevent unbounded accumulation
+const pillarCleanupTimers = new Map()
 
 const _saved = import.meta.hot ? window.__PALOMA_MCP__ : undefined
 
@@ -214,12 +216,19 @@ export function useMCP() {
         const { updateSession } = useSessions()
         updateSession(dbSessionId, { pillarStatus: status })
 
-        // If stopped or error, clean up the maps
-        if (msg.status === 'stopped' || msg.status === 'error') {
+        // Clean up routing maps for all terminal states (idle, stopped, error)
+        // Keep pillarStatuses visible briefly for UI, then clean up
+        const isTerminal = status === 'stopped' || status === 'error' || status === 'idle'
+        if (isTerminal) {
           pillarSessionMap.delete(msg.pillarId)
-          // Schedule pillarStatuses cleanup after a short delay
-          // (keep visible briefly for UI, then clean up to prevent unbounded growth)
-          setTimeout(() => { pillarStatuses.delete(msg.pillarId) }, 30000)
+          // Cancel any existing cleanup timer for this pillar before scheduling a new one
+          const existingTimer = pillarCleanupTimers.get(msg.pillarId)
+          if (existingTimer) clearTimeout(existingTimer)
+          const timer = setTimeout(() => {
+            pillarStatuses.delete(msg.pillarId)
+            pillarCleanupTimers.delete(msg.pillarId)
+          }, 30000)
+          pillarCleanupTimers.set(msg.pillarId, timer)
         }
       },
       onFlowNotificationStart(msg) {

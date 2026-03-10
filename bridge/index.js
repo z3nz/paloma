@@ -34,14 +34,14 @@ staleRequestInterval = setInterval(() => {
   for (const [id, entry] of pendingAskUser) {
     if (now - entry.createdAt > PENDING_TIMEOUT_MS) {
       console.warn('[bridge] Timing out stale ask_user request:', id)
-      entry.resolve('Timed out — no response from user')
+      try { entry.resolve('Timed out — no response from user') } catch { /* best-effort */ }
       pendingAskUser.delete(id)
     }
   }
   for (const [id, entry] of pendingToolConfirm) {
     if (now - entry.createdAt > PENDING_TIMEOUT_MS) {
       console.warn('[bridge] Timing out stale tool confirmation:', id)
-      entry.resolve({ approved: false, reason: 'Timed out — no response from user' })
+      try { entry.resolve({ approved: false, reason: 'Timed out — no response from user' }) } catch { /* best-effort */ }
       pendingToolConfirm.delete(id)
     }
   }
@@ -157,35 +157,39 @@ async function main() {
           ws.send(JSON.stringify({ type: 'error', id: msg.id, message: e.message }))
         }
       } else if (msg.type === 'claude_chat') {
-        const { requestId, sessionId } = cliManager.chat(
-          {
-            prompt: msg.prompt,
-            model: msg.model,
-            sessionId: msg.sessionId,
-            systemPrompt: msg.systemPrompt,
-            cwd: msg.cwd
-          },
-          (event) => {
-            if (ws.readyState !== 1) return // OPEN
-            ws.send(JSON.stringify({ ...event, id: msg.id }))
-            // Clean up mapping when CLI session ends
-            if (event.type === 'claude_done' || event.type === 'claude_error') {
-              cliRequestToWs.delete(requestId)
-              // If this was the Flow session, mark it as no longer streaming
-              // so queued notifications can be processed
-              if (pillarManager?.flowSession?.cliSessionId === sessionId) {
-                pillarManager.onFlowTurnComplete()
+        try {
+          const { requestId, sessionId } = cliManager.chat(
+            {
+              prompt: msg.prompt,
+              model: msg.model,
+              sessionId: msg.sessionId,
+              systemPrompt: msg.systemPrompt,
+              cwd: msg.cwd
+            },
+            (event) => {
+              if (ws.readyState !== 1) return // OPEN
+              ws.send(JSON.stringify({ ...event, id: msg.id }))
+              // Clean up mapping when CLI session ends
+              if (event.type === 'claude_done' || event.type === 'claude_error') {
+                cliRequestToWs.delete(requestId)
+                // If this was the Flow session, mark it as no longer streaming
+                // so queued notifications can be processed
+                if (pillarManager?.flowSession?.cliSessionId === sessionId) {
+                  pillarManager.onFlowTurnComplete()
+                }
               }
             }
+          )
+          // Map this CLI request to the originating WebSocket
+          cliRequestToWs.set(requestId, ws)
+          // If this is a message to the registered Flow session, mark it as streaming
+          if (pillarManager?.flowSession?.cliSessionId === (msg.sessionId || sessionId)) {
+            pillarManager.flowSession.currentlyStreaming = true
           }
-        )
-        // Map this CLI request to the originating WebSocket
-        cliRequestToWs.set(requestId, ws)
-        // If this is a message to the registered Flow session, mark it as streaming
-        if (pillarManager?.flowSession?.cliSessionId === (msg.sessionId || sessionId)) {
-          pillarManager.flowSession.currentlyStreaming = true
+          ws.send(JSON.stringify({ type: 'claude_ack', id: msg.id, requestId, sessionId }))
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'claude_error', id: msg.id, error: e.message }))
         }
-        ws.send(JSON.stringify({ type: 'claude_ack', id: msg.id, requestId, sessionId }))
       } else if (msg.type === 'export_chats') {
         try {
           const dir = join(process.cwd(), 'chats')

@@ -16,25 +16,25 @@
         <span class="tool-result__diff-marker">{{ diffMarker(line) }}</span>
         <span class="tool-result__diff-text">{{ line }}</span>
       </div>
-      <div v-if="isTruncated" class="tool-result__truncated" @click="showFull = true">
+      <button v-if="isTruncated" class="tool-result__truncated" @click="showFull = true">
         Show {{ totalLines - maxLines }} more lines...
-      </div>
+      </button>
     </div>
 
     <!-- JSON -->
     <div v-else-if="resultType === 'json'" class="tool-result__json">
       <pre class="tool-result__pre"><code v-html="highlightedJson"></code></pre>
-      <div v-if="isTruncated" class="tool-result__truncated" @click="showFull = true">
+      <button v-if="isTruncated" class="tool-result__truncated" @click="showFull = true">
         Show full output...
-      </div>
+      </button>
     </div>
 
     <!-- File content (syntax highlighted) -->
     <div v-else-if="resultType === 'file-content'" class="tool-result__file">
       <pre class="tool-result__pre"><code v-html="highlightedContent"></code></pre>
-      <div v-if="isTruncated" class="tool-result__truncated" @click="showFull = true">
+      <button v-if="isTruncated" class="tool-result__truncated" @click="showFull = true">
         Show {{ totalLines - maxLines }} more lines...
-      </div>
+      </button>
     </div>
 
     <!-- Directory listing -->
@@ -44,17 +44,17 @@
         <span :class="entry.isDir ? 'text-accent' : 'text-text-secondary'">{{ entry.name }}</span>
         <span v-if="entry.size" class="text-text-muted ml-2">{{ entry.size }}</span>
       </div>
-      <div v-if="isTruncated" class="tool-result__truncated" @click="showFull = true">
+      <button v-if="isTruncated" class="tool-result__truncated" @click="showFull = true">
         Show {{ totalLines - maxLines }} more entries...
-      </div>
+      </button>
     </div>
 
     <!-- Plain text fallback -->
     <div v-else class="tool-result__plain">
       <pre class="tool-result__pre">{{ visibleContent }}</pre>
-      <div v-if="isTruncated" class="tool-result__truncated" @click="showFull = true">
+      <button v-if="isTruncated" class="tool-result__truncated" @click="showFull = true">
         Show full output...
-      </div>
+      </button>
     </div>
   </div>
 </template>

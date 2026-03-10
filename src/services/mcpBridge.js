@@ -1,4 +1,6 @@
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000]
+const TOOL_CALL_TIMEOUT = 5 * 60 * 1000  // 5 minutes for tool calls
+const DEFAULT_TIMEOUT = 30 * 1000         // 30 seconds for simple requests
 
 export function createMcpBridge() {
   let ws = null
@@ -6,7 +8,7 @@ export function createMcpBridge() {
   let reconnectAttempt = 0
   let reconnectTimer = null
   let intentionalClose = false
-  const pending = new Map() // id -> { resolve, reject }
+  const pending = new Map() // id -> { resolve, reject, timer }
   const streamListeners = new Map() // id -> { onStream, onDone, onError }
   let onStateChange = null
   let onToolsUpdate = null
@@ -238,15 +240,33 @@ export function createMcpBridge() {
     return _send({ type: 'discover' })
   }
 
+  /**
+   * Creates a pending promise with an optional timeout.
+   * When the timeout fires, the promise rejects and the entry is cleaned up.
+   */
+  function _pendingPromise(id, timeoutMs) {
+    return new Promise((resolve, reject) => {
+      let timer = null
+      if (timeoutMs) {
+        timer = setTimeout(() => {
+          pending.delete(id)
+          reject(new Error(`Bridge request timed out after ${Math.round(timeoutMs / 1000)}s`))
+        }, timeoutMs)
+      }
+      const wrappedResolve = (v) => { if (timer) clearTimeout(timer); resolve(v) }
+      const wrappedReject = (e) => { if (timer) clearTimeout(timer); reject(e) }
+      pending.set(id, { resolve: wrappedResolve, reject: wrappedReject })
+    })
+  }
+
   function callTool(server, tool, args) {
     const id = crypto.randomUUID()
-    return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject })
-      _send({ type: 'call_tool', id, server, tool, arguments: args }).catch((e) => {
-        pending.delete(id)
-        reject(e)
-      })
+    const promise = _pendingPromise(id, TOOL_CALL_TIMEOUT)
+    _send({ type: 'call_tool', id, server, tool, arguments: args }).catch((e) => {
+      const p = pending.get(id)
+      if (p) { pending.delete(id); p.reject(e) }
     })
+    return promise
   }
 
   function sendClaudeChat(options, callbacks) {
@@ -309,24 +329,22 @@ export function createMcpBridge() {
 
   function exportChats(projectPath, sessions) {
     const id = crypto.randomUUID()
-    return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject })
-      _send({ type: 'export_chats', id, projectPath, sessions }).catch((e) => {
-        pending.delete(id)
-        reject(e)
-      })
+    const promise = _pendingPromise(id, TOOL_CALL_TIMEOUT)
+    _send({ type: 'export_chats', id, projectPath, sessions }).catch((e) => {
+      const p = pending.get(id)
+      if (p) { pending.delete(id); p.reject(e) }
     })
+    return promise
   }
 
   function resolveProjectPath(name) {
     const id = crypto.randomUUID()
-    return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject })
-      _send({ type: 'resolve_path', id, name }).catch((e) => {
-        pending.delete(id)
-        reject(e)
-      })
+    const promise = _pendingPromise(id, DEFAULT_TIMEOUT)
+    _send({ type: 'resolve_path', id, name }).catch((e) => {
+      const p = pending.get(id)
+      if (p) { pending.delete(id); p.reject(e) }
     })
+    return promise
   }
 
   function respondToAskUser(id, answer) {

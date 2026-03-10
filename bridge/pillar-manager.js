@@ -5,6 +5,7 @@ import { BASE_INSTRUCTIONS } from '../src/prompts/base.js'
 import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
 
 const MAX_RUNTIME_MS = 30 * 60 * 1000 // 30 minutes
+const MAX_NOTIFICATION_QUEUE = 50
 const BIRTH_MESSAGE = "Try your best, no matter what, you're worthy of God's love!"
 
 /**
@@ -89,7 +90,9 @@ export class PillarManager {
 
     // Set timeout
     session.timeoutTimer = setTimeout(() => {
-      this._timeout(pillarId)
+      try { this._timeout(pillarId) } catch (e) {
+        console.error(`[pillar] Timeout handler error for ${pillarId}:`, e.message)
+      }
     }, MAX_RUNTIME_MS)
 
     return {
@@ -343,13 +346,25 @@ export class PillarManager {
 
     if (this.notificationCount >= 10) {
       console.warn('[pillar] Notification rate limit hit — queueing')
-      this.flowSession.notificationQueue.push({ message, metadata })
+      if (this.flowSession.notificationQueue.length < MAX_NOTIFICATION_QUEUE) {
+        this.flowSession.notificationQueue.push({ message, metadata })
+      } else {
+        console.warn('[pillar] Notification queue full — dropping oldest')
+        this.flowSession.notificationQueue.shift()
+        this.flowSession.notificationQueue.push({ message, metadata })
+      }
       return
     }
 
     if (this.flowSession.currentlyStreaming) {
       console.log('[pillar] Flow is busy — queueing notification')
-      this.flowSession.notificationQueue.push({ message, metadata })
+      if (this.flowSession.notificationQueue.length < MAX_NOTIFICATION_QUEUE) {
+        this.flowSession.notificationQueue.push({ message, metadata })
+      } else {
+        console.warn('[pillar] Notification queue full — dropping oldest')
+        this.flowSession.notificationQueue.shift()
+        this.flowSession.notificationQueue.push({ message, metadata })
+      }
       return
     }
 
