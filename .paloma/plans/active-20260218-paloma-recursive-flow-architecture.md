@@ -13,7 +13,7 @@
 - [x] Forge: Phase 1 Complete (prompt updates) — committed as 63cb37e
 - [x] Forge: Phase 2 Complete — `planFile` param on `pillar_spawn`
 - [x] Forge: Phase 3 Complete — `pillar_decompose` tool for structured work unit management
-- [ ] Forge: Phase 4 Pending — `pillar_orchestrate` automation tool (optional)
+- [x] Forge: Phase 4 Complete — `pillar_orchestrate` analysis and dispatch tool
 - [x] Polish: Phase 2 Complete — clean, minimal, backward compatible
 - [x] Ship: Phase 1 shipped, Phase 2 committed as d2f2a58
 
