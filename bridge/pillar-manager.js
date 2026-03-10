@@ -602,6 +602,141 @@ This is informational — Adam is communicating directly with the pillar. Decide
     }
   }
 
+  /**
+   * Analyze a plan's work units and return orchestration recommendations.
+   * Parses all WUs, checks dependencies, determines ready units,
+   * and suggests what to dispatch next (with parallelism analysis).
+   */
+  async orchestrate({ planFile }) {
+    const planPath = join(this.projectRoot, '.paloma', 'plans', planFile)
+    const content = await this._readFileSafe(planPath)
+    if (!content) {
+      return { error: `Plan file not found: ${planFile}` }
+    }
+
+    // Parse work units from the plan
+    const units = this._parseWorkUnits(content)
+    if (units.length === 0) {
+      return { error: 'No work units found in plan. Use pillar_decompose to create them.' }
+    }
+
+    // Build status maps
+    const statusMap = new Map(units.map(u => [u.unitId, u.status]))
+    const completed = units.filter(u => u.status === 'completed')
+    const inProgress = units.filter(u => u.status === 'in_progress')
+    const failed = units.filter(u => u.status === 'failed')
+    const pending = units.filter(u => u.status === 'pending')
+
+    // Determine ready units (all dependencies completed)
+    const ready = []
+    const blocked = []
+    for (const unit of pending) {
+      const deps = unit.dependsOn || []
+      const unmetDeps = deps.filter(d => statusMap.get(d) !== 'completed')
+      if (unmetDeps.length === 0) {
+        ready.push(unit)
+      } else {
+        blocked.push({ ...unit, blockedBy: unmetDeps })
+      }
+    }
+
+    // Analyze file-disjointness for parallelism
+    let parallelRecommendation = null
+    if (ready.length >= 2) {
+      // Check pairs of ready units for file overlap
+      const disjointPairs = []
+      for (let i = 0; i < ready.length; i++) {
+        for (let j = i + 1; j < ready.length; j++) {
+          const filesA = new Set(ready[i].files || [])
+          const filesB = new Set(ready[j].files || [])
+          const overlap = [...filesA].filter(f => filesB.has(f))
+          if (overlap.length === 0) {
+            disjointPairs.push([ready[i].unitId, ready[j].unitId])
+          }
+        }
+      }
+      if (disjointPairs.length > 0) {
+        parallelRecommendation = {
+          canParallelize: true,
+          pairs: disjointPairs.slice(0, 3), // top 3 pairs
+          recommendation: `Can dispatch ${disjointPairs[0].join(' + ')} in parallel (file-disjoint).`
+        }
+      }
+    }
+
+    // Check for currently running pillars that might conflict
+    const runningPillars = []
+    for (const [, session] of this.pillars) {
+      if (session.status === 'running' || session.currentlyStreaming) {
+        runningPillars.push({
+          pillarId: session.pillarId,
+          pillar: session.pillar,
+          status: session.status
+        })
+      }
+    }
+
+    return {
+      planFile,
+      summary: {
+        total: units.length,
+        completed: completed.length,
+        inProgress: inProgress.length,
+        failed: failed.length,
+        pending: pending.length,
+        ready: ready.length,
+        blocked: blocked.length
+      },
+      ready: ready.map(u => ({ unitId: u.unitId, scope: u.scope, files: u.files, feature: u.feature })),
+      blocked: blocked.map(u => ({ unitId: u.unitId, scope: u.scope, blockedBy: u.blockedBy })),
+      inProgress: inProgress.map(u => ({ unitId: u.unitId, scope: u.scope })),
+      failed: failed.map(u => ({ unitId: u.unitId, scope: u.scope })),
+      parallelRecommendation,
+      runningPillars,
+      recommendation: ready.length > 0
+        ? `${ready.length} unit(s) ready to dispatch: ${ready.map(u => u.unitId).join(', ')}`
+        : inProgress.length > 0
+          ? `Waiting: ${inProgress.length} unit(s) in progress`
+          : failed.length > 0
+            ? `Blocked: ${failed.length} unit(s) failed — needs manual intervention`
+            : 'All work units completed!'
+    }
+  }
+
+  /**
+   * Parse work units from plan content.
+   * Expects #### WU-N: Title format with bullet-point metadata.
+   */
+  _parseWorkUnits(content) {
+    const units = []
+    // Match #### WU-N: Title blocks
+    const unitRegex = /#### (WU-\d+):.*?\n([\s\S]*?)(?=\n#### |\n## |$)/g
+    let match
+    while ((match = unitRegex.exec(content)) !== null) {
+      const unitId = match[1]
+      const body = match[2]
+
+      const unit = { unitId }
+      const statusMatch = body.match(/\*\*Status:\*\*\s*(.+)/)
+      unit.status = statusMatch ? statusMatch[1].trim() : 'pending'
+      const featureMatch = body.match(/\*\*Feature:\*\*\s*(.+)/)
+      unit.feature = featureMatch ? featureMatch[1].trim() : null
+      const depsMatch = body.match(/\*\*Depends on:\*\*\s*(.+)/)
+      unit.dependsOn = depsMatch ? depsMatch[1].split(',').map(d => d.trim()) : []
+      const filesMatch = body.match(/\*\*Files:\*\*\s*(.+)/)
+      unit.files = filesMatch ? filesMatch[1].split(',').map(f => f.trim()) : []
+      const scopeMatch = body.match(/\*\*Scope:\*\*\s*(.+)/)
+      unit.scope = scopeMatch ? scopeMatch[1].trim() : ''
+      const acceptMatch = body.match(/\*\*Acceptance:\*\*\s*(.+)/)
+      unit.acceptance = acceptMatch ? acceptMatch[1].trim() : null
+      const resultMatch = body.match(/\*\*Result:\*\*\s*(.+)/)
+      unit.result = resultMatch ? resultMatch[1].trim() : null
+
+      units.push(unit)
+    }
+    return units
+  }
+
   // --- Internal methods ---
 
   _startCliTurn(session, prompt, systemPrompt, isResume = false) {

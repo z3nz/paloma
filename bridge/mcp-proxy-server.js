@@ -189,6 +189,18 @@ export class McpProxyServer {
       })
 
       tools.push({
+        name: 'pillar_orchestrate',
+        description: 'Analyze a plan\'s work units and get orchestration recommendations. Parses all WUs, checks dependencies, determines which are ready, and suggests dispatch order with parallelism analysis.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            planFile: { type: 'string', description: 'Plan filename containing work units (e.g., "active-20260301-verifesto-saas.md")' }
+          },
+          required: ['planFile']
+        }
+      })
+
+      tools.push({
         name: 'pillar_decompose',
         description: 'Add or update a work unit in a plan document. Writes a formatted work unit spec to the ## Work Units section. Use this for recursive orchestration — decomposing large plans into focused work units.',
         inputSchema: {
@@ -329,6 +341,9 @@ export class McpProxyServer {
           break
         case 'pillar_decompose':
           result = await this.pillarManager.decompose(args)
+          break
+        case 'pillar_orchestrate':
+          result = await this.pillarManager.orchestrate(args)
           break
         default:
           return { content: [{ type: 'text', text: `Unknown pillar tool: ${name}` }], isError: true }

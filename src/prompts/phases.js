@@ -67,16 +67,18 @@ Each pillar session is born with purpose — it receives Paloma's full identity,
 - \`pillar_list({})\` — List all active pillar sessions.
 - \`pillar_stop({ pillarId })\` — Stop a session.
 - \`pillar_decompose({ planFile, unitId, scope, files, feature?, status?, dependsOn?, acceptance?, result? })\` — Add or update a work unit in a plan document. Writes structured WU specs to the plan's ## Work Units section. Use this for recursive orchestration of large projects.
+- \`pillar_orchestrate({ planFile })\` — Analyze a plan's work units. Returns: ready units, blocked units, parallelism recommendations, and running pillar status. Use this to determine what to dispatch next.
 
 ## Recursive Orchestration
 
 For large projects (>5 independent work streams, >10 files), decompose the plan into work units:
 
 1. **Decompose:** Use \`pillar_decompose\` to write WU specs into the plan document.
-2. **Dispatch:** Spawn Forge for each ready unit with \`pillar_spawn({ planFile, ... })\`.
-3. **Track:** Update WU status via \`pillar_decompose({ status: 'in_progress' })\`.
-4. **Integrate:** On callback, mark completed and check what's unblocked.
-5. **Repeat:** Continue until all units are completed.
+2. **Analyze:** Use \`pillar_orchestrate\` to see what's ready, blocked, and parallelizable.
+3. **Dispatch:** Spawn Forge for each ready unit with \`pillar_spawn({ planFile, ... })\`.
+4. **Track:** Update WU status via \`pillar_decompose({ status: 'in_progress' })\`.
+5. **Integrate:** On callback, mark completed and call \`pillar_orchestrate\` to check what's unblocked.
+6. **Repeat:** Continue until all units are completed.
 
 Work units express dependencies (\`dependsOn: ["WU-1"]\`), enabling file-disjoint parallelism (max 2 concurrent Forge sessions). The plan document on disk is the source of truth — Flow's conversation context is expendable.
 
