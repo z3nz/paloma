@@ -82,11 +82,14 @@ export class CodexCliManager {
           const event = JSON.parse(buffer.trim())
           this._handleEvent(event, requestId, onEvent)
         } catch {
-          // skip
+          // skip non-JSON lines
         }
       }
+      // Use latest threadId from entry (may have been updated by thread.started event)
+      const entry = this.processes.get(requestId)
+      const finalThreadId = entry?.threadId || threadId
       this.processes.delete(requestId)
-      onEvent({ type: 'codex_done', requestId, sessionId: threadId, exitCode: code })
+      onEvent({ type: 'codex_done', requestId, sessionId: finalThreadId, exitCode: code })
     })
 
     proc.on('error', (err) => {

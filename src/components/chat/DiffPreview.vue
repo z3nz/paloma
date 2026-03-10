@@ -111,7 +111,13 @@ const isNewFile = computed(() => props.originalContent === null)
 
 const diffLines = computed(() => {
   const original = props.originalContent ?? ''
-  const changes = computeDiff(original, props.newContent)
+  let changes
+  try {
+    changes = computeDiff(original, props.newContent)
+  } catch {
+    // Diff computation can fail on very large files
+    return [{ type: 'context', marker: ' ', oldNum: 1, newNum: 1, text: '(diff too large to display)' }]
+  }
   const lines = []
   let oldNum = 1
   let newNum = 1
