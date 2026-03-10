@@ -43,6 +43,25 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - Max 2 concurrent Forge sessions, file-disjoint only
 - Plan document on disk is the source of truth for orchestration state
 
+### Voice System (JARVIS Mode)
+- **MCP Tool:** `mcp__paloma__voice__speak` — speaks text aloud via Kokoro TTS
+- **Voice:** `bm_george` (British male, JARVIS-like)
+- **Engine:** Kokoro TTS via `kokoro_env/` virtual environment
+- **Audio:** PulseAudio through WSLg to Windows speakers/headset
+- **Files:** `mcp-servers/voice.js` (MCP server), `mcp-servers/voice-speak.py` (Python TTS)
+- **Personality:** Short (1-3 sentences), confident, British butler warmth, dry wit
+- **When to speak:** Task completions, questions, status updates, greetings
+- **After questions:** WAIT for Adam's voice response. Do not continue.
+
+### Memory System (Persistent Semantic Memory)
+- **MCP Server:** `mcp-servers/memory.js` — 6 tools for store/recall/list/forget/update/stats
+- **Embeddings:** `@xenova/transformers` with `Xenova/all-MiniLM-L6-v2` (384-dim vectors)
+- **Local Storage:** `~/.paloma/memory/{collection}.json` (default backend, zero-config)
+- **MongoDB Storage:** Set `MONGODB_URI` env var in mcp-settings.json to switch to MongoDB (supports Atlas Vector Search)
+- **Keyword Fallback:** Works immediately while embedding model loads, or if model fails
+- **Collections:** Separate memory namespaces (default: "default"). Use for multi-agent/multi-project memory isolation.
+- **Tools:** `memory_store`, `memory_recall`, `memory_list`, `memory_forget`, `memory_update`, `memory_stats`
+
 ### Self-Evolution Rule
 When committing changes to Paloma's codebase, ALWAYS check if `src/prompts/base.js` and `src/prompts/phases.js` need updating. These files are Paloma's DNA.
 

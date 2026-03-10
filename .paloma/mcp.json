@@ -6,7 +6,9 @@
     "filesystem",
     "web",
     "fs-extra",
-    "codex"
+    "codex",
+    "voice",
+    "memory"
   ],
   "autoExecute": [
     "brave-search",
@@ -48,6 +50,10 @@
       "tools": [
         "bash_exec"
       ]
-    }
+    },
+    "codex",
+    "fs-extra",
+    "voice",
+    "memory"
   ]
 }
