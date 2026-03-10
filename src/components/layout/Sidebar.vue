@@ -47,7 +47,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onBeforeUnmount } from 'vue'
 import { useMCP } from '../../composables/useMCP.js'
 import { useSessions } from '../../composables/useSessions.js'
 import SidebarSessionTree from './SidebarSessionTree.vue'
@@ -65,6 +65,8 @@ const { exportChats, connected, pillarStatuses } = useMCP()
 const { sessionTree } = useSessions()
 const exporting = ref(false)
 const exportLabel = ref('Export Chats')
+let _exportTimer = null
+onBeforeUnmount(() => { if (_exportTimer) clearTimeout(_exportTimer) })
 
 async function handleExport() {
   if (!props.projectPath || !connected.value) return
@@ -77,9 +79,11 @@ async function handleExport() {
     exportLabel.value = 'Export failed'
     console.error('[Export]', e)
   } finally {
-    setTimeout(() => {
+    if (_exportTimer) clearTimeout(_exportTimer)
+    _exportTimer = setTimeout(() => {
       exporting.value = false
       exportLabel.value = 'Export Chats'
+      _exportTimer = null
     }, 3000)
   }
 }

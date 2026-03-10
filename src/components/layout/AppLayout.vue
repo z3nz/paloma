@@ -45,7 +45,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onBeforeUnmount } from 'vue'
 import TopBar from './TopBar.vue'
 import Sidebar from './Sidebar.vue'
 
@@ -64,6 +64,9 @@ const MAX_WIDTH = 500
 
 const sidebarWidth = ref(Number(localStorage.getItem('paloma:sidebarWidth')) || 280)
 
+// Track active drag listeners for cleanup on unmount
+let _dragCleanup = null
+
 function startResize(e) {
   e.preventDefault()
   const startX = e.clientX
@@ -80,11 +83,15 @@ function startResize(e) {
     document.body.style.cursor = ''
     document.body.style.userSelect = ''
     localStorage.setItem('paloma:sidebarWidth', String(sidebarWidth.value))
+    _dragCleanup = null
   }
 
   document.body.style.cursor = 'col-resize'
   document.body.style.userSelect = 'none'
   document.addEventListener('mousemove', onMouseMove)
   document.addEventListener('mouseup', onMouseUp)
+  _dragCleanup = onMouseUp
 }
+
+onBeforeUnmount(() => { if (_dragCleanup) _dragCleanup() })
 </script>

@@ -200,6 +200,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   container.value?.removeEventListener('scroll', checkScrollPosition)
+  if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = null }
 })
 
 function scrollToBottom(behavior = 'smooth') {
@@ -244,11 +245,11 @@ watch(
       streamingHtmlThrottled.value = '<span class="streaming-cursor"></span>'
       return
     }
-    if (throttleTimer) return
-    throttleTimer = setTimeout(() => {
-      throttleTimer = null
+    // Render immediately on first chunk, then throttle subsequent updates
+    if (!throttleTimer) {
       renderAndScroll()
-    }, 150)
+      throttleTimer = setTimeout(() => { throttleTimer = null }, 80)
+    }
   }
 )
 

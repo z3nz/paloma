@@ -165,9 +165,9 @@ const { isStreaming, hasToolActivity } = useSessionState()
 
 // Collapse state — persisted to localStorage
 const COLLAPSED_KEY = 'paloma:sidebarCollapsed'
-const collapsed = reactive(new Set(
-  JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]')
-))
+let _savedCollapsed = []
+try { _savedCollapsed = JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]') } catch { /* corrupted */ }
+const collapsed = reactive(new Set(_savedCollapsed))
 
 function toggleCollapse(sessionId) {
   if (collapsed.has(sessionId)) {
