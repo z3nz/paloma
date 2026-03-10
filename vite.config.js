@@ -35,6 +35,17 @@ function noFullReload() {
 
 export default defineConfig({
   plugins: [vue(), tailwindcss(), noFullReload()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'highlight': ['highlight.js'],
+          'markdown': ['marked'],
+          'vendor': ['vue', 'dexie']
+        }
+      }
+    }
+  },
   server: {
     port: 5173,
     strictPort: true,
