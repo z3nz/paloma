@@ -23,25 +23,33 @@ export class McpProxyServer {
 
   async start() {
     this.httpServer = createServer((req, res) => {
-      // CORS for local CLI
-      res.setHeader('Access-Control-Allow-Origin', '*')
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+      try {
+        // CORS for local CLI
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
-      if (req.method === 'OPTIONS') {
-        res.writeHead(204)
-        res.end()
-        return
-      }
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204)
+          res.end()
+          return
+        }
 
-      const pathname = new URL(req.url, `http://localhost:${this.port}`).pathname
-      if (req.method === 'GET' && pathname === '/sse') {
-        this._handleSSE(req, res)
-      } else if (req.method === 'POST' && req.url?.startsWith('/messages')) {
-        this._handlePost(req, res)
-      } else {
-        res.writeHead(404)
-        res.end('Not found')
+        const pathname = new URL(req.url, `http://localhost:${this.port}`).pathname
+        if (req.method === 'GET' && pathname === '/sse') {
+          this._handleSSE(req, res)
+        } else if (req.method === 'POST' && req.url?.startsWith('/messages')) {
+          this._handlePost(req, res)
+        } else {
+          res.writeHead(404)
+          res.end('Not found')
+        }
+      } catch (e) {
+        console.error('[mcp-proxy] HTTP handler error:', e.message)
+        if (!res.headersSent) {
+          res.writeHead(500)
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
       }
     })
 
