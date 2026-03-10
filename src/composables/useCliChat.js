@@ -102,6 +102,10 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
         markActivityDone(activityId, resultStr)
       }
 
+      // Clean up Maps to prevent unbounded growth in long sessions
+      toolUseToActivity.delete(chunk.toolUseId)
+      toolUseMeta.delete(chunk.toolUseId)
+
       // Persist as role:'tool' message (same shape as OpenRouter path)
       if (meta) {
         const toolMsg = sanitizeForDB({

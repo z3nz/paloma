@@ -81,14 +81,14 @@ async function recoverStreamingDrafts(sessionId) {
     if (!draft?.streamingDraft) return
 
     const { content, toolActivity, model, timestamp } = draft.streamingDraft
-    if (content) {
+    if (content && typeof content === 'string') {
       const assistantMsg = sanitizeForDB({
         sessionId,
         role: 'assistant',
         content,
         model: model || null,
         interrupted: true,
-        toolActivity: toolActivity || [],
+        toolActivity: Array.isArray(toolActivity) ? toolActivity : [],
         files: [],
         timestamp: timestamp || Date.now()
       })

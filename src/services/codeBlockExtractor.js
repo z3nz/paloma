@@ -10,9 +10,12 @@ export function extractAnnotatedCodeBlocks(markdown) {
     const colonIdx = token.lang.indexOf(':')
     if (colonIdx === -1) continue
 
-    const lang = token.lang.slice(0, colonIdx)
+    const lang = token.lang.slice(0, colonIdx).trim()
     const path = token.lang.slice(colonIdx + 1).trim()
     if (!path) continue
+
+    // Reject paths that could escape the project root
+    if (path.includes('..') || path.startsWith('/')) continue
 
     blocks.push({ lang, path, code: token.text })
   }
