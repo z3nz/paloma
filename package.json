@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "bash scripts/setup-mcp.sh && concurrently -k -n vite,bridge -c cyan,magenta \"vite\" \"node bridge/run.js\"",
+    "first-run": "bash scripts/first-run.sh",
     "setup": "bash scripts/setup-mcp.sh",
     "postinstall": "bash scripts/setup-mcp.sh",
     "dev": "vite",

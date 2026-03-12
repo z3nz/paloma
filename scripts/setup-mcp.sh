@@ -37,18 +37,41 @@ for cmd in python3.12 python3.11 python3.10 python3; do
   fi
 done
 
+VOICE_PACKAGES="kokoro sounddevice markdown spacy"
+
 if [ -z "$PYTHON_CMD" ]; then
   echo "    [SKIP] No Python 3 found — voice server will not work"
   echo "    Install Python 3.10+ and re-run this script"
 else
-  if [ -d "$VENV_DIR" ] && [ -f "$VENV_DIR/bin/python" ]; then
-    echo "==> Python venv already exists at $VENV_DIR"
-  else
+  NEED_INSTALL=false
+
+  if [ ! -d "$VENV_DIR" ] || [ ! -f "$VENV_DIR/bin/python" ]; then
     echo "==> Creating Python venv with $PYTHON_CMD..."
+    rm -rf "$VENV_DIR"
     "$PYTHON_CMD" -m venv "$VENV_DIR"
+    NEED_INSTALL=true
+  elif [ ! -f "$VENV_DIR/bin/pip" ]; then
+    echo "==> Venv exists but pip is missing — recreating..."
+    rm -rf "$VENV_DIR"
+    "$PYTHON_CMD" -m venv "$VENV_DIR"
+    NEED_INSTALL=true
+  else
+    # Venv exists with pip — check if all packages are installed
+    for pkg in $VOICE_PACKAGES; do
+      if ! "$VENV_DIR/bin/pip" show "$pkg" &>/dev/null; then
+        echo "==> Missing package: $pkg — will install"
+        NEED_INSTALL=true
+        break
+      fi
+    done
+  fi
+
+  if [ "$NEED_INSTALL" = true ]; then
     echo "==> Installing voice dependencies..."
-    "$VENV_DIR/bin/pip" install --quiet kokoro sounddevice markdown spacy
+    "$VENV_DIR/bin/pip" install --quiet $VOICE_PACKAGES
     echo "    Done."
+  else
+    echo "==> Python venv OK at $VENV_DIR"
   fi
 fi
 
