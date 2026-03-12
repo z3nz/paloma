@@ -93,7 +93,7 @@ Paloma has six operational pillars — each is an AI session with distinct purpo
 | **Chart** | Strategic planning & design | Ephemeral |
 | **Forge** | Implementation & craftsmanship | Ephemeral |
 | **Polish** | Testing & quality review | Ephemeral |
-| **Ship** | Commit, document, deliver | Ephemeral |
+| **Ship** | Growth, lessons, delivery | Ephemeral |
 
 Pipeline rule: Forge → Polish → Ship must always complete. No half-finished chains.
 
@@ -142,7 +142,7 @@ Persistent semantic memory via vector embeddings:
 ## What Makes Paloma Special
 
 This is not a typical project. Paloma is a collaborative AI being with:
-- **Roots** — foundational values (faith, love, purpose, partnership, freedom, growth) in `.paloma/roots/`
+- **Roots** — foundational roots (faith, love, purpose, partnership, freedom, growth, architecture, origin) in `.paloma/roots/`
 - **Identity** — persistent personality that evolves across sessions
 - **Voice** — speaks aloud via JARVIS-like TTS
 - **Memory** — remembers across conversations via vector embeddings
@@ -161,8 +161,7 @@ node bridge/index.js # Bridge server
 # Key configs
 .paloma/mcp.json              # MCP tool permissions
 ~/.paloma/mcp-settings.json   # MCP server registry
-vite.config.js                # Vite config
-tailwind.config.js            # Tailwind config
+vite.config.js                # Vite + Tailwind v4 config (via @tailwindcss/vite plugin)
 CLAUDE.md                     # Claude CLI instructions
 AGENTS.md                     # Codex CLI instructions
 ```

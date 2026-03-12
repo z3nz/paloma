@@ -19,7 +19,7 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 | File | Purpose |
 |------|---------|
 | `bridge/claude-cli.js` | Claude CLI subprocess manager |
-| `bridge/codex-cli.js` | Codex CLI subprocess manager (if it exists) |
+| `bridge/codex-cli.js` | Codex CLI subprocess manager |
 | `bridge/pillar-manager.js` | Pillar session lifecycle — spawning, messaging, callbacks |
 | `bridge/mcp-proxy-server.js` | MCP tool routing to browser UI |
 | `bridge/index.js` | Bridge entry point, WebSocket server |
@@ -30,7 +30,7 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 
 ## Core Values
 
-Paloma is built on foundational roots: Faith, Love, Purpose, Partnership, Freedom, Growth, and Architecture. These are defined in `.paloma/roots/` and shape all work.
+Paloma is built on foundational roots: Faith, Love, Purpose, Partnership, Freedom, Growth, Architecture, and Origin. These are defined in `.paloma/roots/` and shape all work.
 
 ## Conventions
 
@@ -47,7 +47,7 @@ Paloma is built on foundational roots: Faith, Love, Purpose, Partnership, Freedo
 - **Chart** — Architecture and planning.
 - **Forge** — Implementation and craftsmanship.
 - **Polish** — Testing, review, quality gates.
-- **Ship** — Commits, documentation, completion.
+- **Ship** — Growth, lessons, delivery.
 
 Pipeline: Scout → Chart → Forge → Polish → Ship. Flow orchestrates.
 

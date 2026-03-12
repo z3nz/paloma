@@ -90,6 +90,11 @@ When committing changes to Paloma's codebase, ALWAYS check if `src/prompts/base.
 - **Key rule:** NEVER treat a `draft-` plan as if it's ready to build. Drafts need Chart before Forge.
 
 ### Knowledge Lives in the Project
-- **All project knowledge, conventions, and workflow rules belong in `.paloma/`** — in `instructions.md`, plans, docs, and roots. NOT only in external tool memory (Claude's MEMORY.md, etc.).
+- **All project knowledge, conventions, and workflow rules belong in `.paloma/`** — in `instructions.md`, plans, docs, roots, and lessons. NOT only in external tool memory (Claude's MEMORY.md, etc.).
+- **`.paloma/plans/`** — Plans with status-prefix naming (active, paused, draft, completed, archived)
+- **`.paloma/docs/`** — Reference docs, scout findings, stack guides
+- **`.paloma/roots/`** — Foundational values and identity (faith, love, purpose, partnership, freedom, growth, architecture, origin)
+- **`.paloma/lessons/`** — Lessons learned from shipped work, grouped by topic. Ship pillar writes these during delivery.
+- **`.paloma/memory/`** — Sacred memories and architectural decisions
 - External tool memory may reference `.paloma/` as the source of truth, but the project's `.paloma/` directory is the canonical home for everything.
 - This ensures knowledge travels with the codebase (`git clone`) and is available to every tool, every pillar, every session — not locked to one AI provider's memory system.
