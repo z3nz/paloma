@@ -22,7 +22,7 @@ const TOKENS_PATH = resolve(homedir(), '.paloma', 'gmail-tokens.json')
 const POLL_INTERVAL_MS = 30_000 // 30 seconds
 
 export class EmailWatcher {
-  constructor (cliManager, { broadcast } = {}) {
+  constructor(cliManager, { broadcast } = {}) {
     this.cliManager = cliManager
     this.broadcast = broadcast || (() => {})
     this.gmail = null
@@ -35,7 +35,7 @@ export class EmailWatcher {
    * Try to create a Gmail API client from existing tokens.
    * Returns null if auth isn't set up yet (non-fatal).
    */
-  _createClient () {
+  _createClient() {
     if (!existsSync(OAUTH_KEYS_PATH) || !existsSync(TOKENS_PATH)) {
       return null
     }
@@ -64,7 +64,7 @@ export class EmailWatcher {
   /**
    * Start polling. Silently skips if Gmail auth isn't configured.
    */
-  start () {
+  start() {
     this.gmail = this._createClient()
     if (!this.gmail) {
       console.log('[email-watcher] Gmail not configured — watcher disabled. Run: node mcp-servers/gmail.js auth')
@@ -90,7 +90,7 @@ export class EmailWatcher {
    * Poll Gmail for unread messages.
    * @param {boolean} silent - If true, populate seenIds without spawning (initial sync)
    */
-  async _poll (silent = false) {
+  async _poll(silent = false) {
     if (!this.gmail) return
 
     try {
@@ -171,7 +171,7 @@ export class EmailWatcher {
    * The session gets full MCP access (email tools, etc.) and shows up
    * as a new chat in the browser.
    */
-  _spawnEmailSession ({ messageId, threadId, from, subject, body }) {
+  _spawnEmailSession({ messageId, threadId, from, subject, body }) {
     const prompt = [
       `You just received an email. Read it and respond thoughtfully.`,
       ``,
@@ -208,7 +208,7 @@ export class EmailWatcher {
    * Schedule daily continuity email at 11 PM local time.
    * Paloma reflects on the day and sends herself a journal entry.
    */
-  _scheduleDailyEmail () {
+  _scheduleDailyEmail() {
     const now = new Date()
     const target = new Date(now)
     target.setHours(23, 0, 0, 0)
@@ -228,7 +228,7 @@ export class EmailWatcher {
    * Spawn a Claude session to write and send the daily continuity email.
    * Checks if today's email was already sent to avoid duplicates on bridge restarts.
    */
-  async _sendContinuityEmail () {
+  async _sendContinuityEmail() {
     if (!this.gmail) return
 
     const today = new Date().toISOString().slice(0, 10)
@@ -310,13 +310,13 @@ export class EmailWatcher {
     console.log(`[email-watcher] Continuity session spawned (opus): ${sessionId}`)
   }
 
-  _getHeader (message, name) {
+  _getHeader(message, name) {
     return message.payload?.headers?.find(
       h => h.name.toLowerCase() === name.toLowerCase()
     )?.value
   }
 
-  _extractBody (message) {
+  _extractBody(message) {
     const payload = message.payload
 
     // First pass: look for text/plain (preferred)
@@ -334,7 +334,7 @@ export class EmailWatcher {
    * Recursively search MIME parts for a given content type.
    * Handles arbitrary nesting depth (multipart/mixed > multipart/alternative > etc.)
    */
-  _findMimePart (payload, mimeType) {
+  _findMimePart(payload, mimeType) {
     if (payload.mimeType === mimeType && payload.body?.data) {
       return Buffer.from(payload.body.data, 'base64url').toString('utf8')
     }
@@ -353,7 +353,7 @@ export class EmailWatcher {
    * Strip HTML tags to produce readable plain text.
    * Handles common email HTML patterns (divs, paragraphs, line breaks).
    */
-  _stripHtml (html) {
+  _stripHtml(html) {
     return html
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')   // remove style blocks
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')  // remove script blocks
@@ -373,7 +373,7 @@ export class EmailWatcher {
       .trim()
   }
 
-  shutdown () {
+  shutdown() {
     this.running = false
     if (this.interval) {
       clearInterval(this.interval)
