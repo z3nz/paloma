@@ -38,6 +38,20 @@
 
 ---
 
+### Lesson: OAuth2 Desktop App pattern for MCP servers needing external API auth
+- **Context:** Gmail MCP server needed OAuth2 auth against the Gmail API without a public HTTPS redirect URI. Desktop App flow supports `localhost` as the redirect target.
+- **Insight:** The pattern: (1) Store credentials in `~/.paloma/{service}-oauth-keys.json`, tokens in `~/.paloma/{service}-tokens.json` — outside the repo, never committed. (2) CLI subcommand (`node server.js auth`) starts an ephemeral HTTP server on a fixed port, opens the browser best-effort via `exec()` with platform detection, saves the tokens on callback, exits. (3) Use `prompt: 'consent'` to always get a `refresh_token` — without it, Google only provides one on first authorization, so token file loss requires manual revocation. (4) Register a `oauth2Client.on('tokens', ...)` handler to persist refreshed tokens automatically. This pattern is reusable for any Google API (Calendar, Drive, Sheets) with zero structural changes.
+- **Action:** Pattern codified in `mcp-servers/gmail.js`. Reuse for future Google API MCP servers.
+- **Applied:** YES — committed as 0b8f9a3
+
+### Lesson: Poll+snapshot pattern for detecting new items in a mutable collection
+- **Context:** `email_wait` needs to block until a new message appears in a Gmail thread. Push/webhooks require a public HTTPS server — impractical in WSL2 dev. Polling was the right choice, but the naive approach (comparing message count) is fragile if messages are deleted.
+- **Insight:** The snapshot pattern: (1) On first poll, capture all known item IDs into a Set (`knownIds`). (2) On each subsequent poll, fetch current IDs and find any NOT in `knownIds` via `filter`. (3) New items found → fetch full content → return. This is robust against deletions, reordering, or pre-existing items in the collection. The Set lookup is O(1) per item. This pattern generalizes to any "wait for new item" problem (Slack messages, GitHub PR comments, etc.).
+- **Action:** Applied in `handleWait()` in `mcp-servers/gmail.js`. Use this pattern whenever building a polling wait tool.
+- **Applied:** YES — committed as 0b8f9a3
+
+---
+
 ### Lesson: Establish a single source of truth for rules
 - **Context:** Before this work, the most correct rules lived in CLAUDE.md — a file that bridge-spawned pillars never see. base.js, phases.js, instructions.md, and CLAUDE.md all had overlapping rules that drifted. When rules changed in one place, they weren't updated everywhere.
 - **Insight:** Having multiple files with the same rules creates a maintenance nightmare and guarantees drift. When the drift includes contradictions (file A says do X, file B says don't do X), the system behavior becomes unpredictable based on which file the session happened to prioritize.
