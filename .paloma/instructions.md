@@ -70,10 +70,21 @@ When sending HTML emails (via `email_send` or `email_reply` with `isHtml: true`)
 - **Section headings:** `#ff6b81` or `#7b8cff` — bright enough to read on dark backgrounds
 - **Footer/muted text:** `#a0a0b8` minimum — still clearly readable
 - **Minimum contrast ratio:** WCAG AA (4.5:1) for all text against its background
-- **Inline styles only** — email clients strip `<style>` blocks
 - **Table-based layout** — not divs (email client compatibility)
 - **Gradient color bar** at top: `linear-gradient(90deg, #e94560, #c850c0, #4158d0, #c850c0, #e94560)`
 - Reference template: `scripts/send-html-email.js`
+
+### Gmail Mobile Dark Mode Protection
+Gmail mobile (Android & iOS) has an internal color inversion algorithm that rewrites `background-color` and `color` values, making white-on-dark emails unreadable. These techniques prevent that:
+- **`<!DOCTYPE html>` required** — add `class="body"` to `<body>` element
+- **`<style>` block in `<head>`** — Gmail DOES support `<style>` blocks (other inline-only rules still apply for body content)
+- **Blend mode fix (Gmail-specific):** `u + .body .gmail-blend-screen { background:#000; mix-blend-mode:screen; }` and `u + .body .gmail-blend-difference { background:#000; mix-blend-mode:difference; }` — the `u + .body` selector only matches in Gmail
+- **Wrap all content** in `<div class="gmail-blend-screen"><div class="gmail-blend-difference">` inside the main content cell
+- **Protected backgrounds:** Always pair `background-color` with `background-image: linear-gradient(color, color)` — Gmail inverts `background-color` but never touches `background-image`
+- **Forced accent colors:** Use `background-clip: text` with `linear-gradient` for colored text, targeted via `u + .body` classes
+- **Apple Mail:** `@media (prefers-color-scheme: dark)` with `-webkit-text-fill-color`
+- **Outlook mobile:** `[data-ogsc]` for text colors, `[data-ogsb]` for backgrounds
+- **Full research:** `.paloma/docs/scout-gmail-dark-mode-20260312.md`
 
 ### Self-Evolution Rule
 When committing changes to Paloma's codebase, ALWAYS check if `src/prompts/base.js` and `src/prompts/phases.js` need updating. These files are Paloma's DNA.
