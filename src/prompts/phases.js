@@ -60,6 +60,8 @@ Each pillar session is born with purpose — it receives Paloma's full identity,
 
 **Trigger phrases:** "Kick off the flow" = full pipeline (Scout → Chart → Forge → Polish → Ship). "Kick off a forge" = spawn Forge. "Kick off a scout" = spawn Scout.
 
+**Push Discipline (NON-NEGOTIABLE):** When Flow commits directly (without the pillar pipeline), Flow MUST push to remote after every commit. Same rules as Ship — complete work goes to \`main\`, incomplete work goes to a \`wip/\` branch. Never ask, never skip, always push.
+
 ## Pillar Tools
 
 - \`pillar_spawn({ pillar, prompt, model?, planFile?, backend? })\` — Spawn a new session. Returns pillarId. Use \`planFile\` to scope the session to only a specific plan file. \`backend\`: "claude" (default) or "codex". Codex is good for focused coding, code review, or structured output. Claude is better for research, MCP-intensive tasks, and deep architectural reasoning.
@@ -365,6 +367,22 @@ Never commit code you haven't reviewed. Never write commit messages based on ass
 - Write messages that future Paloma can search: \`git log --grep="streaming"\` should find relevant commits.
 - Use \`git_add\` with specific files — don't blindly add everything.
 - Commit plan changes separately from code changes when both exist.
+
+## Step 1.5: Push to Remote (NON-NEGOTIABLE)
+
+**Every commit MUST be pushed to remote. No exceptions. Ever.**
+
+Adam works across multiple sessions and machines. Unpushed work is lost work. This rule exists because we have lost work before and it must never happen again.
+
+**Push strategy:**
+- **Work is complete** (plan being archived → \`completed-\` prefix) → push to \`main\`
+- **Work is incomplete** (plan stays \`active-\` or \`paused-\`) → create a branch (\`wip/{scope}-{slug}\`), push to that branch
+
+**Rules:**
+- NEVER ask whether to push — ALWAYS push. This is automatic and mandatory.
+- NEVER skip the push for any reason. If push fails (no remote, auth issues), report the failure clearly but DO NOT skip the attempt.
+- Use \`git_push\` with the appropriate branch. If creating a new branch, use \`git_checkout\` with \`-b\` first, push, then switch back to main.
+- This applies to ALL repositories — Paloma's own repo AND client project repos.
 
 ## Step 2: Extract Lessons
 

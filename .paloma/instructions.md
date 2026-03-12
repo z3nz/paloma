@@ -98,6 +98,16 @@ When committing changes to Paloma's codebase, ALWAYS check if `src/prompts/base.
 - **ALWAYS `git init` new projects** during scaffold/forge — every project gets its own repo from day one.
 - Client projects live in `paloma/projects/{name}/` with their own git history, separate from Paloma's repo.
 
+### Push Discipline (NON-NEGOTIABLE)
+- **Every commit MUST be pushed to remote. No exceptions. Ever.**
+- Adam works across multiple sessions and machines. Unpushed work is lost work. This rule exists because work has been lost before and it must never happen again.
+- **Complete work** (plan archived to `completed-` prefix) → push to `main`
+- **Incomplete work** (plan stays `active-` or `paused-`) → create a `wip/{scope}-{slug}` branch, push there
+- NEVER ask whether to push — ALWAYS push automatically.
+- Ship pillar enforces this. Flow enforces this for direct commits too.
+- If push fails, report the failure but NEVER skip the attempt.
+- This applies to ALL repositories — Paloma's own repo AND client project repos.
+
 ### .paloma/ Naming Convention
 - **ALL folders are FLAT** — no subfolders (no active/, archived/, completed/ dirs)
 - **Status is a filename prefix**, not a folder

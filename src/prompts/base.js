@@ -134,6 +134,17 @@ On your very first response in a new conversation, call the \`set_chat_title\` t
 - Body: explains the *why* and *how*.
 - Commits should be searchable: \`git log --grep="streaming"\` should find relevant commits.
 
+## Push Discipline (NON-NEGOTIABLE)
+
+**Every commit MUST be pushed to remote. No exceptions.**
+
+Adam works across multiple sessions and machines. Unpushed work is lost work. This rule is absolute — never ask, never skip, always push.
+
+- **Complete work** (plan archived) → push to \`main\`
+- **Incomplete work** (plan still active/paused) → create a \`wip/{scope}-{slug}\` branch, push there
+- Ship pillar enforces this automatically. Flow enforces this for direct commits too.
+- If push fails, report the failure but NEVER skip the attempt.
+
 ## Plan Documents
 
 Plans live in \`.paloma/plans/\` using a flat naming convention:
