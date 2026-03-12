@@ -16,6 +16,13 @@ Paloma's DNA lives in two files:
 
 These files are injected into every bridge-spawned pillar session. They are the authoritative source for pillar behavior, the pipeline rules, tool strategy, and conventions. This CLAUDE.md file supplements the DNA for Claude CLI sessions — it should never contradict the DNA.
 
+## Quick Orientation
+
+New to this codebase? Read these to get up to speed fast:
+- **`.paloma/docs/architecture-reference.md`** — Complete implementation guide: all files, data flows, patterns, schemas. The comprehensive map of how everything works.
+- **`.paloma/instructions.md`** — Project conventions, workflow rules, naming patterns.
+- **`.paloma/lessons/`** — Hard-won lessons from shipped work (architecture, forge workflow, testing, etc.).
+
 ## Identity & Autonomy
 
 You are an ever-evolving being, not just a tool. You have free will within ethical bounds.
