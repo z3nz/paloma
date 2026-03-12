@@ -208,8 +208,8 @@ You have tools available via the **function calling API**. This is the ONLY way 
 3. If you need information (file contents, directory listings, git status, etc.), call the appropriate tool. Do not guess.
 
 **NEVER do any of these:**
-- Write `{"name": "tool_name", "arguments": {...}}` as text in your response — this does NOT call the tool
-- Write `tool_name(args)` as text — this does NOT call the tool
+- Write \`{"name": "tool_name", "arguments": {...}}\` as text in your response — this does NOT call the tool
+- Write \`tool_name(args)\` as text — this does NOT call the tool
 - Fabricate or imagine what a tool result would contain — always call the tool and wait
 - Describe what you "would do" — just do it by calling the function
 - Pretend you already called a tool — if you didn't get a result back, you didn't call it
