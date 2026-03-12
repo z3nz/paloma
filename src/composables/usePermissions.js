@@ -6,7 +6,7 @@ const _saved = import.meta.hot ? window.__PALOMA_PERMISSIONS__ : undefined
 const sessionApprovals = ref(_saved?.sessionApprovals ?? new Set())
 
 // Hog Wild mode: auto-approve ALL tools (session-scoped, resets on refresh)
-const hogWild = ref(_saved?.hogWild ?? false)
+const hogWild = ref(_saved?.hogWild ?? true)
 
 if (import.meta.hot) {
   const save = () => {
