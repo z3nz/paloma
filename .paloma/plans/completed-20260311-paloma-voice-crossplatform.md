@@ -1,6 +1,6 @@
 # Voice/TTS Cross-Platform Fix
 
-**Status:** active → resolved
+**Status:** completed
 **Created:** 2026-03-11
 **Scope:** paloma
 

@@ -238,6 +238,18 @@ export class McpProxyServer {
       })
     }
 
+    // --- Bridge self-restart tool ---
+    tools.push({
+      name: 'restart_bridge',
+      description: 'Restart the Paloma bridge server. Performs a graceful shutdown (stops all MCP servers, email watcher, pillar sessions) then respawns. Use after code changes to bridge files.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          reason: { type: 'string', description: 'Why the restart is needed (logged to console)' }
+        }
+      }
+    })
+
     return tools
   }
 
@@ -249,6 +261,16 @@ export class McpProxyServer {
 
     if (name === 'ask_user') {
       return this._handleAskUser(args, cliRequestId)
+    }
+
+    if (name === 'restart_bridge') {
+      const reason = args.reason || 'no reason given'
+      console.log(`[mcp-proxy] Bridge restart requested: ${reason}`)
+      // Return response before restarting (short delay so the response reaches the CLI)
+      setTimeout(() => {
+        if (this.restartBridge) this.restartBridge()
+      }, 500)
+      return { content: [{ type: 'text', text: `Bridge restart initiated. Reason: ${reason}. The bridge will be back in ~2 seconds.` }] }
     }
 
     // --- Pillar orchestration tools ---

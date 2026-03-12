@@ -2,7 +2,9 @@ import { ref, reactive, computed, watch } from 'vue'
 import { createMcpBridge } from '../services/mcpBridge.js'
 import { useSessions } from './useSessions.js'
 import { useSessionState } from './useSessionState.js'
+import { useToolExecution } from './useToolExecution.js'
 import { useProject } from './useProject.js'
+import { classifyResult } from '../utils/toolClassifier.js'
 import db from '../services/db.js'
 
 // Map pillarId → dbSessionId for routing stream events
@@ -13,6 +15,14 @@ const flowDbSessionMap = new Map()
 let activeFlowDbSessionId = null
 // Track pending notification metadata between start and done events
 let pendingNotificationMeta = null
+// Email session routing
+const emailSessionMap = new Map() // requestId → dbSessionId
+const pendingEmailSessions = new Map() // emailSubject → dbSessionId
+let activeEmailDbSessionId = null
+// Email tool tracking (parallel to useCliChat.js toolUseToActivity/toolUseMeta)
+const emailToolUseToActivity = new Map() // `${requestId}:${toolUseId}` → activityId
+const emailToolUseMeta = new Map()       // `${requestId}:${toolUseId}` → { name, args }
+const emailUsageMap = new Map()          // requestId → { promptTokens, completionTokens, totalTokens }
 
 // Reactive: whether Flow is currently processing a callback notification
 const flowProcessingCallback = ref(false)
@@ -122,8 +132,9 @@ export function useMCP() {
       },
       onSetTitle(title) {
         const { activeSessionId, updateSession } = useSessions()
-        if (activeSessionId.value && title) {
-          updateSession(activeSessionId.value, { title })
+        const targetId = activeEmailDbSessionId !== null ? activeEmailDbSessionId : activeSessionId.value
+        if (targetId && title) {
+          updateSession(targetId, { title })
         }
       },
       async onPillarSessionCreated(msg) {
@@ -311,6 +322,216 @@ export function useMCP() {
         const state = getState(activeFlowDbSessionId)
         state.streaming.value = false
         state.streamingContent.value = ''
+      },
+      async onEmailReceived(msg) {
+        const { createPillarSession, updateSession } = useSessions()
+        const { projectName } = useProject()
+        const projectPath = projectName.value || 'paloma'
+        const summary = [`From: ${msg.from}`, `Subject: ${msg.subject}`, '', msg.body || ''].join('\n')
+        const dbSessionId = await createPillarSession(
+          projectPath,
+          'claude-cli:opus',
+          'flow',
+          `email:${msg.messageId}`,
+          null,
+          summary
+        )
+        await updateSession(dbSessionId, { title: msg.subject })
+        pendingEmailSessions.set(msg.subject, dbSessionId)
+        activeEmailDbSessionId = dbSessionId
+      },
+      async onEmailStream(id, event, emailSubject) {
+        let dbSessionId = emailSessionMap.get(id)
+        if (!dbSessionId) {
+          dbSessionId = pendingEmailSessions.get(emailSubject)
+          if (dbSessionId) {
+            pendingEmailSessions.delete(emailSubject)
+          } else {
+            // email_received didn't arrive first — create session on-the-fly
+            const { createPillarSession, updateSession } = useSessions()
+            const { projectName } = useProject()
+            const projectPath = projectName.value || 'paloma'
+            dbSessionId = await createPillarSession(
+              projectPath,
+              'claude-cli:opus',
+              'flow',
+              `email:${id}`,
+              null,
+              null
+            )
+            await updateSession(dbSessionId, { title: emailSubject || 'Incoming Email' })
+          }
+          emailSessionMap.set(id, dbSessionId)
+          activeEmailDbSessionId = dbSessionId
+        }
+        const { getState } = useSessionState()
+        const state = getState(dbSessionId)
+        const { addActivity, markActivityDone } = useToolExecution(state)
+        state.streaming.value = true
+
+        if (event.type === 'assistant' && event.message?.content) {
+          for (const block of event.message.content) {
+            if (block.type === 'text' && block.text) {
+              state.streamingContent.value += block.text
+            } else if (block.type === 'tool_use') {
+              // Track tool use — same as useCliChat.js
+              const activityId = addActivity(block.name, block.input)
+              emailToolUseToActivity.set(`${id}:${block.id}`, activityId)
+              emailToolUseMeta.set(`${id}:${block.id}`, { name: block.name, args: block.input })
+            }
+          }
+        } else if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+          // CLI stream-json emits tool_use via content_block_start
+          const block = event.content_block
+          const activityId = addActivity(block.name, block.input || {})
+          emailToolUseToActivity.set(`${id}:${block.id}`, activityId)
+          emailToolUseMeta.set(`${id}:${block.id}`, { name: block.name, args: block.input || {} })
+        } else if (event.type === 'content_block_delta') {
+          if (event.delta?.type === 'text_delta' && event.delta.text) {
+            state.streamingContent.value += event.delta.text
+          }
+        } else if (event.type === 'user' && event.message?.content) {
+          // Tool results come as user-type events with tool_result content blocks
+          for (const block of event.message.content) {
+            if (block.type === 'tool_result') {
+              const key = `${id}:${block.tool_use_id}`
+              const activityId = emailToolUseToActivity.get(key)
+              const meta = emailToolUseMeta.get(key)
+
+              // Normalize result content to string
+              let resultStr
+              try {
+                resultStr = Array.isArray(block.content)
+                  ? block.content.map(c => c.text || '').join('')
+                  : typeof block.content === 'string' ? block.content : JSON.stringify(block.content)
+              } catch {
+                resultStr = '[Error serializing tool result]'
+              }
+
+              if (activityId) markActivityDone(activityId, resultStr)
+
+              // Persist as role:'tool' message — same as useCliChat.js
+              if (meta) {
+                const toolMsg = JSON.parse(JSON.stringify({
+                  sessionId: dbSessionId,
+                  role: 'tool',
+                  toolCallId: activityId || block.tool_use_id,
+                  toolName: meta.name,
+                  toolArgs: meta.args,
+                  content: resultStr,
+                  resultType: classifyResult(meta.name, resultStr),
+                  timestamp: Date.now()
+                }))
+                const toolMsgId = await db.messages.add(toolMsg)
+                toolMsg.id = toolMsgId
+                state.messages.value.push(toolMsg)
+              }
+
+              emailToolUseToActivity.delete(key)
+              emailToolUseMeta.delete(key)
+            }
+          }
+        } else if (event.type === 'result') {
+          // Capture usage data for attachment in onEmailDone
+          if (event.usage) {
+            emailUsageMap.set(id, {
+              promptTokens: event.usage.input_tokens || 0,
+              completionTokens: event.usage.output_tokens || 0,
+              totalTokens: (event.usage.input_tokens || 0) + (event.usage.output_tokens || 0)
+            })
+          }
+          // Result event may contain tool_result blocks
+          if (event.result?.content) {
+            for (const block of (Array.isArray(event.result.content) ? event.result.content : [])) {
+              if (block.type === 'tool_result') {
+                const key = `${id}:${block.tool_use_id}`
+                const activityId = emailToolUseToActivity.get(key)
+                const meta = emailToolUseMeta.get(key)
+                const resultContent = typeof block.content === 'string' ? block.content : JSON.stringify(block.content)
+                if (activityId) markActivityDone(activityId, resultContent)
+                if (meta) {
+                  const toolMsg = JSON.parse(JSON.stringify({
+                    sessionId: dbSessionId,
+                    role: 'tool',
+                    toolCallId: activityId || block.tool_use_id,
+                    toolName: meta.name,
+                    toolArgs: meta.args,
+                    content: resultContent,
+                    resultType: classifyResult(meta.name, resultContent),
+                    timestamp: Date.now()
+                  }))
+                  const toolMsgId = await db.messages.add(toolMsg)
+                  toolMsg.id = toolMsgId
+                  state.messages.value.push(toolMsg)
+                }
+                emailToolUseToActivity.delete(key)
+                emailToolUseMeta.delete(key)
+              }
+            }
+          }
+        }
+      },
+      async onEmailDone(id, cliSessionId, exitCode) {
+        const dbSessionId = emailSessionMap.get(id)
+        if (!dbSessionId) return
+        const { getState } = useSessionState()
+        const { updateSession } = useSessions()
+        const state = getState(dbSessionId)
+        const { snapshotActivity, clearActivity, toolActivity, markActivityDone } = useToolExecution(state)
+        const content = state.streamingContent.value
+
+        // Safety net: mark any still-running activities as done (same as useCliChat.js)
+        for (const activity of toolActivity.value) {
+          if (activity.status === 'running') {
+            markActivityDone(activity.id)
+          }
+        }
+
+        if (content) {
+          const toolActivitySnapshot = snapshotActivity()
+          const usage = emailUsageMap.get(id) || null
+
+          const dbMsg = {
+            sessionId: dbSessionId,
+            role: 'assistant',
+            content,
+            model: 'claude-cli:opus',
+            files: [],
+            timestamp: Date.now()
+          }
+          if (usage) dbMsg.usage = usage
+          if (toolActivitySnapshot?.length) dbMsg.toolActivity = toolActivitySnapshot
+
+          const msgId = await db.messages.add(dbMsg)
+          dbMsg.id = msgId
+          state.messages.value.push(dbMsg)
+        }
+
+        await updateSession(dbSessionId, {})
+        state.streaming.value = false
+        state.streamingContent.value = ''
+        clearActivity()
+        emailSessionMap.delete(id)
+        emailUsageMap.delete(id)
+        // Clean up any lingering tool tracking for this request
+        for (const key of emailToolUseToActivity.keys()) {
+          if (key.startsWith(`${id}:`)) emailToolUseToActivity.delete(key)
+        }
+        for (const key of emailToolUseMeta.keys()) {
+          if (key.startsWith(`${id}:`)) emailToolUseMeta.delete(key)
+        }
+        if (activeEmailDbSessionId === dbSessionId) activeEmailDbSessionId = null
+      },
+      onEmailError(id, error) {
+        console.error('[mcp] Email session error:', error)
+        const dbSessionId = emailSessionMap.get(id)
+        if (!dbSessionId) return
+        const { getState } = useSessionState()
+        const state = getState(dbSessionId)
+        state.streaming.value = false
+        state.streamingContent.value = ''
+        emailSessionMap.delete(id)
+        if (activeEmailDbSessionId === dbSessionId) activeEmailDbSessionId = null
       }
     })
   }

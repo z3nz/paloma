@@ -9,7 +9,6 @@
     "codex",
     "voice",
     "memory",
-    "ollama",
     "gmail"
   ],
   "autoExecute": [
@@ -35,7 +34,8 @@
         "git_set_working_dir",
         "git_show",
         "git_commit",
-        "git_add"
+        "git_add",
+        "git_pull"
       ]
     },
     {

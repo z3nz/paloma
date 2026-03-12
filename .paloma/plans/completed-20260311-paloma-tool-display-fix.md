@@ -1,6 +1,6 @@
 # Tool Display Duplication Fix
 
-**Status:** active
+**Status:** completed
 **Created:** 2026-03-11
 **Scope:** paloma
 

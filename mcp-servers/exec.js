@@ -183,13 +183,17 @@ function execCommand(command, cwd, timeout, extraEnv) {
 
     proc.on('error', (err) => {
       if (err.code === 'ETIMEDOUT') {
+        // Process timed out — Node.js will kill it and fire the close event next.
+        // Set the flag so the close handler returns exit code 124 (standard timeout).
+        // Do NOT resolve here to avoid a double-resolve.
         timedOut = true
+      } else {
+        resolve({
+          exitCode: 1,
+          stdout,
+          stderr: stderr + '\n' + err.message
+        })
       }
-      resolve({
-        exitCode: 1,
-        stdout,
-        stderr: stderr + '\n' + err.message
-      })
     })
   })
 }

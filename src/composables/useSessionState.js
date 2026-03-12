@@ -40,6 +40,7 @@ function createSessionState() {
     pendingToolConfirmation: ref(null),
     pendingChanges: ref([]),
     cliRequestId: null,
+    currentModel: null,
     streamInterrupted: false
   }
 }
