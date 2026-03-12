@@ -33,6 +33,8 @@ const pillarStatuses = reactive(new Map())
 const pillarPhases = reactive(new Map())
 // Track cleanup timers to prevent unbounded accumulation
 const pillarCleanupTimers = new Map()
+// Buffer stream events that arrive before onPillarSessionCreated completes (race condition fix)
+const pillarStreamBuffer = new Map() // pillarId → [{ event, backend }]
 
 const _saved = import.meta.hot ? window.__PALOMA_MCP__ : undefined
 
@@ -102,6 +104,27 @@ function getAutoExecuteServers(mcpConfig) {
   return new Set(mcpConfig?.autoExecute || [])
 }
 
+// Shared helper: accumulate text from a pillar stream event into session state
+function _accumulatePillarStream(state, event, backend) {
+  if (backend === 'codex') {
+    if (event.type === 'agent_message' && event.text) {
+      state.streamingContent.value += event.text
+    }
+  } else {
+    if (event.type === 'assistant' && event.message?.content) {
+      for (const block of event.message.content) {
+        if (block.type === 'text' && block.text) {
+          state.streamingContent.value += block.text
+        }
+      }
+    } else if (event.type === 'content_block_delta') {
+      if (event.delta?.type === 'text_delta' && event.delta.text) {
+        state.streamingContent.value += event.delta.text
+      }
+    }
+  }
+}
+
 export function useMCP() {
   function connect(url) {
     if (url) bridgeUrl.value = url
@@ -162,35 +185,34 @@ export function useMCP() {
         }
         pillarStatuses.set(msg.pillarId, 'running')
         pillarPhases.set(msg.pillarId, msg.pillar)
+
+        // Drain any stream events that arrived before the session was created (race condition)
+        const buffered = pillarStreamBuffer.get(msg.pillarId)
+        if (buffered) {
+          pillarStreamBuffer.delete(msg.pillarId)
+          const { getState } = useSessionState()
+          const state = getState(dbSessionId)
+          state.streaming.value = true
+          for (const { event, backend } of buffered) {
+            _accumulatePillarStream(state, event, backend)
+          }
+        }
       },
       onPillarStream(pillarId, event, backend) {
         const dbSessionId = pillarSessionMap.get(pillarId)
-        if (!dbSessionId) return
+        if (!dbSessionId) {
+          // Session creation still in progress — buffer the event
+          if (!pillarStreamBuffer.has(pillarId)) {
+            pillarStreamBuffer.set(pillarId, [])
+          }
+          pillarStreamBuffer.get(pillarId).push({ event, backend })
+          return
+        }
         const { getState } = useSessionState()
         const state = getState(dbSessionId)
         state.streaming.value = true
         pillarStatuses.set(pillarId, 'streaming')
-
-        // Accumulate text content from stream events — backend-specific
-        if (backend === 'codex') {
-          // Codex emits complete items (not streaming deltas)
-          if (event.type === 'agent_message' && event.text) {
-            state.streamingContent.value += event.text
-          }
-        } else {
-          // Claude streaming events
-          if (event.type === 'assistant' && event.message?.content) {
-            for (const block of event.message.content) {
-              if (block.type === 'text' && block.text) {
-                state.streamingContent.value += block.text
-              }
-            }
-          } else if (event.type === 'content_block_delta') {
-            if (event.delta?.type === 'text_delta' && event.delta.text) {
-              state.streamingContent.value += event.delta.text
-            }
-          }
-        }
+        _accumulatePillarStream(state, event, backend)
       },
       async onPillarMessageSaved(msg) {
         const dbSessionId = pillarSessionMap.get(msg.pillarId)
@@ -234,12 +256,17 @@ export function useMCP() {
         const { updateSession } = useSessions()
         updateSession(dbSessionId, { pillarStatus: status })
 
-        // Clean up routing maps for all terminal states (idle, stopped, error)
-        // Keep pillarStatuses visible briefly for UI, then clean up
-        const isTerminal = status === 'stopped' || status === 'error' || status === 'idle'
+        // Only clean up session mapping for truly terminal states.
+        // 'idle' pillars can still receive follow-up messages via pillar_message,
+        // so we must keep their routing entry alive.
+        const isTerminal = status === 'stopped' || status === 'error'
         if (isTerminal) {
           pillarSessionMap.delete(msg.pillarId)
-          // Cancel any existing cleanup timer for this pillar before scheduling a new one
+          pillarStreamBuffer.delete(msg.pillarId)
+        }
+
+        // Clean up status display after delay for all done states
+        {
           const existingTimer = pillarCleanupTimers.get(msg.pillarId)
           if (existingTimer) clearTimeout(existingTimer)
           const timer = setTimeout(() => {
