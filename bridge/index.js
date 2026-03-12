@@ -1,8 +1,13 @@
 import { WebSocketServer } from 'ws'
-import { mkdir, writeFile, readdir, stat } from 'fs/promises'
+import { mkdir, writeFile, readdir, stat, unlink } from 'fs/promises'
+import { writeFileSync } from 'fs'
 import { join } from 'path'
-import { homedir } from 'os'
+import { homedir, tmpdir } from 'os'
 import { randomUUID } from 'crypto'
+
+// Write PID file so git hooks can signal us to restart
+const PID_FILE = join(tmpdir(), 'paloma-bridge.pid')
+writeFileSync(PID_FILE, String(process.pid))
 import { loadConfig } from './config.js'
 import { McpManager } from './mcp-manager.js'
 import { ClaudeCliManager } from './claude-cli.js'
@@ -388,10 +393,17 @@ async function main() {
     if (mcpProxy) await mcpProxy.shutdown()
     await manager.shutdown()
     wss.close()
+    try { await unlink(PID_FILE) } catch { /* best-effort */ }
     process.exit(exitCode)
   }
   process.on('SIGINT', () => shutdown(0))
   process.on('SIGTERM', () => shutdown(0))
+
+  // SIGUSR1 = restart request (sent by git post-merge/post-rewrite hooks)
+  process.on('SIGUSR1', () => {
+    console.log('[bridge] Received SIGUSR1 — restarting after git pull...')
+    shutdown(RESTART_CODE)
+  })
 
   // Expose restart to MCP proxy — graceful shutdown + exit code 75
   // (bridge/run.js wrapper catches code 75 and respawns)
