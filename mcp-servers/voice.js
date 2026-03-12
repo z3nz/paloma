@@ -130,7 +130,13 @@ function runTTS(text, voice, speed) {
 
     let stderr = ''
     proc.stderr.on('data', (data) => { stderr += data.toString() })
+    proc.stderr.on('error', () => {
+      // Non-fatal — stderr read error during TTS
+    })
 
+    proc.stdin.on('error', (err) => {
+      resolve({ success: false, error: `stdin error: ${err.message}` })
+    })
     proc.stdin.write(text)
     proc.stdin.end()
 

@@ -75,8 +75,16 @@ export class ClaudeCliManager {
       }
     })
 
+    proc.stdout.on('error', (err) => {
+      console.error(`[cli] stdout error: ${err.message}`)
+    })
+
     proc.stderr.on('data', () => {
       // Claude CLI writes progress info to stderr — ignore
+    })
+
+    proc.stderr.on('error', (err) => {
+      console.error(`[cli] stderr error: ${err.message}`)
     })
 
     proc.on('close', (code) => {

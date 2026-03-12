@@ -77,8 +77,16 @@ export class CodexCliManager {
       }
     })
 
+    proc.stdout.on('error', (err) => {
+      console.error(`[codex] stdout error: ${err.message}`)
+    })
+
     proc.stderr.on('data', () => {
       // Codex writes progress info to stderr — ignore
+    })
+
+    proc.stderr.on('error', (err) => {
+      console.error(`[codex] stderr error: ${err.message}`)
     })
 
     proc.on('close', (code) => {

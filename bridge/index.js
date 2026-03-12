@@ -68,6 +68,10 @@ async function main() {
 
   const wss = new WebSocketServer({ port })
 
+  wss.on('error', (err) => {
+    console.error('[bridge] WebSocket server error:', err.message)
+  })
+
   function broadcast(msg) {
     const data = JSON.stringify(msg)
     for (const client of wss.clients) {
