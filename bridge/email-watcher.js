@@ -152,7 +152,7 @@ export class EmailWatcher {
           threadId: ref.threadId,
           from,
           subject,
-          snippet: msg.data.snippet || ''
+          body
         })
       }
 

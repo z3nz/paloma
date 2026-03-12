@@ -321,7 +321,7 @@ export function useMCP() {
         const { createPillarSession, updateSession } = useSessions()
         const { projectName } = useProject()
         const projectPath = projectName.value || 'paloma'
-        const summary = [`From: ${msg.from}`, `Subject: ${msg.subject}`, '', msg.snippet || ''].join('\n')
+        const summary = [`From: ${msg.from}`, `Subject: ${msg.subject}`, '', msg.body || ''].join('\n')
         const dbSessionId = await createPillarSession(
           projectPath,
           'claude-cli:sonnet',
