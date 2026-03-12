@@ -10,7 +10,7 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema
 } from '@modelcontextprotocol/sdk/types.js'
-import { rm, cp, access, stat } from 'node:fs/promises'
+import { rm, cp, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { homedir } from 'node:os'
 

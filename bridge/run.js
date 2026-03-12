@@ -17,7 +17,7 @@ const RESTART_DELAY_MS = 1000
 
 let currentChild = null
 
-function start () {
+function start() {
   const child = spawn('node', [join(__dirname, 'index.js'), ...process.argv.slice(2)], {
     stdio: 'inherit',
     env: process.env

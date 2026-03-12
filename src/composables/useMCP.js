@@ -302,7 +302,6 @@ export function useMCP() {
           pillarId: msg.pillarId
         }
         flowProcessingCallback.value = true
-        console.log('[mcp] Flow notification start:', pendingNotificationMeta)
       },
       onFlowNotificationStream(event) {
         // Flow callback response streaming — route to the registered Flow session
@@ -353,7 +352,6 @@ export function useMCP() {
           dbMsg.id = msgId
           state.messages.value.push(dbMsg)
           await updateSession(activeFlowDbSessionId, {})
-          console.log('[mcp] Flow callback response saved, length:', content.length, 'meta:', meta)
         }
 
         pendingNotificationMeta = null
@@ -651,7 +649,6 @@ export function useMCP() {
     if (dbSessionId && cliSessionId) {
       flowDbSessionMap.set(cliSessionId, dbSessionId)
       activeFlowDbSessionId = dbSessionId
-      console.log('[mcp] Registered Flow dbSessionId for callbacks:', dbSessionId, 'cliSessionId:', cliSessionId)
     }
   }
 

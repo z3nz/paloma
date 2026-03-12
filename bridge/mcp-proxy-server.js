@@ -58,6 +58,10 @@ export class McpProxyServer {
       }
     })
 
+    this.httpServer.on('error', (err) => {
+      console.error('[mcp-proxy] HTTP server error:', err.message)
+    })
+
     return new Promise((resolve) => {
       this.httpServer.listen(this.port, () => {
         console.log(`MCP Proxy Server listening on http://localhost:${this.port}`)

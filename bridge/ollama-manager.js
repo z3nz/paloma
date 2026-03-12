@@ -211,7 +211,6 @@ export class OllamaManager {
             // Also strip leftover markdown code fence markers
             cleanedText = cleanedText.replace(/```(?:json)?\s*/g, '').replace(/\s*```/g, '')
             cleanedText = cleanedText.trim()
-            console.log('[ollama] Stripped JSON tool call text from assistant message')
           }
         }
 
@@ -378,19 +377,14 @@ export class OllamaManager {
    * Normalizes tool names (strips mcp__paloma__ prefix) and logs all attempts.
    */
   _parseToolCallsFromText(text, tools) {
-    console.log('[ollama] Attempting text-based tool call detection...')
     const toolNames = new Set(tools.map(t => t.function?.name).filter(Boolean))
     const calls = []
 
     const jsonObjects = this._extractJsonObjects(text)
 
     for (const { parsed, raw } of jsonObjects) {
-      const preview = raw.length > 200 ? raw.slice(0, 200) + '...' : raw
-      console.log(`[ollama] Found JSON candidate: ${preview}`)
-
       const rawName = parsed.name || parsed.function_name || ''
       if (!rawName) {
-        console.log('[ollama] JSON candidate rejected: no name or function_name field')
         continue
       }
 
@@ -403,15 +397,8 @@ export class OllamaManager {
       }
 
       if (toolNames.has(resolvedName)) {
-        console.log(`[ollama] Parsed tool call: name=${resolvedName}`)
         calls.push({ function: { name: resolvedName, arguments: args } })
-      } else {
-        console.log(`[ollama] Tool name not in known tools: ${rawName}`)
       }
-    }
-
-    if (calls.length === 0) {
-      console.log(`[ollama] No tool calls detected in text (${jsonObjects.length} JSON candidate(s) examined)`)
     }
 
     return calls

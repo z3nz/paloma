@@ -36,36 +36,36 @@ ${C.bmagenta}██║     ██║  ██║███████╗╚██
 ${C.bmagenta}╚═╝     ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝${C.reset}
 ${C.dim}                 AI Development Partner${C.reset}`
 
-export function printBanner () {
+export function printBanner() {
   console.log(BANNER)
   console.log()
 }
 
 // ── Step Logger ─────────────────────────────────────────────────────
 
-export function stepOk (label, detail = '') {
+export function stepOk(label, detail = '') {
   const det = detail ? col(C.dim, ` ${detail}`) : ''
   console.log(`  ${col(C.green, '✔')} ${label}${det}`)
 }
 
-export function stepFail (label, detail = '') {
+export function stepFail(label, detail = '') {
   const det = detail ? col(C.dim, ` ${detail}`) : ''
   console.log(`  ${col(C.red, '✖')} ${label}${det}`)
 }
 
-export function stepInfo (label, detail = '') {
+export function stepInfo(label, detail = '') {
   const det = detail ? col(C.dim, ` ${detail}`) : ''
   console.log(`  ${col(C.cyan, '●')} ${label}${det}`)
 }
 
-export function stepWarn (label, detail = '') {
+export function stepWarn(label, detail = '') {
   const det = detail ? col(C.dim, ` ${detail}`) : ''
   console.log(`  ${col(C.yellow, '▲')} ${label}${det}`)
 }
 
 // ── Startup Summary ─────────────────────────────────────────────────
 
-export function printSummary ({ serverCount, toolCount, failedCount, wsPort, proxyPort, emailWatcher, startTime }) {
+export function printSummary({ serverCount, toolCount, failedCount, wsPort, proxyPort, emailWatcher, startTime }) {
   console.log()
 
   if (failedCount === 0) {
@@ -93,7 +93,7 @@ export function printSummary ({ serverCount, toolCount, failedCount, wsPort, pro
 
 // ── Shutdown ────────────────────────────────────────────────────────
 
-export function printShutdown () {
+export function printShutdown() {
   console.log()
   console.log(`  ${col(C.bmagenta, '◆')} ${col(C.dim, 'Paloma shutting down...')}`)
   console.log()
