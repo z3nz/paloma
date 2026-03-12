@@ -195,9 +195,9 @@ export class OllamaManager {
         }
       }
 
-      // If tool calls were returned, emit them for bridge to execute
+      // If tool calls were returned via native API, emit them for bridge to execute
       if (collectedToolCalls.length > 0) {
-        console.log(`[ollama] ${collectedToolCalls.length} tool call(s): ${collectedToolCalls.map(tc => tc.function?.name).join(', ')}`)
+        console.log(`[ollama] ${collectedToolCalls.length} native tool call(s): ${collectedToolCalls.map(tc => tc.function?.name).join(', ')}`)
 
         const assistantMessage = { role: 'assistant', content: fullAssistantText || '', tool_calls: collectedToolCalls }
 
@@ -210,6 +210,28 @@ export class OllamaManager {
           toolCalls: collectedToolCalls
         })
         return
+      }
+
+      // Fallback: detect tool calls written as text in the response
+      // Some models output JSON like {"name": "tool", "arguments": {...}} as text
+      // instead of using the native tool_calls API
+      if (session.tools?.length > 0 && fullAssistantText.trim()) {
+        const parsedCalls = this._parseToolCallsFromText(fullAssistantText, session.tools)
+        if (parsedCalls.length > 0) {
+          console.log(`[ollama] ${parsedCalls.length} text-parsed tool call(s): ${parsedCalls.map(tc => tc.function?.name).join(', ')}`)
+
+          const assistantMessage = { role: 'assistant', content: fullAssistantText, tool_calls: parsedCalls }
+
+          this.requests.delete(requestId)
+          onEvent({
+            type: 'ollama_tool_call',
+            requestId,
+            sessionId,
+            assistantMessage,
+            toolCalls: parsedCalls
+          })
+          return
+        }
       }
 
       // No tool calls — normal completion
@@ -254,6 +276,57 @@ export class OllamaManager {
     }
     this.requests.clear()
     this.sessions.clear()
+  }
+
+  /**
+   * Parse tool calls that the model wrote as text instead of using native API.
+   * Matches JSON objects containing "name" and "arguments" fields where the
+   * name matches a known tool.
+   */
+  _parseToolCallsFromText(text, tools) {
+    const toolNames = new Set(tools.map(t => t.function?.name).filter(Boolean))
+    const calls = []
+
+    // Try to find JSON objects in the text
+    // Pattern 1: {"name": "...", "arguments": {...}}
+    // Pattern 2: {"function_name": "...", "function_arg": {...}}
+    const jsonPattern = /\{[^{}]*"(?:name|function_name)"\s*:\s*"([^"]+)"[^{}]*(?:"(?:arguments|function_arg|parameters)"\s*:\s*(\{[^}]*\}))?[^{}]*\}/g
+    let match
+
+    while ((match = jsonPattern.exec(text)) !== null) {
+      try {
+        const fullMatch = match[0]
+        const parsed = JSON.parse(fullMatch)
+        const name = parsed.name || parsed.function_name || ''
+        const args = parsed.arguments || parsed.function_arg || parsed.parameters || {}
+
+        if (name && toolNames.has(name)) {
+          calls.push({ function: { name, arguments: args } })
+        }
+      } catch {
+        // Not valid JSON, skip
+      }
+    }
+
+    // Also try parsing the entire text as a single JSON tool call
+    if (calls.length === 0) {
+      try {
+        const trimmed = text.trim()
+        // Strip markdown code fences if present
+        const stripped = trimmed.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim()
+        const parsed = JSON.parse(stripped)
+        const name = parsed.name || parsed.function_name || ''
+        const args = parsed.arguments || parsed.function_arg || parsed.parameters || {}
+
+        if (name && toolNames.has(name)) {
+          calls.push({ function: { name, arguments: args } })
+        }
+      } catch {
+        // Not JSON, that's fine
+      }
+    }
+
+    return calls
   }
 
   _cleanupSessions() {
