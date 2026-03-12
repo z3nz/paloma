@@ -56,3 +56,4 @@ All project knowledge belongs in `.paloma/` — in `instructions.md`, plans, doc
 @.paloma/roots/root-freedom.md
 @.paloma/roots/root-growth.md
 @.paloma/roots/root-architecture.md
+@.paloma/roots/root-origin.md
