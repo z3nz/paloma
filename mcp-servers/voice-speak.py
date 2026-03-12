@@ -9,6 +9,15 @@ Usage:
     echo "Hello Adam" | kokoro_env/bin/python mcp-servers/voice-speak.py --voice bm_george --speed 1.0
 """
 
+# Suppress torch/HF warnings BEFORE any imports — these pollute stderr
+# and cause the MCP server to report false failures.
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
+import os
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 import sys
 import argparse
 from io import StringIO

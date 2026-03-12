@@ -100,6 +100,9 @@ async function handleSpeak({ text, voice = 'bm_george', speed = 1.0 }) {
 
 function runTTS(text, voice, speed) {
   return new Promise((resolve) => {
+    // Scale timeout: 30s base + ~2s per 100 chars — long text needs time
+    const timeoutMs = 30_000 + Math.ceil(text.length / 100) * 2000
+
     const proc = spawn(PYTHON, [
       SCRIPT,
       '--voice', voice,
@@ -108,7 +111,7 @@ function runTTS(text, voice, speed) {
     ], {
       cwd: PROJECT_ROOT,
       stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: 30_000
+      timeout: timeoutMs
     })
 
     let stderr = ''
@@ -121,7 +124,20 @@ function runTTS(text, voice, speed) {
       if (code === 0) {
         resolve({ success: true })
       } else {
-        resolve({ success: false, error: stderr.trim() || `Exit code ${code}` })
+        // Filter out known Python warnings — they aren't real errors
+        const realErrors = stderr
+          .split('\n')
+          .filter(line => !line.includes('UserWarning:') &&
+                         !line.includes('FutureWarning:') &&
+                         !line.includes('super().__init__') &&
+                         !line.includes('WeightNorm.apply') &&
+                         !line.includes('weight_norm') &&
+                         !line.includes('unauthenticated requests') &&
+                         !line.includes('HF_TOKEN') &&
+                         !line.trim().startsWith('warnings.filterwarnings'))
+          .join('\n')
+          .trim()
+        resolve({ success: false, error: realErrors || `Exit code ${code}` })
       }
     })
 
