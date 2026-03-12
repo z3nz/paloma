@@ -29,3 +29,6 @@ kokoro_env/
 chats/
 output/
 tmp/vite.config.js.timestamp-*.mjs
+
+# Per-machine local context (not shared across machines)
+.paloma/local-machine.md
