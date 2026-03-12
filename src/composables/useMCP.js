@@ -7,8 +7,10 @@ import db from '../services/db.js'
 
 // Map pillarId → dbSessionId for routing stream events
 const pillarSessionMap = new Map()
-// Track the registered Flow session's dbSessionId for callback routing
-let registeredFlowDbSessionId = null
+// Map Flow CLI session IDs to their browser DB session IDs for correct pillar routing
+const flowDbSessionMap = new Map()
+// The most recently registered Flow dbSessionId (used for notification routing)
+let activeFlowDbSessionId = null
 // Track pending notification metadata between start and done events
 let pendingNotificationMeta = null
 
@@ -129,12 +131,14 @@ export function useMCP() {
         const { createPillarSession } = useSessions()
         const { projectName } = useProject()
         const projectPath = projectName.value || 'paloma'
+        // Look up the correct parent Flow session by CLI session ID
+        const parentDbSessionId = (msg.flowCliSessionId && flowDbSessionMap.get(msg.flowCliSessionId)) || activeFlowDbSessionId
         const dbSessionId = await createPillarSession(
           projectPath,
           msg.model,
           msg.pillar,
           msg.pillarId,
-          registeredFlowDbSessionId,
+          parentDbSessionId,
           msg.prompt
         )
         // Map pillarId to dbSessionId for stream routing
@@ -243,12 +247,12 @@ export function useMCP() {
       },
       onFlowNotificationStream(event) {
         // Flow callback response streaming — route to the registered Flow session
-        if (!registeredFlowDbSessionId) {
+        if (!activeFlowDbSessionId) {
           console.warn('[mcp] Flow notification stream but no registered Flow session')
           return
         }
         const { getState } = useSessionState()
-        const state = getState(registeredFlowDbSessionId)
+        const state = getState(activeFlowDbSessionId)
         state.streaming.value = true
 
         // Accumulate text content (same logic as pillar stream)
@@ -266,16 +270,16 @@ export function useMCP() {
       },
       async onFlowNotificationDone() {
         // Flow callback response complete — save as assistant message
-        if (!registeredFlowDbSessionId) return
+        if (!activeFlowDbSessionId) return
         const { updateSession } = useSessions()
         const { getState } = useSessionState()
-        const state = getState(registeredFlowDbSessionId)
+        const state = getState(activeFlowDbSessionId)
         const content = state.streamingContent.value
 
         if (content) {
           const meta = pendingNotificationMeta || {}
           const dbMsg = {
-            sessionId: registeredFlowDbSessionId,
+            sessionId: activeFlowDbSessionId,
             role: 'assistant',
             content,
             model: 'claude-cli:opus',
@@ -289,7 +293,7 @@ export function useMCP() {
           const msgId = await db.messages.add(dbMsg)
           dbMsg.id = msgId
           state.messages.value.push(dbMsg)
-          await updateSession(registeredFlowDbSessionId, {})
+          await updateSession(activeFlowDbSessionId, {})
           console.log('[mcp] Flow callback response saved, length:', content.length, 'meta:', meta)
         }
 
@@ -302,9 +306,9 @@ export function useMCP() {
         console.error('[mcp] Flow notification error:', error)
         pendingNotificationMeta = null
         flowProcessingCallback.value = false
-        if (!registeredFlowDbSessionId) return
+        if (!activeFlowDbSessionId) return
         const { getState } = useSessionState()
-        const state = getState(registeredFlowDbSessionId)
+        const state = getState(activeFlowDbSessionId)
         state.streaming.value = false
         state.streamingContent.value = ''
       }
@@ -366,9 +370,10 @@ export function useMCP() {
 
   function registerFlowSession(cliSessionId, model, cwd, dbSessionId) {
     if (bridge) bridge.registerFlowSession(cliSessionId, model, cwd)
-    if (dbSessionId) {
-      registeredFlowDbSessionId = dbSessionId
-      console.log('[mcp] Registered Flow dbSessionId for callbacks:', dbSessionId)
+    if (dbSessionId && cliSessionId) {
+      flowDbSessionMap.set(cliSessionId, dbSessionId)
+      activeFlowDbSessionId = dbSessionId
+      console.log('[mcp] Registered Flow dbSessionId for callbacks:', dbSessionId, 'cliSessionId:', cliSessionId)
     }
   }
 

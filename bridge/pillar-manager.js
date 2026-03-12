@@ -82,6 +82,7 @@ export class PillarManager {
       model: modelLabel,
       backend: resolvedBackend,
       flowRequestId,
+      flowCliSessionId: this.flowSession?.cliSessionId || null,
       prompt: fullPrompt
     })
 
