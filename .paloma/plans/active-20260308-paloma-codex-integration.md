@@ -1,7 +1,7 @@
 # Codex CLI Integration — Multi-Backend Architecture
 
 > **Goal:** Make Codex CLI a first-class citizen in Paloma's architecture alongside Claude CLI, enabling per-pillar backend selection, concurrent multi-model execution, and leveraging each model's strengths.
-> **Status:** Phase 2+3 Forge complete, ready for Polish
+> **Status:** MCP tool injection for Codex implemented (2026-03-11), needs testing
 > **Created:** 2026-03-08
 
 ---
@@ -11,7 +11,8 @@
 - [x] Scout: Complete — `.paloma/docs/scout-codex-cli-integration-20260308.md`
 - [x] Chart: Complete — this document
 - [x] Forge: Phase 2+3 Complete (subprocess backend + per-pillar config)
-- [ ] Polish: Pending
+- [x] Forge: MCP tool injection for Codex via Streamable HTTP transport (2026-03-11)
+- [ ] Polish: Pending — test full integration with bridge restart
 - [ ] Ship: Pending
 
 ## Research References
@@ -793,4 +794,43 @@ url = "http://localhost:19192/sse"
 
 ---
 
-**Phase 2+3 Forge complete. Ready for Polish.**
+## Implementation Notes (MCP Tool Injection — 2026-03-11)
+
+### Problem
+Codex pillar sessions had no access to Paloma's MCP tools (filesystem, git, web, brave-search, memory, voice). Only Claude sessions had MCP proxy injection. This was a gap in the multi-backend architecture — all pillars should have equal tool access regardless of backend.
+
+### Root Cause
+Codex CLI uses the **Streamable HTTP** MCP transport (newer MCP spec), while Paloma's MCP proxy only supported **SSE** transport (older spec, used by Claude CLI). The transport protocols are incompatible.
+
+### Solution
+1. **Added Streamable HTTP transport to MCP proxy** (`bridge/mcp-proxy-server.js`):
+   - New route `/mcp` handles POST/GET/DELETE for Streamable HTTP protocol
+   - Runs alongside existing `/sse` endpoint (Claude compatibility preserved)
+   - Same tool list, same confirmation system, same routing — just different transport
+   - Session management: `mcp-session-id` header tracks transport instances
+
+2. **Codex CLI MCP injection** (`bridge/codex-cli.js`):
+   - Uses `-c 'mcp_servers.paloma.url="http://localhost:19192/mcp?cliRequestId=<id>"'`
+   - Dynamic per-session `cliRequestId` for tool confirmation routing
+   - No temp files needed (unlike Claude's `--mcp-config` approach)
+
+3. **MCP tool call event handling** (`bridge/codex-cli.js`):
+   - Added `mcp_tool_call` item type parsing in `_handleEvent()`
+   - Forwards tool call details (server, tool, arguments, result) to browser
+
+### Files Modified
+| File | Changes |
+|---|---|
+| `bridge/mcp-proxy-server.js` | +import StreamableHTTPServerTransport, +crypto; +`/mcp` route; +`_handleStreamableHTTP()` method; +streamableTransports Map; +shutdown cleanup |
+| `bridge/codex-cli.js` | +MCP proxy injection via `-c` flag; +`mcp_tool_call` event handling |
+
+### Verified
+- Standalone test: Codex CLI successfully called MCP tools via Streamable HTTP transport
+- `-c` flag correctly injects MCP server config for dynamic per-session URLs
+
+### Pending
+- Full integration test with bridge restart (Codex pillar → MCP proxy → tool execution → browser confirmation)
+
+---
+
+**Phase 2+3 + MCP injection complete. Ready for Polish + integration testing.**

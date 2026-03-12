@@ -1,6 +1,8 @@
+import crypto from 'crypto'
 import { createServer } from 'http'
 import { Server } from '@modelcontextprotocol/sdk/server'
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema
@@ -18,7 +20,8 @@ export class McpProxyServer {
     this.onSetTitle = onSetTitle || (() => {})
     this.pillarManager = null // set by bridge/index.js after construction
     this.httpServer = null
-    this.transports = new Map() // sessionId → { transport, server }
+    this.transports = new Map() // sessionId → { transport, server } (SSE)
+    this.streamableTransports = new Map() // sessionId → { transport, server } (Streamable HTTP)
   }
 
   async start() {
@@ -40,6 +43,8 @@ export class McpProxyServer {
           this._handleSSE(req, res)
         } else if (req.method === 'POST' && req.url?.startsWith('/messages')) {
           this._handlePost(req, res)
+        } else if (pathname === '/mcp') {
+          this._handleStreamableHTTP(req, res)
         } else {
           res.writeHead(404)
           res.end('Not found')
@@ -66,6 +71,10 @@ export class McpProxyServer {
       try { await entry.transport.close() } catch {}
     }
     this.transports.clear()
+    for (const [, entry] of this.streamableTransports) {
+      try { await entry.transport.close() } catch {}
+    }
+    this.streamableTransports.clear()
     if (this.httpServer) {
       return new Promise(resolve => this.httpServer.close(resolve))
     }
@@ -429,6 +438,71 @@ export class McpProxyServer {
       if (!res.headersSent) {
         res.writeHead(500)
         res.end(JSON.stringify({ error: 'Internal error' }))
+      }
+    }
+  }
+
+  /**
+   * Handle Streamable HTTP MCP transport requests (used by Codex CLI).
+   * POST /mcp — JSON-RPC requests (initialize, tools/list, tools/call)
+   * GET /mcp — SSE stream for server-initiated notifications
+   * DELETE /mcp — close session
+   */
+  async _handleStreamableHTTP(req, res) {
+    const url = new URL(req.url, `http://localhost:${this.port}`)
+    const cliRequestId = url.searchParams.get('cliRequestId')
+
+    // Check for existing session
+    const sessionId = req.headers['mcp-session-id']
+    if (sessionId && this.streamableTransports.has(sessionId)) {
+      const entry = this.streamableTransports.get(sessionId)
+      try {
+        await entry.transport.handleRequest(req, res)
+      } catch (e) {
+        console.error(`[mcp-proxy] Streamable HTTP error for session ${sessionId}:`, e.message)
+        if (!res.headersSent) {
+          res.writeHead(500)
+          res.end(JSON.stringify({ error: 'Internal error' }))
+        }
+      }
+      return
+    }
+
+    // New session — only POST (initialize) can create one
+    if (req.method !== 'POST') {
+      res.writeHead(400)
+      res.end(JSON.stringify({ error: 'No valid session. Send an initialize request first.' }))
+      return
+    }
+
+    // Create new server + transport for this connection
+    const server = this._createServer(cliRequestId)
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => crypto.randomUUID()
+    })
+
+    transport.onclose = () => {
+      const sid = transport.sessionId
+      this.streamableTransports.delete(sid)
+      console.log(`[mcp-proxy] Streamable HTTP session closed: ${sid}`)
+    }
+
+    console.log(`[mcp-proxy] Streamable HTTP session starting, cliRequestId=${cliRequestId}`)
+
+    try {
+      await server.connect(transport)
+      // handleRequest processes the initialize and sets the session ID
+      await transport.handleRequest(req, res)
+      // Now sessionId is available — store for routing subsequent requests
+      if (transport.sessionId) {
+        this.streamableTransports.set(transport.sessionId, { transport, server, cliRequestId })
+        console.log(`[mcp-proxy] Streamable HTTP session started: ${transport.sessionId}`)
+      }
+    } catch (e) {
+      console.error(`[mcp-proxy] Streamable HTTP init failed:`, e.message)
+      if (!res.headersSent) {
+        res.writeHead(500)
+        res.end(JSON.stringify({ error: 'Failed to initialize session' }))
       }
     }
   }

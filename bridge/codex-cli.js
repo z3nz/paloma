@@ -30,6 +30,13 @@ export class CodexCliManager {
       // New conversation
       args = ['exec', '--json', '--full-auto', '-C', cwd || process.cwd()]
       if (model) args.push('-m', model)
+
+      // Inject MCP proxy config so Codex gets all of Paloma's tools
+      if (this.mcpProxyPort) {
+        args.push('-c', `mcp_servers.paloma.url="http://localhost:${this.mcpProxyPort}/mcp?cliRequestId=${requestId}"`)
+        console.log(`[codex] MCP proxy injected via -c flag (port ${this.mcpProxyPort})`)
+      }
+
       args.push(fullPrompt)
       console.log(`[codex] New session, model=${model || 'default'}`)
     }
@@ -125,6 +132,21 @@ export class CodexCliManager {
             command: item.command || '',
             output: item.aggregated_output || '',
             exit_code: item.exit_code
+          }
+        })
+      } else if (item.type === 'mcp_tool_call') {
+        // MCP tool call through Paloma's proxy
+        onEvent({
+          type: 'codex_stream',
+          requestId,
+          event: {
+            type: 'mcp_tool_call',
+            server: item.server || '',
+            tool: item.tool || '',
+            arguments: item.arguments || {},
+            result: item.result,
+            error: item.error,
+            status: item.status || 'completed'
           }
         })
       }
