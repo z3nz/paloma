@@ -35,7 +35,8 @@
         "git_show",
         "git_commit",
         "git_add",
-        "git_pull"
+        "git_pull",
+        "git_push"
       ]
     },
     {
