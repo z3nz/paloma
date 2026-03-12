@@ -1,6 +1,6 @@
 # Ollama Local Model Integration
 
-**Status:** active
+**Status:** completed
 **Created:** 2026-03-11
 **Scope:** paloma
 **Research:** `.paloma/docs/scout-ollama-integration-20260311.md`
