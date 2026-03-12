@@ -29,3 +29,11 @@
 - **Insight:** The shared base prompt (base.js) should be the lean foundation — identity, core behavioral rules, tool strategy, conventions. Pillar-specific content belongs in phases.js under that pillar's section. The test: "Does every pillar need this?" If no, move it to the specific pillar's prompt.
 - **Action:** Moved ~4.5KB of Flow-specific content from base.js to Flow's phase prompt (orchestration rules, plan format specs, slash commands). Added a lean "Pillar Pipeline" section (~13 lines) that all pillars DO need for lifecycle awareness.
 - **Applied:** YES — WU-3 restructured base.js, slimming it from ~12.5KB to ~8KB
+
+---
+
+### Lesson: Anti-pattern instructions must mirror observed failure modes exactly
+- **Context:** The original OLLAMA_INSTRUCTIONS said "ALWAYS use the function calling mechanism" and "NEVER fabricate tool results." Qwen2.5-Coder was still writing `{"name": "tool", "arguments": {...}}` as text, using `tool_name(args)` syntax, and hallucinating results — all behaviors the prompt didn't explicitly name.
+- **Insight:** Vague positive instructions ("use function calling") don't prevent specific failure modes. Models drift toward what they've seen in training data. To suppress a specific failure mode, you must name it explicitly and precisely in the NEVER list. The prompt update added: "Write `{\"name\": \"tool_name\", \"arguments\": {...}}` as text — this does NOT call the tool", "Write `tool_name(args)` as text — this does NOT call the tool", and "Pretend you already called a tool — if you didn't get a result back, you didn't call it." Each anti-pattern mirrors a real failure mode observed in chat logs.
+- **Action:** When writing system prompts for local models: (1) Observe what the model actually does wrong. (2) Write the NEVER list to mirror each failure mode exactly. (3) Explain WHY writing JSON as text doesn't work ("this does NOT call the tool"). Understanding prevents reversion. (4) Don't just say "do X" — also say "X is the ONLY way."
+- **Applied:** YES — `OLLAMA_INSTRUCTIONS` updated in `src/prompts/base.js`, committed as 97cd5f7

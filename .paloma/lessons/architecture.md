@@ -73,3 +73,17 @@
 - **Insight:** Having multiple files with the same rules creates a maintenance nightmare and guarantees drift. When the drift includes contradictions (file A says do X, file B says don't do X), the system behavior becomes unpredictable based on which file the session happened to prioritize.
 - **Action:** Established a clear hierarchy: phases.js (pillar DNA, authoritative) → base.js (shared foundation) → instructions.md (project conventions) → CLAUDE.md (CLI pointer). Each file has a distinct role. Rules live in ONE place. CLAUDE.md no longer duplicates — it references. When a rule changes, it changes in the DNA and flows downward.
 - **Applied:** YES — WU-3 started this (moved Flow content to phases.js), WU-4 will complete it (slim CLAUDE.md and instructions.md to remove duplication)
+
+---
+
+### Lesson: Use balanced-brace extraction, not regex, to parse JSON in model text
+- **Context:** Ollama models writing tool calls as text instead of using native `tool_calls` API. The original parser used a regex (`/\{[^{}]*"name"...[^{}]*\}/g`) which silently failed on any tool call with nested JSON arguments — which is virtually all real tool calls.
+- **Insight:** `[^{}]*` is fundamentally broken for matching JSON — it stops at the first nested brace. The correct approach is character-by-character balanced-brace counting: walk the text, track depth, handle quoted strings and escape sequences, extract the complete JSON substring when depth returns to 0, then try `JSON.parse()`. This handles arbitrary nesting, multi-line JSON, and code fences (strip them before scanning). The extractor returns `{ parsed, raw }` pairs — the `raw` string is needed for text stripping too. Any time you need to extract JSON from unstructured text (LLM output, log scraping, config detection), this is the pattern.
+- **Action:** Applied as `_extractJsonObjects(text)` in `bridge/ollama-manager.js`. Copy this pattern any time JSON needs to be extracted from freeform text.
+- **Applied:** YES — committed as 97cd5f7
+
+### Lesson: Always strip tool call JSON from text content, even when native tool_calls succeed
+- **Context:** Ollama models sometimes return both native `tool_calls` (which execute correctly) AND write the JSON as text in the response content. Without stripping, the raw JSON appears in chat alongside the proper tool result — double display of the same action.
+- **Insight:** When processing LLM responses that include tool calls, the text content path and the tool execution path are NOT mutually exclusive. A model can populate both simultaneously. Always sanitize `fullAssistantText` before sending it to the frontend: run the JSON extractor on the text, remove any matches, strip leftover code fence markers, trim whitespace. This applies to BOTH the native tool_calls path and the text-parsed fallback path — two separate locations that need the same treatment.
+- **Action:** Applied in both branches of `_streamChat()` in `bridge/ollama-manager.js`. When adding future LLM backends, include this stripping step in both tool-call execution paths.
+- **Applied:** YES — committed as 97cd5f7
