@@ -71,6 +71,13 @@ BRAVE_KEY="${BRAVE_KEY:-YOUR_BRAVE_API_KEY}"
 CF_TOKEN="${CF_TOKEN:-YOUR_CLOUDFLARE_API_TOKEN}"
 CF_ZONE="${CF_ZONE:-YOUR_CLOUDFLARE_ZONE_ID}"
 
+# Extract existing Gmail recipient if set
+GMAIL_RECIPIENT=""
+if [ -f "$SETTINGS_FILE" ]; then
+  GMAIL_RECIPIENT="$(grep -o '"GMAIL_RECIPIENT"[[:space:]]*:[[:space:]]*"[^"]*"' "$SETTINGS_FILE" | head -1 | sed 's/.*"GMAIL_RECIPIENT"[[:space:]]*:[[:space:]]*"\([^"]*\)"/\1/' || true)"
+fi
+GMAIL_RECIPIENT="${GMAIL_RECIPIENT:-}"
+
 # Check if codex CLI is available
 CODEX_BLOCK=""
 if command -v codex &>/dev/null; then
@@ -134,6 +141,13 @@ cat > "$SETTINGS_FILE" <<ENDJSON
     "ollama": {
       "command": "node",
       "args": ["$PALOMA_DIR/mcp-servers/ollama.js"]
+    },
+    "gmail": {
+      "command": "node",
+      "args": ["$PALOMA_DIR/mcp-servers/gmail.js"],
+      "env": {
+        "GMAIL_RECIPIENT": "$GMAIL_RECIPIENT"
+      }
     }$CODEX_BLOCK
   }
 }
