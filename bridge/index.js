@@ -1,13 +1,11 @@
 import { WebSocketServer } from 'ws'
 import { mkdir, writeFile, readdir, stat, unlink } from 'fs/promises'
-import { writeFileSync } from 'fs'
+import { writeFileSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { homedir, tmpdir } from 'os'
 import { randomUUID } from 'crypto'
 
-// Write PID file so git hooks can signal us to restart
 const PID_FILE = join(tmpdir(), 'paloma-bridge.pid')
-writeFileSync(PID_FILE, String(process.pid))
 import { loadConfig } from './config.js'
 import { McpManager } from './mcp-manager.js'
 import { ClaudeCliManager } from './claude-cli.js'
@@ -380,10 +378,30 @@ async function main() {
     })
   })
 
+  // Write PID file now that startup succeeded — git hooks use this to signal restarts
+  writeFileSync(PID_FILE, String(process.pid))
+
   // Graceful shutdown
   const RESTART_CODE = 75
+  let shuttingDown = false
   const shutdown = async (exitCode = 0) => {
+    if (shuttingDown) return
+    shuttingDown = true
+
     printShutdown()
+
+    // Log active sessions being killed so Adam sees the blast radius
+    if (pillarManager) {
+      const activePillars = [...pillarManager.pillars.values()]
+        .filter(s => s.status === 'running' || s.currentlyStreaming)
+      if (activePillars.length > 0) {
+        console.log(`  \x1b[33m▲\x1b[0m Killing ${activePillars.length} active pillar session(s):`)
+        for (const s of activePillars) {
+          console.log(`    - ${s.pillar} (${s.pillarId.slice(0, 8)}...) — ${s.status}`)
+        }
+      }
+    }
+
     if (staleRequestInterval) clearInterval(staleRequestInterval)
     if (emailWatcher) emailWatcher.shutdown()
     if (pillarManager) pillarManager.shutdown()
@@ -412,5 +430,6 @@ async function main() {
 
 main().catch((e) => {
   console.error('Bridge startup failed:', e)
+  try { unlinkSync(PID_FILE) } catch { /* best-effort */ }
   process.exit(1)
 })
