@@ -3,7 +3,7 @@ import { useMCP } from './useMCP.js'
 import { useProject } from './useProject.js'
 import { useToolExecution } from './useToolExecution.js'
 import { useSessionState } from './useSessionState.js'
-import { buildSystemPrompt } from './useSystemPrompt.js'
+import { buildSystemPrompt, buildOllamaSystemPrompt } from './useSystemPrompt.js'
 import { classifyResult } from '../utils/toolClassifier.js'
 import db from '../services/db.js'
 
@@ -41,8 +41,13 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     prompt: fullContent,
     model: resolvedModel,
     sessionId: existingCliSession,
-    systemPrompt: existingCliSession || isDirectCliModel(model) ? undefined : buildSystemPrompt(phase, projectInstructions, activePlans, [], roots),
-    cwd: useProject().projectRoot.value || undefined
+    systemPrompt: existingCliSession || isDirectCliModel(model)
+      ? undefined
+      : useOllama
+        ? buildOllamaSystemPrompt(phase, projectInstructions)
+        : buildSystemPrompt(phase, projectInstructions, activePlans, [], roots),
+    cwd: useProject().projectRoot.value || undefined,
+    enableTools: useOllama ? true : undefined
   }
 
   let accumulatedContent = ''

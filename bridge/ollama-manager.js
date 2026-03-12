@@ -66,7 +66,7 @@ export class OllamaManager {
   continueWithToolResults(requestId, sessionId, assistantMessage, toolResults, onEvent) {
     const session = this.sessions.get(sessionId)
     if (!session) {
-      onEvent({ type: 'ollama_error', requestId, event: { error: `Session ${sessionId} not found` } })
+      onEvent({ type: 'ollama_error', requestId, error: `Session ${sessionId} not found` })
       return
     }
 
@@ -114,7 +114,7 @@ export class OllamaManager {
         const errorMsg = `Ollama API error ${response.status}: ${responseBody || response.statusText}`
         console.error(`[ollama] ${errorMsg}`)
         this.requests.delete(requestId)
-        onEvent({ type: 'ollama_error', requestId, event: { error: errorMsg } })
+        onEvent({ type: 'ollama_error', requestId, error: errorMsg })
         return
       }
 
@@ -235,7 +235,7 @@ export class OllamaManager {
         ? 'Cannot connect to Ollama. Is it running? Try: ollama serve'
         : err.message
       console.error(`[ollama] Stream error: ${errorMsg}`)
-      onEvent({ type: 'ollama_error', requestId, event: { error: errorMsg } })
+      onEvent({ type: 'ollama_error', requestId, error: errorMsg })
     }
   }
 

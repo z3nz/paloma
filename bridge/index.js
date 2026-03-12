@@ -298,24 +298,33 @@ async function main() {
         }
       } else if (msg.type === 'ollama_chat') {
         try {
-          // Convert MCP tools to Ollama's tool format
+          // Convert MCP tools to Ollama's tool format (only if requested)
+          // Filter to essential servers only — local models have limited context
+          const OLLAMA_ALLOWED_SERVERS = new Set([
+            'filesystem', 'git', 'shell', 'web', 'brave-search',
+            'voice', 'memory', 'fs-extra'
+          ])
           const ollamaTools = []
           const toolRouteMap = new Map() // ollamaName → { server, tool }
-          const mcpServers = manager.getTools()
-          for (const [serverName, serverInfo] of Object.entries(mcpServers)) {
-            if (serverInfo.status !== 'connected') continue
-            for (const tool of serverInfo.tools) {
-              const ollamaName = `${serverName}__${tool.name}`
-              ollamaTools.push({
-                type: 'function',
-                function: {
-                  name: ollamaName,
-                  description: tool.description || '',
-                  parameters: tool.inputSchema || { type: 'object', properties: {} }
-                }
-              })
-              toolRouteMap.set(ollamaName, { server: serverName, tool: tool.name })
+          if (msg.enableTools) {
+            const mcpServers = manager.getTools()
+            for (const [serverName, serverInfo] of Object.entries(mcpServers)) {
+              if (serverInfo.status !== 'connected') continue
+              if (!OLLAMA_ALLOWED_SERVERS.has(serverName)) continue
+              for (const tool of serverInfo.tools) {
+                const ollamaName = `${serverName}__${tool.name}`
+                ollamaTools.push({
+                  type: 'function',
+                  function: {
+                    name: ollamaName,
+                    description: tool.description || '',
+                    parameters: tool.inputSchema || { type: 'object', properties: {} }
+                  }
+                })
+                toolRouteMap.set(ollamaName, { server: serverName, tool: tool.name })
+              }
             }
+            console.log(`[ollama] Passing ${ollamaTools.length} tools to model (filtered to essential servers)`)
           }
 
           let toolRounds = 0
@@ -334,27 +343,31 @@ async function main() {
                 return
               }
 
-              // Emit tool_use events to frontend so UI shows tool activity
+              // Execute each tool call via MCP, emitting tool_use/tool_result pairs
+              const results = []
               for (const tc of event.toolCalls) {
                 const toolId = randomUUID()
-                const toolName = tc.function?.name || 'unknown'
-                const toolArgs = tc.function?.arguments || {}
+                const toolName = tc.function?.name || ''
+                let toolArgs = tc.function?.arguments || {}
+                if (typeof toolArgs === 'string') {
+                  try { toolArgs = JSON.parse(toolArgs) } catch { toolArgs = {} }
+                }
+                const route = toolRouteMap.get(toolName)
+
+                // Emit tool_use event to frontend
                 ws.send(JSON.stringify({
                   type: 'ollama_stream', id: msg.id,
                   event: { type: 'tool_use', tool_use: { id: toolId, name: toolName, input: toolArgs } }
                 }))
-              }
-
-              // Execute each tool call via MCP
-              const results = []
-              for (const tc of event.toolCalls) {
-                const toolName = tc.function?.name || ''
-                const toolArgs = tc.function?.arguments || {}
-                const route = toolRouteMap.get(toolName)
 
                 if (!route) {
                   console.warn(`[ollama] Unknown tool: ${toolName}`)
-                  results.push({ content: `Error: Unknown tool "${toolName}"` })
+                  const errContent = `Error: Unknown tool "${toolName}"`
+                  results.push({ content: errContent })
+                  ws.send(JSON.stringify({
+                    type: 'ollama_stream', id: msg.id,
+                    event: { type: 'tool_result', toolUseId: toolId, content: errContent }
+                  }))
                   continue
                 }
 
@@ -363,18 +376,19 @@ async function main() {
                   const result = await manager.callTool(route.server, route.tool, toolArgs)
                   const content = result.content?.map(c => c.text || JSON.stringify(c)).join('\n') || ''
                   results.push({ content })
+                  ws.send(JSON.stringify({
+                    type: 'ollama_stream', id: msg.id,
+                    event: { type: 'tool_result', toolUseId: toolId, content }
+                  }))
                 } catch (e) {
                   console.error(`[ollama] Tool error (${toolName}):`, e.message)
-                  results.push({ content: `Error executing ${toolName}: ${e.message}` })
+                  const errContent = `Error executing ${toolName}: ${e.message}`
+                  results.push({ content: errContent })
+                  ws.send(JSON.stringify({
+                    type: 'ollama_stream', id: msg.id,
+                    event: { type: 'tool_result', toolUseId: toolId, content: errContent }
+                  }))
                 }
-              }
-
-              // Emit tool results to frontend
-              for (let i = 0; i < results.length; i++) {
-                ws.send(JSON.stringify({
-                  type: 'ollama_stream', id: msg.id,
-                  event: { type: 'tool_result', content: results[i].content }
-                }))
               }
 
               // Continue conversation with tool results

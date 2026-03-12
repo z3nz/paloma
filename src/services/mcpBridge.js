@@ -166,11 +166,12 @@ export function createMcpBridge() {
           listener.onDone?.(msg.sessionId, msg.exitCode)
         }
       } else if (msg.type === 'ollama_error' && msg.id) {
-        console.error(`[ollama] error:`, msg.error)
+        const errorMsg = msg.error || msg.event?.error || 'Unknown Ollama error'
+        console.error(`[ollama] error:`, errorMsg)
         const listener = streamListeners.get(msg.id)
         if (listener) {
           streamListeners.delete(msg.id)
-          listener.onError?.(msg.error)
+          listener.onError?.(errorMsg)
         }
       } else if (msg.type === 'resolved_path' && msg.id) {
         const p = pending.get(msg.id)
@@ -370,7 +371,8 @@ export function createMcpBridge() {
         model: options.model,
         sessionId: options.sessionId,
         systemPrompt: options.systemPrompt,
-        cwd: options.cwd
+        cwd: options.cwd,
+        enableTools: options.enableTools || false
       }).catch((e) => {
         pending.delete(id)
         streamListeners.delete(id)
