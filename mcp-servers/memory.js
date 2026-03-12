@@ -5,7 +5,8 @@
  *   - Local JSON (default) — works immediately, no external services
  *   - MongoDB (when MONGODB_URI is set) — production-grade with Atlas Vector Search
  *
- * Embeddings: @xenova/transformers with all-MiniLM-L6-v2 (384-dim vectors)
+ * Embeddings: Ollama nomic-embed-text (1024-dim vectors)
+ * Fallback: keyword search when Ollama is unavailable
  * Location: ~/.paloma/memory/
  */
 
@@ -24,31 +25,50 @@ import { randomUUID } from 'crypto'
 
 const MEMORY_DIR = resolve(homedir(), '.paloma', 'memory')
 const MONGODB_URI = process.env.MONGODB_URI || null
-const EMBEDDING_MODEL = 'Xenova/all-MiniLM-L6-v2'
-const EMBEDDING_DIM = 384
+const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://localhost:11434'
+const EMBEDDING_MODEL = 'nomic-embed-text'
+const EMBEDDING_DIM = 1024
 
-// ─── Embedding Engine ────────────────────────────────────────────────────────
+// ─── Embedding Engine (Ollama) ───────────────────────────────────────────────
 
-let pipeline = null
 let embeddingReady = false
 
 async function initEmbeddings () {
-  if (pipeline) return
   try {
-    const { pipeline: createPipeline } = await import('@xenova/transformers')
-    pipeline = await createPipeline('feature-extraction', EMBEDDING_MODEL)
-    embeddingReady = true
-    console.error('[memory] Embedding model loaded:', EMBEDDING_MODEL)
-  } catch (err) {
-    console.error('[memory] Embedding model failed to load, falling back to keyword search:', err.message)
+    const response = await fetch(`${OLLAMA_HOST}/api/tags`)
+    if (response.ok) {
+      embeddingReady = true
+      console.error('[memory] Ollama available for embeddings, model:', EMBEDDING_MODEL)
+    }
+  } catch {
+    console.error('[memory] Ollama not reachable — falling back to keyword search')
     embeddingReady = false
   }
 }
 
 async function embed (text) {
-  if (!embeddingReady) return null
-  const output = await pipeline(text, { pooling: 'mean', normalize: true })
-  return Array.from(output.data)
+  try {
+    const response = await fetch(`${OLLAMA_HOST}/api/embed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: EMBEDDING_MODEL, input: text })
+    })
+    if (!response.ok) {
+      console.error('[memory] Ollama embed failed:', response.status)
+      return null
+    }
+    const data = await response.json()
+    const embedding = data.embeddings?.[0]
+    if (embedding) {
+      embeddingReady = true
+      return embedding
+    }
+    return null
+  } catch (err) {
+    console.error('[memory] Ollama embed error:', err.message)
+    embeddingReady = false
+    return null
+  }
 }
 
 function cosineSimilarity (a, b) {
@@ -639,9 +659,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main () {
   console.error('[memory] Starting Memory MCP Server...')
   console.error('[memory] Storage:', MONGODB_URI ? 'MongoDB' : `Local (${MEMORY_DIR})`)
-  console.error('[memory] Loading embedding model...')
-
-  // Start embedding init in background — server is usable immediately with keyword fallback
+  // Check Ollama availability in background — server is usable immediately with keyword fallback
   initEmbeddings()
 
   const transport = new StdioServerTransport()

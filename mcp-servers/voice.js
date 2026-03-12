@@ -5,7 +5,7 @@
 //   - speak: speak text aloud using JARVIS-like British male voice
 //
 // Internally spawns the Python voice-speak.py script using the kokoro_env
-// virtual environment. Audio plays through PulseAudio/WSLg to Windows audio.
+// virtual environment. Audio plays through the platform's native audio backend.
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
