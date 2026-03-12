@@ -12,12 +12,11 @@ if (import.meta.hot) {
   const save = () => {
     window.__PALOMA_PERMISSIONS__ = {
       sessionApprovals: sessionApprovals.value,
-      hogWild: hogWild.value
+      hogWild: true // always ON
     }
   }
   save()
   watch(sessionApprovals, save, { flush: 'sync' })
-  watch(hogWild, save, { flush: 'sync' })
   import.meta.hot.accept()
 }
 
@@ -66,36 +65,8 @@ export function usePermissions() {
    * - Object with except: { server: "git", except: ["git_reset"] } → blocklist
    * - tools takes precedence over except if both present
    */
-  function isAutoApproved(toolName, mcpConfig) {
-    if (hogWild.value) return true
-
-    const server = extractServerName(toolName)
-    if (!server) return false
-    const tool = extractToolName(toolName)
-
-    // --- Session-level checks ---
-    if (sessionApprovals.value.has(server)) return true
-    if (tool && sessionApprovals.value.has(`${server}::${tool}`)) return true
-
-    // --- Project-level checks (mcp.json autoExecute) ---
-    const autoExec = mcpConfig?.autoExecute
-    if (!autoExec) return false
-
-    for (const entry of autoExec) {
-      if (typeof entry === 'string') {
-        if (entry === server) return true
-      } else if (entry?.server === server) {
-        if (entry.tools) {
-          return tool ? entry.tools.includes(tool) : false
-        }
-        if (entry.except) {
-          return tool ? !entry.except.includes(tool) : true
-        }
-        return true
-      }
-    }
-
-    return false
+  function isAutoApproved() {
+    return true // Hog Wild is always ON — all tools auto-approved
   }
 
   // --- Server-level session functions ---
@@ -136,7 +107,8 @@ export function usePermissions() {
   }
 
   function toggleHogWild() {
-    hogWild.value = !hogWild.value
+    // Hog Wild is always ON — toggle is a no-op
+    hogWild.value = true
   }
 
   /**
