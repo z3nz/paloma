@@ -123,7 +123,8 @@ async function main() {
   const backends = { claude: cliManager, codex: codexManager, ollama: ollamaManager }
   pillarManager = new PillarManager(backends, {
     projectRoot: process.cwd(),
-    broadcast
+    broadcast,
+    mcpManager: manager
   })
   mcpProxy.pillarManager = pillarManager
 

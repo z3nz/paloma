@@ -144,7 +144,10 @@ export class McpProxyServer {
             prompt: { type: 'string', description: 'The initial message/task for the pillar' },
             model: { type: 'string', description: 'Optional model override (e.g., "opus", "sonnet" for Claude; "gpt-5.1-codex-max" for Codex). Defaults to phase suggestion.' },
             planFile: { type: 'string', description: 'Optional: only load this specific plan file into the pillar system prompt (e.g., "active-20260301-verifesto-saas.md")' },
-            backend: { type: 'string', enum: ['claude', 'codex'], description: 'AI backend for this pillar session (default: claude). Use codex for focused coding or code review.' }
+            backend: { type: 'string', enum: ['claude', 'codex', 'ollama'], description: 'AI backend for this pillar session (default: claude). Use ollama for local Qwen model.' },
+            recursive: { type: 'boolean', description: 'Enable recursive mode — sub-instance MUST delegate to further sub-instances. Default: false.' },
+            depth: { type: 'number', description: 'Current recursion depth (set automatically by parent). Default: 0.' },
+            parentPillarId: { type: 'string', description: 'Parent pillar ID (set automatically for recursive spawns).' }
           },
           required: ['pillar', 'prompt']
         }
@@ -204,6 +207,18 @@ export class McpProxyServer {
           type: 'object',
           properties: {
             pillarId: { type: 'string', description: 'The pillar session ID' }
+          },
+          required: ['pillarId']
+        }
+      })
+
+      tools.push({
+        name: 'pillar_stop_tree',
+        description: 'Kill switch — stop an entire recursive session tree. Stops the given session and ALL its descendant sub-instances.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pillarId: { type: 'string', description: 'The root session ID of the tree to stop' }
           },
           required: ['pillarId']
         }
@@ -381,6 +396,9 @@ export class McpProxyServer {
           break
         case 'pillar_stop':
           result = this.pillarManager.stop(args)
+          break
+        case 'pillar_stop_tree':
+          result = this.pillarManager.stopTree(args)
           break
         case 'pillar_decompose':
           result = await this.pillarManager.decompose(args)

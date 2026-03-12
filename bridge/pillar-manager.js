@@ -1,11 +1,17 @@
 import { randomUUID } from 'crypto'
 import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
-import { BASE_INSTRUCTIONS } from '../src/prompts/base.js'
+import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, QWEN_RECURSIVE_INSTRUCTIONS } from '../src/prompts/base.js'
 import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
 
 const MAX_RUNTIME_MS = 30 * 60 * 1000 // 30 minutes
 const MAX_NOTIFICATION_QUEUE = 50
+const MAX_CONCURRENT_OLLAMA = 4
+const MAX_OLLAMA_TOOL_ROUNDS = 50 // Higher than browser's 20 — recursive spawning needs room
+const OLLAMA_ALLOWED_SERVERS = new Set([
+  'filesystem', 'git', 'shell', 'web', 'brave-search',
+  'voice', 'memory', 'fs-extra'
+])
 const BIRTH_MESSAGE = "Try your best, no matter what, you're worthy of God's love!"
 
 /**
@@ -16,16 +22,18 @@ const BIRTH_MESSAGE = "Try your best, no matter what, you're worthy of God's lov
  * status/output for Flow's polling tools.
  */
 export class PillarManager {
-  constructor(backends, { projectRoot, broadcast }) {
-    this.backends = backends   // { claude: ClaudeCliManager, codex: CodexCliManager }
+  constructor(backends, { projectRoot, broadcast, mcpManager }) {
+    this.backends = backends   // { claude: ClaudeCliManager, codex: CodexCliManager, ollama: OllamaManager }
     this.cliManager = backends.claude // backward compat for Flow notifications
     this.projectRoot = projectRoot
     this.broadcast = broadcast // (msg) => void — send to all WS clients
+    this.mcpManager = mcpManager || null // for Ollama tool execution
     this.pillars = new Map()   // pillarId → PillarSession
     this.flowSession = null    // { cliSessionId, wsClient, currentlyStreaming, notificationQueue, model, cwd }
     this.notificationCooldown = new Map() // pillarId → timestamp of last notification
     this.notificationCount = 0 // notifications sent in current minute
     this.notificationWindowStart = Date.now()
+    this._pendingChildCompletions = new Map() // childPillarId → resolve function
 
     // Periodic cleanup of terminal sessions (every 5 min)
     this._cleanupInterval = setInterval(() => this._cleanupTerminalSessions(), 5 * 60 * 1000)
@@ -35,16 +43,25 @@ export class PillarManager {
    * Spawn a new pillar CLI session.
    * Returns immediately with pillarId and metadata.
    */
-  async spawn({ pillar, prompt, model, flowRequestId, planFile, backend }) {
+  async spawn({ pillar, prompt, model, flowRequestId, planFile, backend, parentPillarId, recursive, depth }) {
     const pillarId = randomUUID()
     const cliSessionId = randomUUID()
     const resolvedBackend = backend || 'claude'
 
-    // Resolve model: use provided, or phase suggestion, or default sonnet
-    const resolvedModel = model || this._defaultModel(pillar, resolvedBackend)
+    // Concurrency warning for Ollama
+    if (resolvedBackend === 'ollama') {
+      const activeOllama = this._countActiveOllamaSessions()
+      if (activeOllama >= MAX_CONCURRENT_OLLAMA) {
+        console.warn(`[pillar] ⚠ Ollama concurrency at ${activeOllama}/${MAX_CONCURRENT_OLLAMA} — spawning anyway but memory pressure may occur`)
+      }
+    }
 
-    // Build system prompt from disk
-    const systemPrompt = await this._buildSystemPrompt(pillar, { planFilter: planFile })
+    // Resolve model: use provided, or phase suggestion, or default
+    // Recursive children automatically get the small fast model (7B)
+    const resolvedModel = model || this._defaultModel(pillar, resolvedBackend, { recursive, depth })
+
+    // Build system prompt from disk (Ollama gets condensed prompt)
+    const systemPrompt = await this._buildSystemPrompt(pillar, { planFilter: planFile, recursive, depth, backend: resolvedBackend })
 
     // Compose the full first message with birth protocol
     const fullPrompt = `${BIRTH_MESSAGE}\n\n${prompt}`
@@ -68,7 +85,11 @@ export class PillarManager {
       messageQueue: [],        // queued messages for when current turn finishes
       startTime: Date.now(),
       timeoutTimer: null,
-      dbSessionId: null        // set by frontend via WS event
+      dbSessionId: null,       // set by frontend via WS event
+      parentPillarId: parentPillarId || null,
+      recursive: recursive || false,
+      depth: depth || 0,
+      _toolRounds: 0           // Ollama tool call round counter
     }
 
     this.pillars.set(pillarId, session)
@@ -269,6 +290,242 @@ export class PillarManager {
     if (session) {
       session.dbSessionId = dbSessionId
     }
+  }
+
+  /**
+   * Stop an entire recursive session tree — the kill switch.
+   * Stops the given session and all its descendants.
+   */
+  stopTree({ pillarId }) {
+    const session = this.pillars.get(pillarId)
+    if (!session) {
+      return { pillarId, status: 'not_found', message: `No pillar session found with id ${pillarId}` }
+    }
+
+    const descendants = this._getDescendants(pillarId)
+    const stopped = []
+
+    // Stop children first (bottom-up)
+    for (const childId of descendants.reverse()) {
+      const result = this.stop({ pillarId: childId })
+      stopped.push({ pillarId: childId, status: result.status })
+    }
+
+    // Stop the root
+    const rootResult = this.stop({ pillarId })
+    stopped.push({ pillarId, status: rootResult.status })
+
+    // Clear any pending child completions for this tree
+    for (const id of [pillarId, ...descendants]) {
+      this._pendingChildCompletions.delete(id)
+    }
+
+    return {
+      pillarId,
+      status: 'tree_stopped',
+      stopped,
+      message: `Stopped ${stopped.length} session(s) in the recursive tree.`
+    }
+  }
+
+  /**
+   * Get all descendant pillar IDs of a given session (recursive).
+   */
+  _getDescendants(pillarId) {
+    const descendants = []
+    for (const [id, session] of this.pillars) {
+      if (session.parentPillarId === pillarId) {
+        descendants.push(id)
+        descendants.push(...this._getDescendants(id))
+      }
+    }
+    return descendants
+  }
+
+  /**
+   * Count active Ollama sessions (running or streaming).
+   */
+  _countActiveOllamaSessions() {
+    let count = 0
+    for (const [, session] of this.pillars) {
+      if (session.backend === 'ollama' && (session.status === 'running' || session.currentlyStreaming)) {
+        count++
+      }
+    }
+    return count
+  }
+
+  /**
+   * Build Ollama-format tool list from MCP servers + pillar tools.
+   */
+  _buildOllamaTools(session) {
+    const tools = []
+
+    // MCP server tools
+    if (this.mcpManager) {
+      const mcpServers = this.mcpManager.getTools()
+      for (const [serverName, serverInfo] of Object.entries(mcpServers)) {
+        if (serverInfo.status !== 'connected') continue
+        if (!OLLAMA_ALLOWED_SERVERS.has(serverName)) continue
+        for (const tool of serverInfo.tools) {
+          tools.push({
+            type: 'function',
+            function: {
+              name: `${serverName}__${tool.name}`,
+              description: tool.description || '',
+              parameters: tool.inputSchema || { type: 'object', properties: {} }
+            }
+          })
+        }
+      }
+    }
+
+    // Pillar orchestration tools — so Qwen can spawn sub-instances
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'pillar_spawn',
+        description: 'Spawn a new AI sub-instance as a background process. For recursive work, the sub-instance works on your prompt and returns its output when complete. Returns the sub-instance output directly.',
+        parameters: {
+          type: 'object',
+          properties: {
+            pillar: { type: 'string', enum: ['scout', 'chart', 'forge', 'polish', 'ship'], description: 'Which pillar role for the sub-instance' },
+            prompt: { type: 'string', description: 'The task for the sub-instance to work on' },
+            model: { type: 'string', description: 'Optional model override' },
+            backend: { type: 'string', enum: ['claude', 'codex', 'ollama'], description: 'AI backend (default: ollama)' }
+          },
+          required: ['pillar', 'prompt']
+        }
+      }
+    })
+
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'pillar_list',
+        description: 'List all active AI sub-instance sessions.',
+        parameters: { type: 'object', properties: {} }
+      }
+    })
+
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'pillar_stop',
+        description: 'Stop a running sub-instance session.',
+        parameters: {
+          type: 'object',
+          properties: {
+            pillarId: { type: 'string', description: 'The session ID to stop' }
+          },
+          required: ['pillarId']
+        }
+      }
+    })
+
+    console.log(`[pillar] Built ${tools.length} Ollama tools for ${session.pillar} session`)
+    return tools
+  }
+
+  /**
+   * Handle Ollama tool calls — execute tools and continue conversation.
+   * For pillar_spawn, blocks until child completes and returns output.
+   */
+  async _handleOllamaToolCall(session, event) {
+    session._toolRounds++
+    if (session._toolRounds > MAX_OLLAMA_TOOL_ROUNDS) {
+      console.warn(`[pillar] Ollama tool round limit (${MAX_OLLAMA_TOOL_ROUNDS}) hit for ${session.pillar}`)
+      session.currentlyStreaming = false
+      session.status = 'idle'
+      this.broadcast({ type: 'pillar_done', pillarId: session.pillarId, status: 'idle', pillar: session.pillar })
+      return
+    }
+
+    const results = []
+    const manager = this.backends.ollama
+
+    for (const tc of event.toolCalls) {
+      const toolName = tc.function?.name || ''
+      let toolArgs = tc.function?.arguments || {}
+      if (typeof toolArgs === 'string') {
+        try { toolArgs = JSON.parse(toolArgs) } catch { toolArgs = {} }
+      }
+
+      console.log(`[pillar] Ollama ${session.pillar} calling tool: ${toolName}`)
+
+      // Emit tool_use event to browser
+      const toolId = randomUUID()
+      this.broadcast({
+        type: 'pillar_stream', pillarId: session.pillarId, backend: 'ollama',
+        event: { type: 'tool_use', tool_use: { id: toolId, name: toolName, input: toolArgs } }
+      })
+
+      try {
+        let content
+
+        // Handle pillar tools directly
+        if (toolName === 'pillar_spawn') {
+          // Spawn child and WAIT for completion — blocking spawn
+          const childArgs = {
+            ...toolArgs,
+            backend: toolArgs.backend || 'ollama',
+            parentPillarId: session.pillarId,
+            recursive: session.recursive,
+            depth: (session.depth || 0) + 1
+          }
+          const spawnResult = await this.spawn(childArgs)
+          const childPillarId = spawnResult.pillarId
+
+          console.log(`[pillar] ${session.pillar} spawned child ${childPillarId.slice(0, 8)} — waiting for completion`)
+
+          // Wait for child to complete (resolved in _handleCliEvent)
+          const childOutput = await new Promise((resolve) => {
+            this._pendingChildCompletions.set(childPillarId, resolve)
+          })
+
+          content = childOutput || '(child produced no output)'
+          console.log(`[pillar] Child ${childPillarId.slice(0, 8)} completed — ${content.length} chars returned to parent`)
+        } else if (toolName === 'pillar_list') {
+          content = JSON.stringify(this.list(), null, 2)
+        } else if (toolName === 'pillar_stop') {
+          content = JSON.stringify(this.stop(toolArgs), null, 2)
+        } else {
+          // MCP server tool — parse server__tool format
+          const sepIdx = toolName.indexOf('__')
+          if (sepIdx === -1) {
+            content = `Error: Unknown tool "${toolName}"`
+          } else {
+            const serverName = toolName.slice(0, sepIdx)
+            const mcpToolName = toolName.slice(sepIdx + 2)
+            const result = await this.mcpManager.callTool(serverName, mcpToolName, toolArgs)
+            content = result.content?.map(c => c.text || JSON.stringify(c)).join('\n') || ''
+          }
+        }
+
+        results.push({ content })
+
+        // Emit tool_result to browser
+        this.broadcast({
+          type: 'pillar_stream', pillarId: session.pillarId, backend: 'ollama',
+          event: { type: 'tool_result', toolUseId: toolId, content: content.slice(0, 500) + (content.length > 500 ? '...' : '') }
+        })
+      } catch (e) {
+        console.error(`[pillar] Ollama tool error (${toolName}):`, e.message)
+        const errContent = `Error executing ${toolName}: ${e.message}`
+        results.push({ content: errContent })
+        this.broadcast({
+          type: 'pillar_stream', pillarId: session.pillarId, backend: 'ollama',
+          event: { type: 'tool_result', toolUseId: toolId, content: errContent }
+        })
+      }
+    }
+
+    // Continue Ollama conversation with tool results
+    manager.continueWithToolResults(
+      event.requestId, event.sessionId,
+      event.assistantMessage, results,
+      (nextEvent) => this._handleCliEvent(session, nextEvent)
+    )
   }
 
   /**
@@ -774,6 +1031,11 @@ This is informational — Adam is communicating directly with the pillar. Decide
       cwd: this.projectRoot
     }
 
+    // For Ollama, pass tools so the model can call them
+    if (session.backend === 'ollama' && this.mcpManager) {
+      chatOptions.tools = this._buildOllamaTools(session)
+    }
+
     if (isResume) {
       // Resume: use --resume with existing CLI session ID
       chatOptions.sessionId = session.cliSessionId
@@ -794,6 +1056,12 @@ This is informational — Adam is communicating directly with the pillar. Decide
   }
 
   _handleCliEvent(session, event) {
+    // Ollama tool calls — execute tools and continue conversation
+    if (event.type === 'ollama_tool_call') {
+      this._handleOllamaToolCall(session, event)
+      return
+    }
+
     const isStream = event.type === 'claude_stream' || event.type === 'codex_stream' || event.type === 'ollama_stream'
     const isDone = event.type === 'claude_done' || event.type === 'codex_done' || event.type === 'ollama_done'
     const isError = event.type === 'claude_error' || event.type === 'codex_error' || event.type === 'ollama_error'
@@ -879,14 +1147,27 @@ This is informational — Adam is communicating directly with the pillar. Decide
           pillar: session.pillar
         })
 
-        // Auto-notify Flow about pillar completion
-        console.log(`[pillar] Auto-notifying Flow: ${session.pillar} completed`)
-        const notification = this._buildNotificationMessage('completion', session)
-        this.notifyFlow(notification, session.pillarId, {
-          notificationType: 'completion',
-          pillar: session.pillar,
-          pillarId: session.pillarId
-        })
+        // Resolve parent's pending child completion (for recursive Ollama spawning)
+        if (this._pendingChildCompletions.has(session.pillarId)) {
+          const resolve = this._pendingChildCompletions.get(session.pillarId)
+          this._pendingChildCompletions.delete(session.pillarId)
+          const allOutput = session.output.join('\n\n')
+          resolve(allOutput)
+          console.log(`[pillar] Resolved child completion for parent — ${session.pillar} (${session.pillarId.slice(0, 8)})`)
+        }
+
+        // Auto-notify Flow about pillar completion (skip if parent handles it)
+        if (!session.parentPillarId) {
+          console.log(`[pillar] Auto-notifying Flow: ${session.pillar} completed`)
+          const notification = this._buildNotificationMessage('completion', session)
+          this.notifyFlow(notification, session.pillarId, {
+            notificationType: 'completion',
+            pillar: session.pillar,
+            pillarId: session.pillarId
+          })
+        } else {
+          console.log(`[pillar] ${session.pillar} completed — parent ${session.parentPillarId.slice(0, 8)} will handle`)
+        }
       }
     } else if (isError) {
       session.currentlyStreaming = false
@@ -912,14 +1193,24 @@ This is informational — Adam is communicating directly with the pillar. Decide
         error: event.error
       })
 
-      // Auto-notify Flow about pillar error
-      console.log(`[pillar] Auto-notifying Flow: ${session.pillar} errored`)
-      const notification = this._buildNotificationMessage('completion', session)
-      this.notifyFlow(notification, session.pillarId, {
-        notificationType: 'completion',
-        pillar: session.pillar,
-        pillarId: session.pillarId
-      })
+      // Resolve parent's pending child completion on error
+      if (this._pendingChildCompletions.has(session.pillarId)) {
+        const resolve = this._pendingChildCompletions.get(session.pillarId)
+        this._pendingChildCompletions.delete(session.pillarId)
+        const allOutput = session.output.join('\n\n') || `Error: ${event.error}`
+        resolve(allOutput)
+      }
+
+      // Auto-notify Flow about pillar error (skip if parent handles it)
+      if (!session.parentPillarId) {
+        console.log(`[pillar] Auto-notifying Flow: ${session.pillar} errored`)
+        const notification = this._buildNotificationMessage('completion', session)
+        this.notifyFlow(notification, session.pillarId, {
+          notificationType: 'completion',
+          pillar: session.pillar,
+          pillarId: session.pillarId
+        })
+      }
     }
   }
 
@@ -931,8 +1222,12 @@ This is informational — Adam is communicating directly with the pillar. Decide
     this.stop({ pillarId })
   }
 
-  _defaultModel(pillar, backend = 'claude') {
-    if (backend === 'ollama') return 'qwen2.5-coder:32b'
+  _defaultModel(pillar, backend = 'claude', { recursive, depth } = {}) {
+    if (backend === 'ollama') {
+      // Recursive children use the small fast model — big brain delegates, small hands act
+      if (recursive && depth > 0) return 'qwen2.5-coder:7b'
+      return 'qwen2.5-coder:32b'
+    }
     if (backend === 'codex') return 'gpt-5.1-codex-max'
     // PHASE_MODEL_SUGGESTIONS values are like 'claude-cli:opus' — extract just the model name
     const suggestion = PHASE_MODEL_SUGGESTIONS[pillar] || 'claude-cli:sonnet'
@@ -969,8 +1264,9 @@ This is informational — Adam is communicating directly with the pillar. Decide
    * Build the system prompt for a pillar session by reading .paloma/ files from disk.
    * Mirrors the frontend's buildSystemPrompt() but uses fs instead of MCP/browser APIs.
    */
-  async _buildSystemPrompt(pillar, { planFilter } = {}) {
-    let prompt = BASE_INSTRUCTIONS
+  async _buildSystemPrompt(pillar, { planFilter, recursive, depth, backend } = {}) {
+    // Ollama sessions use the condensed prompt (fits smaller context windows)
+    let prompt = backend === 'ollama' ? OLLAMA_INSTRUCTIONS : BASE_INSTRUCTIONS
 
     // Read project instructions
     const instructionsPath = join(this.projectRoot, '.paloma', 'instructions.md')
@@ -1006,6 +1302,14 @@ This is informational — Adam is communicating directly with the pillar. Decide
     const activePillar = pillar || 'flow'
     prompt += '\n\n## Current Pillar: ' + this._capitalize(activePillar) + '\n\n'
     prompt += PHASE_INSTRUCTIONS[activePillar] || PHASE_INSTRUCTIONS.flow
+
+    // Inject recursive Qwen instructions when in recursive mode
+    if (recursive) {
+      const recursivePrompt = QWEN_RECURSIVE_INSTRUCTIONS
+        .replace(/\{\{DEPTH\}\}/g, String(depth || 0))
+        .replace(/\{\{MAX_DEPTH\}\}/g, '5')
+      prompt += '\n\n' + recursivePrompt
+    }
 
     return prompt
   }
