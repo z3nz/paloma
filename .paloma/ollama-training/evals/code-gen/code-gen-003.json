@@ -1,0 +1,12 @@
+{
+  "id": "code-gen-003",
+  "category": "code-gen",
+  "difficulty": "medium",
+  "prompt": "Write a JavaScript function `flattenObject(obj)` that flattens a nested object into a single-level object with dot-notation keys.\n\nInclude this test code at the end:\n\nconst result = flattenObject({ a: { b: { c: 1 } }, d: 2, e: { f: { g: { h: 'hello' } }, i: [1, 2, 3] } });\nconsole.log(JSON.stringify(result, null, 2));",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "code_execution",
+  "expected_output": "{\n  \"a.b.c\": 1,\n  \"d\": 2,\n  \"e.f.g.h\": \"hello\",\n  \"e.i\": [\n    1,\n    2,\n    3\n  ]\n}",
+  "rubric": "1=Does not run or wrong output 2=Runs but fails on nested objects or arrays 3=Correct for simple cases but mishandles arrays or edge cases 4=Correct output with clean recursive implementation 5=Correct, clean, handles arrays, null, and circular references",
+  "weight": 1,
+  "tags": ["javascript", "objects", "recursion", "flatten"]
+}

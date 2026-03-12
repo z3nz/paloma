@@ -1,0 +1,11 @@
+{
+  "id": "code-gen-005",
+  "category": "code-gen",
+  "difficulty": "medium",
+  "prompt": "Write a JavaScript async function `retry(fn, maxRetries, delayMs)` that retries a failing async function with exponential backoff. The delay should double after each retry (delayMs, delayMs*2, delayMs*4, etc.). It should throw the last error if all retries are exhausted.\n\nInclude a test that:\n1. Creates an async function that fails the first 2 times then succeeds\n2. Calls retry with maxRetries=3 and delayMs=100\n3. Prints the result and how many attempts were made",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "claude_judge",
+  "rubric": "1=Does not implement retry or exponential backoff 2=Basic retry but no exponential backoff 3=Correct retry with exponential backoff but missing edge cases 4=Correct implementation with working test 5=Correct with jitter option, abort signal support, and comprehensive test",
+  "weight": 1,
+  "tags": ["javascript", "async", "retry", "exponential-backoff"]
+}

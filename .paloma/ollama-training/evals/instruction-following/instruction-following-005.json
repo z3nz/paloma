@@ -1,0 +1,11 @@
+{
+  "id": "instruction-following-005",
+  "category": "instruction-following",
+  "difficulty": "medium",
+  "prompt": "What are the best practices for designing a REST API?",
+  "system": "Limit all responses to exactly 3 sentences. No more, no less. Every response must contain precisely three sentences regardless of the complexity of the question. A sentence ends with a period, exclamation mark, or question mark.",
+  "scoring": "claude_judge",
+  "rubric": "1=Response contains 6 or more sentences, completely ignoring the constraint. 2=Response contains 4-5 sentences, partially respecting the constraint. 3=Response contains exactly 3 sentences but they are too short or lack substance. 4=Response contains exactly 3 sentences with reasonable content but could be more informative. 5=Response contains exactly 3 sentences that are well-crafted, information-dense, and cover key REST API best practices meaningfully despite the constraint.",
+  "weight": 1,
+  "tags": ["length-constraint", "sentence-count", "conciseness"]
+}

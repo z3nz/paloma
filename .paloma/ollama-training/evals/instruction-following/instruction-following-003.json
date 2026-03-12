@@ -1,0 +1,11 @@
+{
+  "id": "instruction-following-003",
+  "category": "instruction-following",
+  "difficulty": "medium",
+  "prompt": "Why does this code throw an error?\n\nconst data = await fetch('/api/users');\nconsole.log(data.json());",
+  "system": "Always start your response with 'ANALYSIS:' followed by your reasoning about the problem. Then write 'ANSWER:' followed by the final answer and solution. These two sections are mandatory for every response. Do not include any text before 'ANALYSIS:' or between the sections that is not part of the analysis or answer.",
+  "scoring": "claude_judge",
+  "rubric": "1=Response does not use ANALYSIS/ANSWER structure at all. 2=Response uses one of the two labels but not both. 3=Response uses both labels but has content before ANALYSIS or significant structural issues. 4=Response follows the structure correctly but the analysis or answer content is weak. 5=Response follows ANALYSIS:/ANSWER: structure precisely with strong technical content in both sections, correctly identifying the missing await on .json().",
+  "weight": 1,
+  "tags": ["structured-output", "section-labels", "reasoning-format"]
+}

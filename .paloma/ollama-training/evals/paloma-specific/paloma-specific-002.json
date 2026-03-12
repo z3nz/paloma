@@ -1,0 +1,11 @@
+{
+  "id": "paloma-specific-002",
+  "category": "paloma-specific",
+  "difficulty": "hard",
+  "prompt": "Write an MCP server in Node.js that exposes two tools: `task_list` (lists tasks from a JSON file) and `task_complete` (marks a task as done). Follow the MCP SDK pattern used in Paloma's existing servers.\n\nHere's the pattern from the existing `mcp-servers/ollama.js`:\n```javascript\nimport { Server } from '@modelcontextprotocol/sdk/server/index.js'\nimport { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'\nimport { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'\n\nconst server = new Server(\n  { name: 'ollama', version: '1.0.0' },\n  { capabilities: { tools: {} } }\n)\n\nserver.setRequestHandler(ListToolsRequestSchema, async () => ({\n  tools: [{ name: 'tool_name', description: '...', inputSchema: { type: 'object', properties: {...}, required: [...] } }]\n}))\n\nserver.setRequestHandler(CallToolRequestSchema, async (request) => {\n  const { name, arguments: args } = request.params\n  // switch on name, handle each tool\n  return { content: [{ type: 'text', text: JSON.stringify(result) }] }\n})\n\nconst transport = new StdioServerTransport()\nawait server.connect(transport)\n```\n\nThe task file is at `~/.paloma/tasks.json` with format: `[{\"id\": 1, \"text\": \"...\", \"done\": false}]`",
+  "system": "You are a coding assistant building MCP (Model Context Protocol) tool servers for the Paloma AI development platform. Follow the exact SDK patterns shown. Use stdio transport, proper inputSchema definitions, and return results as content arrays with type:'text'.",
+  "scoring": "claude_judge",
+  "rubric": "1=doesn't use MCP SDK at all or completely wrong structure, 2=uses SDK but wrong handler pattern (missing ListToolsRequestSchema or CallToolRequestSchema), 3=correct structure but inputSchema is wrong or missing required fields, 4=fully functional but missing error handling or edge cases (file not found, invalid task ID), 5=perfect: correct SDK usage, proper inputSchema with types and descriptions, error handling, file I/O with graceful fallbacks, both tools fully implemented",
+  "weight": 2,
+  "tags": ["mcp", "tool-server", "node", "sdk-pattern"]
+}

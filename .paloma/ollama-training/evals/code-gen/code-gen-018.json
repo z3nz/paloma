@@ -1,0 +1,11 @@
+{
+  "id": "code-gen-018",
+  "category": "code-gen",
+  "difficulty": "hard",
+  "prompt": "Implement a generic `Stack<T>` in Rust with the following methods:\n- `new() -> Stack<T>` — create an empty stack\n- `push(&mut self, item: T)` — push an item onto the stack\n- `pop(&mut self) -> Option<T>` — remove and return the top item\n- `peek(&self) -> Option<&T>` — return a reference to the top item without removing it\n- `is_empty(&self) -> bool` — check if the stack is empty\n- `len(&self) -> usize` — return the number of elements\n\nUse proper Rust ownership and borrowing. Implement `Display` for `Stack<T>` where `T: Display` to show elements from top to bottom separated by \" -> \".\n\nInclude a `main` function demonstrating all methods with both integer and string stacks.",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "claude_judge",
+  "rubric": "1=Does not compile or missing methods 2=Compiles but ownership/borrowing issues or missing methods 3=All methods work but not idiomatic (e.g., using Vec correctly but no Display impl) 4=All methods correct with Display impl, proper generics and ownership 5=All methods correct, Display impl, derives Debug/Clone, uses idiomatic Rust patterns throughout",
+  "weight": 1,
+  "tags": ["rust", "generics", "data-structures", "ownership", "traits"]
+}

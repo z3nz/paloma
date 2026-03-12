@@ -1,0 +1,11 @@
+{
+  "id": "code-gen-002",
+  "category": "code-gen",
+  "difficulty": "medium",
+  "prompt": "Implement a JavaScript `debounce(fn, ms)` function that delays invoking `fn` until after `ms` milliseconds have elapsed since the last time it was called. If called again before the delay expires, the timer resets.\n\nInclude a test that demonstrates it works:\n- Call the debounced function 3 times rapidly\n- Show that only the last call executes after the delay\n- Use setTimeout to verify the behavior and print results",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "claude_judge",
+  "rubric": "1=Does not implement debounce correctly 2=Basic implementation but missing timer reset on subsequent calls 3=Correct debounce but no test or broken test 4=Correct debounce with working test demonstrating behavior 5=Correct debounce with cancel/flush support and comprehensive test",
+  "weight": 1,
+  "tags": ["javascript", "async", "debounce", "closures"]
+}

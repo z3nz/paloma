@@ -1,0 +1,12 @@
+{
+  "id": "code-gen-016",
+  "category": "code-gen",
+  "difficulty": "hard",
+  "prompt": "Write a Python function `topological_sort(graph)` where `graph` is a dict mapping each node to a list of its dependencies (nodes it depends on). Return a list of nodes in valid execution order (dependencies before dependents). If the graph has a cycle, raise a `ValueError` with the message 'cycle detected'.\n\nInclude this test code at the end:\n\ntry:\n    result = topological_sort({\n        'a': ['b', 'c'],\n        'b': ['d'],\n        'c': ['d'],\n        'd': [],\n        'e': ['a']\n    })\n    print(result)\nexcept ValueError as e:\n    print(e)\n\ntry:\n    result = topological_sort({\n        'a': ['b'],\n        'b': ['c'],\n        'c': ['a']\n    })\n    print(result)\nexcept ValueError as e:\n    print(e)\n\ntry:\n    result = topological_sort({})\n    print(result)\nexcept ValueError as e:\n    print(e)",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "code_execution",
+  "expected_output": "['d', 'b', 'c', 'a', 'e']\ncycle detected\n[]",
+  "rubric": "1=Does not run or wrong output 2=Produces an ordering but no cycle detection 3=Works for simple DAGs but fails on cycles or complex graphs 4=Correct topological sort with cycle detection using Kahn's or DFS 5=Correct, handles disconnected components, clear error messages, clean code",
+  "weight": 1,
+  "tags": ["python", "graph-algorithms", "topological-sort", "cycle-detection"]
+}

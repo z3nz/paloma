@@ -1,0 +1,49 @@
+{
+  "id": "tool-use-014",
+  "category": "tool-use",
+  "difficulty": "medium",
+  "prompt": "Show me the diff of only the staged changes in the repository (not unstaged changes).",
+  "system": "You are a coding assistant with access to the tools listed below. Use them to accomplish the user's request.",
+  "tools": [
+    {
+      "name": "git_diff",
+      "description": "Show changes between commits, working tree, etc.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": { "type": "string", "description": "Path to the git repository" },
+          "staged": { "type": "boolean", "description": "If true, show only staged (cached) changes" },
+          "file": { "type": "string", "description": "Optional specific file to diff" }
+        },
+        "required": ["repo_path"]
+      }
+    },
+    {
+      "name": "git_status",
+      "description": "Show the working tree status of a git repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": { "type": "string", "description": "Path to the git repository" }
+        },
+        "required": ["repo_path"]
+      }
+    },
+    {
+      "name": "git_log",
+      "description": "Show commit history for the repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": { "type": "string", "description": "Path to the git repository" },
+          "max_count": { "type": "number", "description": "Maximum number of commits to show" }
+        },
+        "required": ["repo_path"]
+      }
+    }
+  ],
+  "scoring": "claude_judge",
+  "rubric": "1=no tool call or completely wrong tool, 2=used git_status instead of git_diff, 3=used git_diff but without the staged parameter set to true, 4=used git_diff with staged: true but minor issues with repo_path, 5=single git_diff call with staged: true and correct repo_path, no unnecessary extra calls",
+  "weight": 1,
+  "tags": ["tool-selection", "single-tool", "git", "parameter-accuracy"]
+}

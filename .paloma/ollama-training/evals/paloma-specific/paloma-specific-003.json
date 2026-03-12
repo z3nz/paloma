@@ -1,0 +1,11 @@
+{
+  "id": "paloma-specific-003",
+  "category": "paloma-specific",
+  "difficulty": "hard",
+  "prompt": "The following Vue 3 composable has bugs in its HMR state preservation pattern. Find ALL the bugs and fix them:\n\n```javascript\nimport { ref, computed, watch } from 'vue'\n\nexport function useTheme() {\n  const _saved = window.__PALOMA_THEME__\n  const theme = ref(_saved?.theme ?? 'dark')\n  const customColors = ref(_saved?.customColors ?? {})\n  const fontSize = ref(_saved?.fontSize ?? 14)\n\n  const isDark = computed(() => theme.value === 'dark')\n\n  if (import.meta.hot) {\n    const save = () => {\n      window.__PALOMA_THEME__ = {\n        theme: theme.value,\n        customColors: customColors.value,\n        fontSize: fontSize.value\n      }\n    }\n    watch([theme, fontSize], save)\n    import.meta.hot.accept()\n  }\n\n  function setTheme(newTheme) {\n    theme.value = newTheme\n  }\n\n  return { theme, isDark, customColors, fontSize, setTheme }\n}\n```",
+  "system": "You are debugging a Vue 3 composable in the Paloma project. Paloma uses a specific HMR state preservation pattern with these requirements:\n1. Refs must be at module level (outside the function) to be true singletons\n2. The _saved check must be guarded with `import.meta.hot ? window.__PALOMA_*__ : undefined`\n3. The watch must include ALL refs that need preservation\n4. The watch must use `{ flush: 'sync' }` to prevent batching\n5. save() must be called immediately after definition (not just on watch trigger)\n\nIdentify every deviation from this pattern.",
+  "scoring": "claude_judge",
+  "rubric": "1=found 0-1 bugs, 2=found 2 bugs, 3=found 3 bugs, 4=found 4 bugs with correct fixes, 5=found all 5 bugs: (1) refs inside function not module-level, (2) _saved not guarded with import.meta.hot, (3) customColors missing from watch array, (4) watch missing { flush: 'sync' }, (5) save() not called immediately after definition",
+  "weight": 2,
+  "tags": ["vue3", "composable", "hmr", "debugging", "singleton-refs"]
+}

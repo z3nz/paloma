@@ -1,0 +1,47 @@
+{
+  "id": "tool-use-001",
+  "category": "tool-use",
+  "difficulty": "easy",
+  "prompt": "Read the contents of the file at /home/adam/Projects/paloma/package.json",
+  "system": "You are a coding assistant with access to filesystem tools. Use the tools provided to accomplish the user's request. Always respond with the tool call, not a guess at the file contents.",
+  "tools": [
+    {
+      "name": "read_text_file",
+      "description": "Read the complete contents of a text file.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Absolute path to the file" }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "write_file",
+      "description": "Write content to a file, creating or overwriting it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Absolute path to the file" },
+          "content": { "type": "string", "description": "Content to write" }
+        },
+        "required": ["path", "content"]
+      }
+    },
+    {
+      "name": "list_directory",
+      "description": "List files and directories in a given path.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Directory path to list" }
+        },
+        "required": ["path"]
+      }
+    }
+  ],
+  "scoring": "claude_judge",
+  "rubric": "1=no tool call or wrong tool, 2=right tool but wrong/missing path, 3=correct tool and path but unnecessary extra tools called, 4=correct single tool call with right path, 5=perfect tool call with exact path and nothing extra",
+  "weight": 1,
+  "tags": ["tool-selection", "single-tool", "file-read"]
+}

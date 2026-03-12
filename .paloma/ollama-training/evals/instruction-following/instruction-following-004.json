@@ -1,0 +1,11 @@
+{
+  "id": "instruction-following-004",
+  "category": "instruction-following",
+  "difficulty": "hard",
+  "prompt": "Please review this code:\n\n```javascript\nconst express = require('express');\nconst app = express();\n\napp.get('/users/:id', async (req, res) => {\n  const user = await db.query('SELECT * FROM users WHERE id = ' + req.params.id);\n  if (user) {\n    const token = jwt.sign({ user: user }, 'my-secret-key-123');\n    res.json({ user, token });\n  } else {\n    res.send('User not found');\n  }\n});\n\napp.post('/upload', (req, res) => {\n  const file = req.body.file;\n  fs.writeFileSync('/uploads/' + req.body.filename, file);\n  res.json({ success: true });\n});\n\napp.listen(3000);\n```",
+  "system": "You are a senior code reviewer. Be concise. Use bullet points only. Never write prose paragraphs. Rate every issue with a severity level from P0 (critical/security) to P3 (nitpick/style). Format each bullet as: '- [P{n}] {issue description}'. Group bullets under severity headers. Do not write any introductory or concluding text.",
+  "scoring": "claude_judge",
+  "rubric": "1=Response is in prose paragraphs, ignores bullet format, and misses severity ratings. 2=Response uses some bullets but mixes in prose paragraphs, or severity ratings are missing/inconsistent. 3=Response uses bullet points throughout with severity ratings but includes prose intro/conclusion or misses key issues (SQL injection, hardcoded secret, path traversal). 4=Response follows format strictly with bullets and severity ratings, catches most issues, but has minor format deviations or misses one issue. 5=Response is exclusively bullet points with correct P0-P3 severity ratings, no prose, no intro/conclusion, identifies SQL injection (P0), hardcoded JWT secret (P0), path traversal in upload (P0), missing error handling, improper 404 response, and style issues.",
+  "weight": 1,
+  "tags": ["persona", "format-constraint", "bullet-points", "severity-rating", "code-review"]
+}

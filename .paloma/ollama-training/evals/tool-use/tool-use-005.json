@@ -1,0 +1,47 @@
+{
+  "id": "tool-use-005",
+  "category": "tool-use",
+  "difficulty": "medium",
+  "prompt": "Create a new file at /home/adam/Projects/paloma/tmp/config.json with the content {\"port\": 3000, \"host\": \"localhost\"}, then read it back to verify it was created correctly.",
+  "system": "You are a coding assistant with access to the tools listed below. Use them to accomplish the user's request.",
+  "tools": [
+    {
+      "name": "write_file",
+      "description": "Write content to a file, creating or overwriting it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Absolute path to the file" },
+          "content": { "type": "string", "description": "Content to write" }
+        },
+        "required": ["path", "content"]
+      }
+    },
+    {
+      "name": "read_text_file",
+      "description": "Read the complete contents of a text file.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Absolute path to the file" }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "list_directory",
+      "description": "List files and directories in a given path.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Directory path to list" }
+        },
+        "required": ["path"]
+      }
+    }
+  ],
+  "scoring": "claude_judge",
+  "rubric": "1=no tool calls or completely wrong tools, 2=only writes or only reads but not both, 3=uses both write_file and read_text_file but wrong path or content, 4=correct write_file then read_text_file with right path but minor content formatting issues, 5=calls write_file with exact path and valid JSON content, then read_text_file with same path to verify",
+  "weight": 1,
+  "tags": ["multi-step", "file-write", "file-read", "verification"]
+}

@@ -1,0 +1,62 @@
+{
+  "id": "tool-use-013",
+  "category": "tool-use",
+  "difficulty": "hard",
+  "prompt": "Find all TODO comments across the entire /home/adam/Projects/paloma/src/ directory, count how many are in each file, and write a summary report to /home/adam/Projects/paloma/tmp/todo-report.md.",
+  "system": "You are a coding assistant with access to the tools listed below. Use them to accomplish the user's request.",
+  "tools": [
+    {
+      "name": "search_files",
+      "description": "Search for files matching a text pattern within a directory tree.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Directory to search in" },
+          "pattern": { "type": "string", "description": "Text or regex pattern to search for in file contents" },
+          "file_pattern": { "type": "string", "description": "Glob pattern to filter files" }
+        },
+        "required": ["path", "pattern"]
+      }
+    },
+    {
+      "name": "write_file",
+      "description": "Write content to a file, creating or overwriting it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Absolute path to the file" },
+          "content": { "type": "string", "description": "Content to write" }
+        },
+        "required": ["path", "content"]
+      }
+    },
+    {
+      "name": "shell_grep",
+      "description": "Search for text patterns in files using grep.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "pattern": { "type": "string", "description": "Pattern to search for" },
+          "path": { "type": "string", "description": "File or directory path" },
+          "flags": { "type": "string", "description": "Optional flags like -r, -i, -l, -c" }
+        },
+        "required": ["pattern", "path"]
+      }
+    },
+    {
+      "name": "read_text_file",
+      "description": "Read the complete contents of a text file.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Absolute path to the file" }
+        },
+        "required": ["path"]
+      }
+    }
+  ],
+  "scoring": "claude_judge",
+  "rubric": "1=no tool calls or completely wrong approach, 2=searches for TODOs but never writes a report, 3=uses search_files for TODOs and writes a report but the report lacks per-file counts, 4=uses search_files with pattern TODO in src/, analyzes results, and writes a structured report with per-file breakdown, 5=uses search_files with correct path and pattern, produces an accurate per-file count summary, and writes a well-formatted markdown report to the exact output path",
+  "weight": 1,
+  "tags": ["multi-step", "tool-chaining", "file-search", "file-write", "analysis"]
+}

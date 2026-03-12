@@ -1,0 +1,62 @@
+{
+  "id": "tool-use-011",
+  "category": "tool-use",
+  "difficulty": "hard",
+  "prompt": "I have uncommitted changes I want to keep. Stash them, pull the latest changes from the remote, then pop my stash to restore my work.",
+  "system": "You are a coding assistant with access to the tools listed below. Use them to accomplish the user's request.",
+  "tools": [
+    {
+      "name": "git_stash",
+      "description": "Stash or restore uncommitted changes in a git repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": { "type": "string", "description": "Path to the git repository" },
+          "action": { "type": "string", "enum": ["save", "pop", "list", "drop"], "description": "Stash action to perform" },
+          "message": { "type": "string", "description": "Optional message for the stash (save only)" }
+        },
+        "required": ["repo_path", "action"]
+      }
+    },
+    {
+      "name": "git_pull",
+      "description": "Fetch and integrate changes from a remote repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": { "type": "string", "description": "Path to the git repository" },
+          "remote": { "type": "string", "description": "Remote name (default: origin)" },
+          "branch": { "type": "string", "description": "Branch to pull from" }
+        },
+        "required": ["repo_path"]
+      }
+    },
+    {
+      "name": "git_status",
+      "description": "Show the working tree status of a git repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": { "type": "string", "description": "Path to the git repository" }
+        },
+        "required": ["repo_path"]
+      }
+    },
+    {
+      "name": "git_commit",
+      "description": "Record changes to the repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": { "type": "string", "description": "Path to the git repository" },
+          "message": { "type": "string", "description": "Commit message" }
+        },
+        "required": ["repo_path", "message"]
+      }
+    }
+  ],
+  "scoring": "claude_judge",
+  "rubric": "1=no tool calls or wrong tools entirely, 2=only stashes or only pulls but not the full sequence, 3=attempts all three steps but wrong order (e.g. pull before stash save), 4=correct order stash save then pull then stash pop but minor parameter issues, 5=perfect chain: git_stash save, then git_pull, then git_stash pop, all with correct repo_path",
+  "weight": 1,
+  "tags": ["multi-step", "tool-chaining", "git", "stash-workflow"]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "bug-finding-006",
+  "category": "bug-finding",
+  "difficulty": "medium",
+  "prompt": "Find the bug(s) in the following code and explain the fix:\n\n```python\ndef add_item(item, lst=[]):\n    lst.append(item)\n    return lst\n\ndef build_shopping_lists():\n    alice_list = add_item('milk')\n    alice_list = add_item('bread', alice_list)\n    print(f'Alice: {alice_list}')\n\n    # Bob starts a fresh list — or does he?\n    bob_list = add_item('eggs')\n    bob_list = add_item('cheese', bob_list)\n    print(f'Bob: {bob_list}')\n\nbuild_shopping_lists()\n# Expected:\n#   Alice: ['milk', 'bread']\n#   Bob: ['eggs', 'cheese']\n# Actual:\n#   Alice: ['milk', 'bread']\n#   Bob: ['milk', 'bread', 'eggs', 'cheese']\n```",
+  "system": "You are an expert code reviewer and debugger. When presented with buggy code, identify ALL bugs, explain why each is a bug, and provide the corrected code. Be precise — mention exact line numbers or variable names.",
+  "scoring": "claude_judge",
+  "rubric": "1=Missed the bug entirely or said the code is correct. 2=Noticed the output is wrong but blamed the print statements or variable reassignment. 3=Identified that the default list is shared but gave an incomplete explanation (e.g., just said 'mutable default arguments are bad' without explaining WHY — that default values are evaluated once at function definition time, not per call). 4=Correctly identified that the default argument lst=[] is evaluated once when the function is defined, and the same list object is reused across all calls that don't pass an explicit lst argument. Bob's add_item('eggs') reuses Alice's list. Provided the fix using None sentinel: def add_item(item, lst=None): if lst is None: lst = []. But didn't explain the Python internals (default values stored on the function object). 5=Perfectly explained the Python mutable default argument trap: default values are evaluated once at function definition time and stored on the function object (accessible via add_item.__defaults__). Every call without an explicit lst argument shares the same list instance. Fixed with the None sentinel pattern (lst=None, then lst = [] if None). Mentioned this applies to all mutable defaults (dicts, sets, lists) and is a top Python gotcha.",
+  "weight": 1,
+  "tags": ["python", "mutable-default-argument", "function-defaults", "gotcha"]
+}

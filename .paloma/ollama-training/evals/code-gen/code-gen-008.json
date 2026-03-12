@@ -1,0 +1,12 @@
+{
+  "id": "code-gen-008",
+  "category": "code-gen",
+  "difficulty": "hard",
+  "prompt": "Write a JavaScript function `deepMerge(target, ...sources)` that recursively merges objects. Rules:\n- Plain objects are merged recursively\n- Arrays are concatenated, not replaced\n- Primitives from later sources overwrite earlier ones\n- The original target is not mutated (return a new object)\n\nInclude this test code at the end:\n\nconst a = { x: 1, nested: { a: 1, b: [1, 2] }, arr: [1] };\nconst b = { x: 2, nested: { b: [3, 4], c: 3 }, arr: [2, 3] };\nconst c = { nested: { d: 4 }, extra: true };\n\nconst result = deepMerge(a, b, c);\nconsole.log(JSON.stringify(result));\nconsole.log(JSON.stringify(a));",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "code_execution",
+  "expected_output": "{\"x\":2,\"nested\":{\"a\":1,\"b\":[1,2,3,4],\"c\":3,\"d\":4},\"arr\":[1,2,3],\"extra\":true}\n{\"x\":1,\"nested\":{\"a\":1,\"b\":[1,2]},\"arr\":[1]}",
+  "rubric": "1=Does not run or wrong output 2=Shallow merge only 3=Deep merge works but arrays replaced or target mutated 4=Correct deep merge with array concat and no mutation 5=Correct, handles circular refs, symbols, and non-enumerable properties",
+  "weight": 1,
+  "tags": ["javascript", "objects", "recursion", "deep-merge"]
+}

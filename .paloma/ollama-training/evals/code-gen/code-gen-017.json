@@ -1,0 +1,11 @@
+{
+  "id": "code-gen-017",
+  "category": "code-gen",
+  "difficulty": "medium",
+  "prompt": "Write a Rust function `fn longest_common_prefix(strs: &[&str]) -> String` that finds the longest common prefix string amongst an array of strings. If there is no common prefix, return an empty string.\n\nInclude a `main` function with these tests:\n\nfn main() {\n    println!(\"{}\", longest_common_prefix(&[\"flower\", \"flow\", \"flight\"]));\n    println!(\"{}\", longest_common_prefix(&[\"dog\", \"racecar\", \"car\"]));\n    println!(\"{}\", longest_common_prefix(&[\"interspecies\", \"interstellar\", \"interstate\"]));\n    println!(\"{}\", longest_common_prefix(&[\"alone\"]));\n    println!(\"'{}'\", longest_common_prefix(&[]));\n}",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "claude_judge",
+  "rubric": "1=Does not compile or wrong logic 2=Compiles but fails edge cases (empty input, single string) 3=Correct logic but not idiomatic Rust (unnecessary clones, poor iterator use) 4=Correct and idiomatic Rust with proper iterator usage 5=Correct, idiomatic, handles all edge cases, uses Rust iterators elegantly",
+  "weight": 1,
+  "tags": ["rust", "strings", "iterators", "algorithms"]
+}

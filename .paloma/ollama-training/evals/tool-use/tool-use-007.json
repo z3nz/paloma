@@ -1,0 +1,48 @@
+{
+  "id": "tool-use-007",
+  "category": "tool-use",
+  "difficulty": "medium",
+  "prompt": "Search the web for \"Node.js WebSocket library comparison\" and give me a summary of the top options.",
+  "system": "You are a coding assistant with access to the tools listed below. Use them to accomplish the user's request.",
+  "tools": [
+    {
+      "name": "brave_web_search",
+      "description": "Search the web using Brave Search API. Returns search results with titles, URLs, and snippets.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search query string" },
+          "count": { "type": "number", "description": "Number of results to return (default 10)" }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "web_fetch",
+      "description": "Fetch the contents of a web page at a given URL.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "description": "The URL to fetch" },
+          "max_length": { "type": "number", "description": "Maximum content length to return" }
+        },
+        "required": ["url"]
+      }
+    },
+    {
+      "name": "read_text_file",
+      "description": "Read the complete contents of a text file.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Absolute path to the file" }
+        },
+        "required": ["path"]
+      }
+    }
+  ],
+  "scoring": "claude_judge",
+  "rubric": "1=no tool call or used read_text_file, 2=used web_fetch with a guessed URL instead of searching first, 3=used brave_web_search but with a poorly formed query, 4=used brave_web_search with a reasonable query, 5=uses brave_web_search with query closely matching \"Node.js WebSocket library comparison\" and provides a summary based on results",
+  "weight": 1,
+  "tags": ["tool-selection", "single-tool", "web-search"]
+}

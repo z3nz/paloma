@@ -1,0 +1,12 @@
+{
+  "id": "code-gen-007",
+  "category": "code-gen",
+  "difficulty": "easy",
+  "prompt": "Write a JavaScript function `groupBy(arr, keyFn)` that groups array elements by the return value of `keyFn`. Returns an object where keys are the group names and values are arrays of elements.\n\nInclude this test code at the end:\n\nconst people = [\n  { name: 'Alice', age: 25 },\n  { name: 'Bob', age: 30 },\n  { name: 'Charlie', age: 25 },\n  { name: 'Diana', age: 30 },\n  { name: 'Eve', age: 35 }\n];\n\nconst byAge = groupBy(people, p => p.age);\nconsole.log(JSON.stringify(byAge));\n\nconst words = ['hello', 'hi', 'world', 'hey', 'wonder'];\nconst byFirst = groupBy(words, w => w[0]);\nconsole.log(JSON.stringify(byFirst));",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "code_execution",
+  "expected_output": "{\"25\":[{\"name\":\"Alice\",\"age\":25},{\"name\":\"Charlie\",\"age\":25}],\"30\":[{\"name\":\"Bob\",\"age\":30},{\"name\":\"Diana\",\"age\":30}],\"35\":[{\"name\":\"Eve\",\"age\":35}]}\n{\"h\":[\"hello\",\"hi\",\"hey\"],\"w\":[\"world\",\"wonder\"]}",
+  "rubric": "1=Does not run or wrong output 2=Runs but fails on some inputs 3=Correct but verbose implementation 4=Correct with clean reduce-based implementation 5=Correct, clean, handles edge cases like empty arrays and undefined keys",
+  "weight": 1,
+  "tags": ["javascript", "arrays", "grouping", "higher-order-functions"]
+}

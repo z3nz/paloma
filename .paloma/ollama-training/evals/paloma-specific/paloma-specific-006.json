@@ -1,0 +1,11 @@
+{
+  "id": "paloma-specific-006",
+  "category": "paloma-specific",
+  "difficulty": "medium",
+  "prompt": "Write a Vue 3 composable `useSessionState` that manages per-session state with LRU eviction. Requirements:\n\n1. Use `shallowReactive(new Map())` for the state map (NOT `reactive()` — explain why)\n2. Each session state object contains: `messages: ref([])`, `streaming: ref(false)`, `error: ref(null)`\n3. `getState(sessionId)` — returns existing state or creates new one, touches LRU\n4. LRU tracking via an array of sessionIds in access order\n5. When more than `MAX_LOADED = 10` sessions are loaded, evict the least recently used\n6. A fallback state singleton returned when no sessionId is provided\n\nWhy `shallowReactive` instead of `reactive`? Because `reactive()` deeply unwraps refs — it would turn `ref([])` inside the Map values into plain arrays, breaking reactivity tracking for individual session properties.",
+  "system": "You are a coding assistant working on Paloma, a Vue 3 + Vite application. The session state composable manages per-chat state (messages, streaming status, errors) with memory-bounded lazy loading. Use Vue's shallowReactive for Maps containing refs, and implement LRU eviction to prevent unbounded memory growth.",
+  "scoring": "claude_judge",
+  "rubric": "1=uses reactive() instead of shallowReactive or doesn't use Map, 2=uses shallowReactive(Map) but no LRU or eviction, 3=has LRU tracking but eviction logic is wrong or missing fallback state, 4=fully functional LRU with eviction and fallback but doesn't explain shallowReactive reason or minor bugs, 5=perfect: shallowReactive(Map), correct LRU with splice-and-push, eviction loop with safety bound, fallback singleton, clear explanation of why not reactive()",
+  "weight": 2,
+  "tags": ["vue3", "composable", "shallow-reactive", "lru", "session-state"]
+}

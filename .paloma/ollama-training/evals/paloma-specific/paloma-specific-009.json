@@ -1,0 +1,11 @@
+{
+  "id": "paloma-specific-009",
+  "category": "paloma-specific",
+  "difficulty": "medium",
+  "prompt": "Write a `cosineSimilarity(a, b)` function and an `embed(text)` function for Paloma's memory MCP server.\n\n`cosineSimilarity(a, b)` takes two arrays of numbers (vectors) and returns their cosine similarity as a float between -1 and 1.\n\n`embed(text)` should:\n1. Check if `embeddingReady` flag is true (set during async init when Ollama is reachable)\n2. If not ready, fall back to a keyword-based search approach: return `null` and let the caller use keyword matching\n3. If ready, call the Ollama embedding API:\n   ```\n   POST http://localhost:11434/api/embed\n   Body: { model: 'nomic-embed-text', input: text }\n   Response: { embeddings: [[0.1, 0.2, ...]] }\n   ```\n4. Return the embedding vector (first element of embeddings array)\n5. Handle API errors gracefully — return null on failure, don't throw\n\nAlso write a `findSimilar(query, memories, topK)` function that:\n1. Embeds the query\n2. If embedding available, compute cosine similarity against all memories (each has an `embedding` field)\n3. If no embedding (fallback), do case-insensitive substring matching on memory `content` field\n4. Return top K results sorted by relevance",
+  "system": "You are building the embedding and similarity search system for Paloma's persistent memory MCP server. The server uses Ollama for local embeddings with a keyword search fallback when Ollama is unavailable. Write clean, defensive code that handles the 'embedding not available' case gracefully.",
+  "scoring": "claude_judge",
+  "rubric": "1=cosine similarity is mathematically wrong, 2=correct cosine similarity but embed function doesn't handle fallback, 3=both functions work but findSimilar missing or no keyword fallback, 4=all three functions correct but minor issues (e.g. no error handling in embed, or findSimilar doesn't sort), 5=perfect: correct cosine similarity with zero-magnitude guard, embed with flag check and error handling, findSimilar with dual-path (vector vs keyword) and proper sorting/slicing",
+  "weight": 1,
+  "tags": ["mcp", "memory", "embeddings", "vector-search"]
+}

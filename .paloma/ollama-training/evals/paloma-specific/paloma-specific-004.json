@@ -1,0 +1,11 @@
+{
+  "id": "paloma-specific-004",
+  "category": "paloma-specific",
+  "difficulty": "medium",
+  "prompt": "Write a WebSocket message handler for the Paloma bridge that processes incoming messages from the browser. The handler should support these message types:\n\n1. `chat` — sends user message to a CLI session (calls `cliManager.chat()`)\n2. `ask_user_response` — resolves a pending ask_user request from a Map\n3. `tool_confirm_response` — resolves a pending tool confirmation from a Map\n\nUse this pattern from the existing bridge:\n```javascript\n// Pending request tracking\nconst pendingAskUser = new Map()    // id → { resolve, createdAt }\nconst pendingToolConfirm = new Map() // id → { resolve, createdAt }\n\nws.on('message', (raw) => {\n  let msg\n  try {\n    msg = JSON.parse(raw)\n  } catch {\n    ws.send(JSON.stringify({ type: 'error', error: 'Invalid JSON' }))\n    return\n  }\n  // Handle msg.type...\n})\n```\n\nFor `chat`, generate a requestId via `randomUUID()`, store the ws→requestId mapping in `cliRequestToWs`, and call `cliManager.chat({ prompt: msg.prompt, model: msg.model, sessionId: msg.sessionId })` with an event callback that sends events back to the originating ws client.\n\nFor ask_user/tool responses, look up the pending Map entry by `msg.id`, call its `resolve(msg.response)`, and delete the entry.",
+  "system": "You are a coding assistant working on Paloma's Node.js WebSocket bridge server. The bridge connects browser clients to AI CLI sessions. Follow the existing patterns: Map-based request tracking, JSON message parsing with error handling, and targeted response routing (send to originating client, not broadcast).",
+  "scoring": "claude_judge",
+  "rubric": "1=doesn't parse JSON or handle message types, 2=parses JSON but only handles 1 message type correctly, 3=handles all 3 types but missing error handling (no try/catch on parse, no check for missing Map entries), 4=all types handled with error handling but minor issues (e.g. doesn't delete Map entry after resolve, doesn't track cliRequestToWs), 5=perfect: JSON parse with error response, all 3 types handled, Map lookup with missing-entry guard, entry deletion after resolve, cliRequestToWs tracking, requestId generation",
+  "weight": 1,
+  "tags": ["websocket", "bridge", "node", "message-handler"]
+}

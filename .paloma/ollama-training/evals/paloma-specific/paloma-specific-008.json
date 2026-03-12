@@ -1,0 +1,11 @@
+{
+  "id": "paloma-specific-008",
+  "category": "paloma-specific",
+  "difficulty": "hard",
+  "prompt": "Implement a `ClaudeCliManager` class that spawns Claude CLI subprocesses for Paloma's bridge. The class should:\n\n1. Track processes in a `Map<requestId, { process, sessionId, mcpConfigPath }>`\n2. `chat({ prompt, model, sessionId, systemPrompt, cwd }, onEvent)` method that:\n   - Generates a `requestId` via `randomUUID()`\n   - Builds CLI args: `['--output-format', 'stream-json', '--verbose']`\n   - If `sessionId` is provided, add `['--resume', sessionId]` (resume existing session)\n   - If no `sessionId`, generate one, add `['--session-id', newId]`, and optionally add `--model` and `--append-system-prompt`\n   - If `this.mcpProxyPort` is set, write a temp MCP config JSON to `os.tmpdir()` and add `['--mcp-config', path, '--allowedTools', 'mcp__paloma__*']`\n   - Spawn `claude` subprocess with `stdio: ['ignore', 'pipe', 'pipe']`\n   - Parse stdout line-by-line as JSON, call `onEvent(parsed)` for each\n   - Store in processes Map\n   - Return `{ requestId, sessionId }`\n3. `stop(requestId)` method that kills the process and cleans up temp files\n4. `cleanup()` method that stops all processes\n\nThe MCP config format:\n```json\n{\"mcpServers\": {\"paloma\": {\"type\": \"sse\", \"url\": \"http://localhost:{port}/sse\"}}}\n```",
+  "system": "You are building Paloma's CLI session manager. This manages Claude CLI subprocesses that run as AI sessions. Each session is a real process with stdin/stdout communication using stream-json format. Follow Node.js best practices: use child_process.spawn, handle process lifecycle, clean up temp files.",
+  "scoring": "claude_judge",
+  "rubric": "1=doesn't spawn subprocess or completely wrong approach, 2=spawns subprocess but missing session resume logic or MCP config injection, 3=has spawn with resume and MCP config but missing stdout JSON parsing or process tracking, 4=fully functional but missing cleanup (temp files not deleted, processes Map not cleaned), 5=perfect: correct spawn args with resume/new branching, MCP config temp file injection, line-by-line JSON parsing of stdout, process Map tracking, stop with kill + temp file cleanup, cleanup-all method",
+  "weight": 2,
+  "tags": ["bridge", "cli-manager", "subprocess", "node"]
+}

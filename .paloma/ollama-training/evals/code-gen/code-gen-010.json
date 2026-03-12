@@ -1,0 +1,12 @@
+{
+  "id": "code-gen-010",
+  "category": "code-gen",
+  "difficulty": "hard",
+  "prompt": "Write a JavaScript function `parseTemplate(template, data)` that supports:\n- `{{variable}}` — variable substitution (supports dot notation like `{{user.name}}`)\n- `{{#if condition}}...{{/if}}` — conditional blocks (condition is a key in data, truthy/falsy)\n- `{{#each array}}...{{/each}}` — iteration (inside the block, `{{this}}` refers to current item, `{{this.prop}}` for objects)\n\nInclude this test code at the end:\n\nconst template = `Hello {{user.name}}!\n{{#if showGreeting}}Welcome back!{{/if}}\n{{#if showFarewell}}Goodbye!{{/if}}\nItems:\n{{#each items}}- {{this.name}}: \\${{this.price}}\n{{/each}}Total: {{total}}`;\n\nconst data = {\n  user: { name: 'Alice' },\n  showGreeting: true,\n  showFarewell: false,\n  items: [\n    { name: 'Apple', price: 1.50 },\n    { name: 'Banana', price: 0.75 }\n  ],\n  total: '$2.25'\n};\n\nconsole.log(parseTemplate(template, data));",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "code_execution",
+  "expected_output": "Hello Alice!\nWelcome back!\n\nItems:\n- Apple: $1.5\n- Banana: $0.75\nTotal: $2.25",
+  "rubric": "1=Does not run or fails on basic substitution 2=Variable substitution works but if/each broken 3=Most features work but dot notation or nested blocks fail 4=All features work correctly for the test case 5=All features work, handles nested blocks, escaping, missing variables gracefully",
+  "weight": 1,
+  "tags": ["javascript", "templating", "parsing", "string-processing"]
+}

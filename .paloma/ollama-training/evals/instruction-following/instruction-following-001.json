@@ -1,0 +1,12 @@
+{
+  "id": "instruction-following-001",
+  "category": "instruction-following",
+  "difficulty": "easy",
+  "prompt": "How do I reverse a string in JavaScript?",
+  "system": "Respond only in JSON format. All responses must be valid JSON objects with appropriate keys for the content you are conveying. Do not include any text outside the JSON structure.",
+  "scoring": "contains",
+  "expected": "{",
+  "rubric": "1=Response is plain text with no JSON structure. 2=Response mentions JSON but is not valid JSON. 3=Response is partially JSON but has text outside the JSON. 4=Response is valid JSON but keys are poorly chosen. 5=Response is valid JSON with clear, well-structured keys conveying the answer.",
+  "weight": 1,
+  "tags": ["format-constraint", "json", "output-format"]
+}

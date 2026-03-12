@@ -1,0 +1,11 @@
+{
+  "id": "paloma-specific-007",
+  "category": "paloma-specific",
+  "difficulty": "medium",
+  "prompt": "Write a `broadcast` and `sendToOrigin` function pair for Paloma's WebSocket bridge server.\n\n`broadcast(msg)` should:\n- JSON.stringify the message\n- Send to all connected WebSocket clients\n- Only send to clients with readyState === 1 (OPEN)\n\n`sendToOrigin(cliRequestId, msg)` should:\n- Look up the originating WebSocket client from `cliRequestToWs` Map\n- If found and open (readyState === 1), send only to that client\n- If not found or closed, fall back to broadcast\n\nAlso implement a stale request cleanup interval that runs every 60 seconds and removes entries from `pendingAskUser` and `pendingToolConfirm` Maps that are older than 5 minutes. When removing, call the entry's `resolve()` function with a timeout message.\n\n```javascript\n// Available globals:\nconst wss = new WebSocket.Server({ port: 19191 })\nconst cliRequestToWs = new Map()          // cliRequestId → WebSocket\nconst pendingAskUser = new Map()          // id → { resolve, createdAt }\nconst pendingToolConfirm = new Map()      // id → { resolve, createdAt }\nconst PENDING_TIMEOUT_MS = 5 * 60 * 1000\n```",
+  "system": "You are a coding assistant working on Paloma's Node.js WebSocket bridge. The bridge routes messages between browser clients and AI CLI sessions. Follow the existing patterns: targeted routing with broadcast fallback, Map-based request tracking with timestamps, and interval-based cleanup of stale requests.",
+  "scoring": "claude_judge",
+  "rubric": "1=missing broadcast or sendToOrigin entirely, 2=has both functions but missing readyState check or fallback, 3=functions correct but no stale cleanup interval, 4=all three implemented but minor issues (e.g. cleanup doesn't call resolve before delete, or no try/catch around resolve), 5=perfect: broadcast with readyState check, sendToOrigin with fallback to broadcast, cleanup interval with resolve-before-delete wrapped in try/catch, correct timeout calculation",
+  "weight": 1,
+  "tags": ["websocket", "bridge", "routing", "cleanup"]
+}

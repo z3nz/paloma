@@ -1,0 +1,11 @@
+{
+  "id": "bug-finding-008",
+  "category": "bug-finding",
+  "difficulty": "hard",
+  "prompt": "Find the bug(s) in the following code and explain the fix:\n\n```javascript\nimport { useState, useEffect } from 'react'\n\nfunction Timer() {\n  const [count, setCount] = useState(0)\n\n  useEffect(() => {\n    const id = setInterval(() => {\n      console.log('Current count:', count) // Always logs 0\n      setCount(count + 1) // Always sets to 0 + 1 = 1\n    }, 1000)\n    return () => clearInterval(id)\n  }, []) // Empty dependency array\n\n  return <div>Count: {count}</div>\n  // Display shows 1 forever after first tick\n}\n\nexport default Timer\n```",
+  "system": "You are an expert code reviewer and debugger. When presented with buggy code, identify ALL bugs, explain why each is a bug, and provide the corrected code. Be precise — mention exact line numbers or variable names.",
+  "scoring": "claude_judge",
+  "rubric": "1=Missed the bug entirely or said the code is correct. 2=Noticed the count doesn't increment but blamed setInterval timing or React rendering issues. 3=Identified it's a stale closure issue but gave an incorrect or suboptimal fix (e.g., added count to the dependency array — which works but creates/destroys intervals every render, defeating the purpose of setInterval). 4=Correctly identified the stale closure: the empty dependency array [] means the effect runs once, and the setInterval callback captures the initial count value (0) in its closure forever. Provided the correct fix using the functional updater form: setCount(prev => prev + 1). But didn't explain why the functional form works (it receives current state, not the closed-over value). 5=Perfectly explained the stale closure mechanism: useEffect with [] runs once on mount, the setInterval callback closes over the count variable from that single render (value: 0). Every tick reads stale count = 0 and sets 0+1=1. Fixed with functional updater setCount(prev => prev + 1) which doesn't depend on the closed-over value. Mentioned alternative fixes (useRef to hold mutable current value, or adding count to deps with useEffect re-running) and their tradeoffs. Noted this is one of the most common React Hooks bugs.",
+  "weight": 1,
+  "tags": ["javascript", "react", "hooks", "stale-closure", "useEffect", "useState"]
+}

@@ -6,7 +6,9 @@
       :streaming-content="streamingContent"
       :tool-activity="toolActivity"
       :error="error"
+      :session-id="session?.id"
       @apply-code="handleApplyCode"
+      @navigate-to-pillar="handleNavigateToPillar"
     />
     <div v-if="contextWarning" class="px-4 py-2 bg-warning/10 border-t border-warning/30 text-sm text-warning text-center">
       {{ contextWarning }}
@@ -72,7 +74,7 @@ const props = defineProps({
   session: { type: Object, default: null }
 })
 
-const emit = defineEmits(['update-session', 'transition-phase'])
+const emit = defineEmits(['update-session', 'transition-phase', 'navigate-to-pillar'])
 
 const {
   messages, streaming, streamingContent, toolActivity, error,
@@ -474,5 +476,11 @@ async function handleToolAllowToolAlways({ server, tool }) {
 
 function handleAskUserRespond(answer) {
   respondToAskUser(answer)
+}
+
+function handleNavigateToPillar(dbSessionId) {
+  if (dbSessionId) {
+    emit('navigate-to-pillar', dbSessionId)
+  }
 }
 </script>

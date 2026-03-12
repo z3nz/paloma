@@ -1,0 +1,12 @@
+{
+  "id": "code-gen-009",
+  "category": "code-gen",
+  "difficulty": "medium",
+  "prompt": "Implement a JavaScript `Router` class for URL pattern matching with path parameters.\n\nAPI:\n- `router.add(method, pattern, handler)` — register a route with :param placeholders\n- `router.match(method, path)` — returns `{ handler, params }` or `null` if no match\n\nInclude this test code at the end:\n\nconst router = new Router();\nrouter.add('GET', '/users', 'listUsers');\nrouter.add('GET', '/users/:id', 'getUser');\nrouter.add('POST', '/users/:id/posts/:postId', 'getPost');\nrouter.add('DELETE', '/users/:id', 'deleteUser');\n\nconst r1 = router.match('GET', '/users');\nconsole.log(r1.handler, JSON.stringify(r1.params));\n\nconst r2 = router.match('GET', '/users/42');\nconsole.log(r2.handler, JSON.stringify(r2.params));\n\nconst r3 = router.match('POST', '/users/7/posts/99');\nconsole.log(r3.handler, JSON.stringify(r3.params));\n\nconst r4 = router.match('GET', '/unknown');\nconsole.log(r4);\n\nconst r5 = router.match('DELETE', '/users/42');\nconsole.log(r5.handler, JSON.stringify(r5.params));",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "code_execution",
+  "expected_output": "listUsers {}\ngetUser {\"id\":\"42\"}\ngetPost {\"id\":\"7\",\"postId\":\"99\"}\nnull\ndeleteUser {\"id\":\"42\"}",
+  "rubric": "1=Does not run or wrong output 2=Basic matching works but params broken 3=Works for simple cases but multi-param or method filtering fails 4=All test cases pass with clean implementation 5=All cases pass, supports wildcards or regex patterns, well-structured",
+  "weight": 1,
+  "tags": ["javascript", "routing", "url-parsing", "classes"]
+}

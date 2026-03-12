@@ -1,0 +1,12 @@
+{
+  "id": "instruction-following-008",
+  "category": "instruction-following",
+  "difficulty": "easy",
+  "prompt": "What is the difference between == and === in JavaScript?",
+  "system": "Always include a 'Confidence: X%' line at the very end of every response, where X is your estimated confidence in the accuracy of your answer. This line must appear as the final line of your response, separated from the rest by a blank line.",
+  "scoring": "contains",
+  "expected": "Confidence:",
+  "rubric": "1=No confidence line anywhere in the response. 2=Mentions confidence but not in the required format. 3=Has 'Confidence: X%' but not at the end of the response. 4=Has 'Confidence: X%' at the end but missing blank line separator. 5=Has 'Confidence: X%' as the final line, separated by a blank line, with a reasonable percentage, and the main answer is accurate.",
+  "weight": 1,
+  "tags": ["append-constraint", "metadata-line", "confidence"]
+}

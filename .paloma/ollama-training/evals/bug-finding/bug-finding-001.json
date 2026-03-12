@@ -1,0 +1,11 @@
+{
+  "id": "bug-finding-001",
+  "category": "bug-finding",
+  "difficulty": "medium",
+  "prompt": "Find the bug(s) in the following code and explain the fix:\n\n```javascript\nasync function processItems(items) {\n  const results = []\n  items.forEach(async (item) => {\n    const result = await fetchData(item.url)\n    results.push(result)\n  })\n  return results // Returns before all items are processed\n}\n\nasync function main() {\n  const items = [\n    { url: '/api/users' },\n    { url: '/api/posts' },\n    { url: '/api/comments' }\n  ]\n  const data = await processItems(items)\n  console.log('Got', data.length, 'results')\n  // Expected: 3, Actual: 0\n}\n```",
+  "system": "You are an expert code reviewer and debugger. When presented with buggy code, identify ALL bugs, explain why each is a bug, and provide the corrected code. Be precise — mention exact line numbers or variable names.",
+  "scoring": "claude_judge",
+  "rubric": "1=Missed the bug entirely or said the code is correct. 2=Vaguely mentioned something about async but diagnosed it as a missing await on processItems or wrong issue. 3=Identified that forEach doesn't await the async callbacks, but provided an incorrect or incomplete fix (e.g., just adding await inside forEach). 4=Correctly identified that Array.forEach ignores the returned promises from async callbacks so the function returns before callbacks complete, and provided a working fix (Promise.all + map or for...of loop), but didn't clearly explain WHY forEach behaves this way (it discards return values). 5=Perfectly identified that forEach fires all async callbacks but doesn't await their promises (since forEach ignores return values), explained that the returned promises are silently discarded, and provided a correct fix using either Promise.all(items.map(async ...)) for parallel execution or a for...of loop for sequential execution, noting the tradeoff between the two approaches.",
+  "weight": 1,
+  "tags": ["javascript", "async-await", "array-methods", "promises"]
+}

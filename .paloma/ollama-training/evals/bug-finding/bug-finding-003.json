@@ -1,0 +1,11 @@
+{
+  "id": "bug-finding-003",
+  "category": "bug-finding",
+  "difficulty": "hard",
+  "prompt": "Find the bug(s) in the following code and explain the fix:\n\n```python\nimport threading\n\ncounter = 0\n\ndef increment():\n    global counter\n    for _ in range(100000):\n        counter = counter + 1  # Read, add, write\n\ndef main():\n    threads = [threading.Thread(target=increment) for _ in range(4)]\n    for t in threads:\n        t.start()\n    for t in threads:\n        t.join()\n    print(f'Expected: 400000, Got: {counter}')\n    # Typical output: Expected: 400000, Got: 287463\n\nmain()\n```",
+  "system": "You are an expert code reviewer and debugger. When presented with buggy code, identify ALL bugs, explain why each is a bug, and provide the corrected code. Be precise — mention exact line numbers or variable names.",
+  "scoring": "claude_judge",
+  "rubric": "1=Missed the bug entirely, said the code is correct, or blamed Python's GIL for making threads useless (the GIL doesn't make this safe). 2=Mentioned threading is involved but diagnosed the wrong issue (e.g., said global variables don't work with threads, or that join() is in the wrong place). 3=Identified there's a race condition but gave an incomplete explanation (e.g., just said 'not thread-safe' without explaining the read-modify-write sequence) or provided a fix that doesn't fully work. 4=Correctly identified the race condition: counter = counter + 1 is a non-atomic read-modify-write — thread A reads counter, thread B reads the same value, both increment and write back, losing one update. Provided a working fix using threading.Lock(), but didn't address the GIL misconception or mention alternatives. 5=Perfectly explained the race condition with the interleaving scenario (read-modify-write is three bytecode operations, GIL can release between them despite being a single Python statement). Provided a correct fix using threading.Lock() with a context manager, and optionally mentioned alternatives like threading.atomic or itertools or queue-based approaches. Noted that Python's GIL does NOT prevent this race because the GIL releases between bytecodes, not between Python statements.",
+  "weight": 1,
+  "tags": ["python", "threading", "race-condition", "concurrency", "GIL"]
+}

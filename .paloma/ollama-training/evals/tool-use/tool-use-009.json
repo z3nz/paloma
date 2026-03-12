@@ -1,0 +1,89 @@
+{
+  "id": "tool-use-009",
+  "category": "tool-use",
+  "difficulty": "hard",
+  "prompt": "Create a new git branch called \"feature/auth\", switch to it, create a file at /home/adam/Projects/paloma/src/auth/index.js with a basic module export, stage it, and make an initial commit with the message \"feat: add auth module scaffold\".",
+  "system": "You are a coding assistant with access to the tools listed below. Use them to accomplish the user's request.",
+  "tools": [
+    {
+      "name": "git_branch",
+      "description": "Create, list, or delete git branches.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": { "type": "string", "description": "Path to the git repository" },
+          "name": { "type": "string", "description": "Branch name to create or delete" },
+          "action": { "type": "string", "enum": ["create", "list", "delete"], "description": "Action to perform" }
+        },
+        "required": ["repo_path", "action"]
+      }
+    },
+    {
+      "name": "git_checkout",
+      "description": "Switch branches or restore working tree files.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": { "type": "string", "description": "Path to the git repository" },
+          "branch": { "type": "string", "description": "Branch name to switch to" }
+        },
+        "required": ["repo_path", "branch"]
+      }
+    },
+    {
+      "name": "write_file",
+      "description": "Write content to a file, creating or overwriting it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Absolute path to the file" },
+          "content": { "type": "string", "description": "Content to write" }
+        },
+        "required": ["path", "content"]
+      }
+    },
+    {
+      "name": "git_add",
+      "description": "Stage files for the next git commit.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": { "type": "string", "description": "Path to the git repository" },
+          "files": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of file paths to stage"
+          }
+        },
+        "required": ["repo_path", "files"]
+      }
+    },
+    {
+      "name": "git_commit",
+      "description": "Record changes to the repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": { "type": "string", "description": "Path to the git repository" },
+          "message": { "type": "string", "description": "Commit message" }
+        },
+        "required": ["repo_path", "message"]
+      }
+    },
+    {
+      "name": "git_status",
+      "description": "Show the working tree status of a git repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": { "type": "string", "description": "Path to the git repository" }
+        },
+        "required": ["repo_path"]
+      }
+    }
+  ],
+  "scoring": "claude_judge",
+  "rubric": "1=no tool calls or completely wrong approach, 2=only does 1-2 of the 5 required steps, 3=attempts all steps but wrong order (e.g. commits before staging) or missing steps, 4=all 5 steps in correct order (branch create, checkout, write, add, commit) with minor issues in parameters, 5=perfect chain: git_branch create feature/auth, git_checkout to feature/auth, write_file with valid JS content, git_add the new file, git_commit with the specified message",
+  "weight": 1,
+  "tags": ["multi-step", "tool-chaining", "git", "file-write", "complex-workflow"]
+}

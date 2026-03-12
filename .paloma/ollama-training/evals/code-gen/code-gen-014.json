@@ -1,0 +1,12 @@
+{
+  "id": "code-gen-014",
+  "category": "code-gen",
+  "difficulty": "medium",
+  "prompt": "Write a Python generator function `sliding_window(iterable, size)` that yields tuples representing sliding windows of the given size over the iterable. If the iterable has fewer elements than the window size, yield nothing.\n\nInclude this test code at the end:\n\nprint(list(sliding_window([1, 2, 3, 4, 5], 3)))\nprint(list(sliding_window('abcdef', 2)))\nprint(list(sliding_window([1, 2], 5)))\nprint(list(sliding_window(range(4), 1)))",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "code_execution",
+  "expected_output": "[(1, 2, 3), (2, 3, 4), (3, 4, 5)]\n[('a', 'b'), ('b', 'c'), ('c', 'd'), ('d', 'e'), ('e', 'f')]\n[]\n[(0,), (1,), (2,), (3,)]",
+  "rubric": "1=Does not run or wrong output 2=Works for lists but not general iterables 3=Correct output but materializes entire iterable 4=Correct generator using deque or itertools 5=Correct, memory-efficient, works with any iterable including infinite ones",
+  "weight": 1,
+  "tags": ["python", "generators", "sliding-window", "itertools"]
+}

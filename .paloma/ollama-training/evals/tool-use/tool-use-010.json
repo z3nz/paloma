@@ -1,0 +1,48 @@
+{
+  "id": "tool-use-010",
+  "category": "tool-use",
+  "difficulty": "medium",
+  "prompt": "Read the files /home/adam/Projects/paloma/bridge/claude-cli.js and /home/adam/Projects/paloma/bridge/codex-cli.js and compare what they export. Tell me the similarities and differences in their module exports.",
+  "system": "You are a coding assistant with access to the tools listed below. Use them to accomplish the user's request.",
+  "tools": [
+    {
+      "name": "read_text_file",
+      "description": "Read the complete contents of a text file.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Absolute path to the file" }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "shell_cat",
+      "description": "Display file contents using the system cat command.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "File path to display" }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "search_files",
+      "description": "Search for files matching a text pattern within a directory tree.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Directory to search in" },
+          "pattern": { "type": "string", "description": "Text or regex pattern to search for in file contents" },
+          "file_pattern": { "type": "string", "description": "Glob pattern to filter files" }
+        },
+        "required": ["path", "pattern"]
+      }
+    }
+  ],
+  "scoring": "claude_judge",
+  "rubric": "1=no tool calls or wrong tools, 2=only reads one file instead of both, 3=reads both files but uses shell_cat instead of read_text_file, 4=uses read_text_file for both files with correct paths, 5=uses read_text_file for both files with exact paths and provides a meaningful comparison of their exports",
+  "weight": 1,
+  "tags": ["multi-step", "file-read", "tool-selection", "comparison"]
+}

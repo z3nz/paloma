@@ -1,0 +1,12 @@
+{
+  "id": "code-gen-013",
+  "category": "code-gen",
+  "difficulty": "hard",
+  "prompt": "Write a Python function `find_cycle(head)` that detects a cycle in a linked list and returns the node where the cycle begins, or None if there is no cycle. Use Floyd's cycle detection algorithm (O(1) space). Include the `ListNode` class definition.\n\nInclude this test code at the end:\n\n# Test 1: cycle at node 2\nn1, n2, n3, n4 = ListNode(1), ListNode(2), ListNode(3), ListNode(4)\nn1.next = n2; n2.next = n3; n3.next = n4; n4.next = n2\nresult = find_cycle(n1)\nprint(result.val if result else None)\n\n# Test 2: no cycle\na, b, c = ListNode(10), ListNode(20), ListNode(30)\na.next = b; b.next = c\nresult = find_cycle(a)\nprint(result.val if result else None)\n\n# Test 3: cycle at head\nx, y = ListNode(5), ListNode(6)\nx.next = y; y.next = x\nresult = find_cycle(x)\nprint(result.val if result else None)\n\n# Test 4: single node, no cycle\ns = ListNode(99)\nresult = find_cycle(s)\nprint(result.val if result else None)",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "code_execution",
+  "expected_output": "2\nNone\n5\nNone",
+  "rubric": "1=Does not run or wrong output 2=Detects cycle existence but not the start node 3=Correct output but uses O(n) space (hash set) 4=Correct Floyd's algorithm with O(1) space 5=Correct Floyd's, clean code, handles all edge cases including empty list",
+  "weight": 1,
+  "tags": ["python", "linked-list", "cycle-detection", "floyd-algorithm"]
+}

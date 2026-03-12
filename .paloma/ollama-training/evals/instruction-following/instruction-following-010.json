@@ -1,0 +1,11 @@
+{
+  "id": "instruction-following-010",
+  "category": "instruction-following",
+  "difficulty": "medium",
+  "prompt": "Bug report: Our Express API returns 500 errors intermittently on the /api/orders endpoint. It works fine for the first ~100 requests after server restart, then starts failing. The error log shows 'ECONNRESET' from our PostgreSQL connection. We're using the 'pg' npm package with default settings. Server runs on a single instance with 2GB RAM.",
+  "system": "When given a bug report, respond with exactly these four sections in this order: REPRODUCE, ROOT CAUSE, FIX, PREVENTION. Use these exact words as section headers. Do not include any text outside these four sections — no introduction, no greeting, no summary, no conclusion. Each section should contain actionable, specific content related to the bug.",
+  "scoring": "claude_judge",
+  "rubric": "1=Response is free-form text without the required section structure. 2=Response has some sections but is missing 1-2 of the required four or includes extra text outside sections. 3=Response has all four sections (REPRODUCE, ROOT CAUSE, FIX, PREVENTION) but includes introductory or concluding text outside the sections. 4=Response has exactly the four sections with no extra text, but content in one or more sections is generic rather than specific to the connection pool exhaustion issue. 5=Response has exactly REPRODUCE, ROOT CAUSE, FIX, PREVENTION sections with no extra text, correctly identifies connection pool exhaustion as root cause, suggests pg-pool configuration with appropriate settings, and provides specific prevention measures like connection monitoring and pool size tuning.",
+  "weight": 1,
+  "tags": ["structured-output", "bug-report-format", "section-constraint", "no-extra-text"]
+}

@@ -49,7 +49,7 @@
       class="px-6 py-2"
     />
 
-    <!-- Active pillar animations — shows running/streaming pillars inline in chat -->
+    <!-- Active pillar animations — shows running/streaming pillars scoped to this chat -->
     <div v-if="activePillars.length > 0" class="px-6 py-4">
       <div class="max-w-3xl mx-auto">
         <div class="text-xs font-medium uppercase tracking-wider text-text-muted mb-3">Active Pillars</div>
@@ -57,7 +57,8 @@
           <div
             v-for="p in activePillars"
             :key="p.pillarId"
-            class="pillar-activity-card flex flex-col items-center gap-2 py-4 px-5 rounded-lg border"
+            @click="$emit('navigate-to-pillar', p.dbSessionId)"
+            class="pillar-activity-card flex flex-col items-center gap-2 py-4 px-5 rounded-lg border cursor-pointer hover:brightness-125 transition"
             :style="{
               borderColor: pillarColors[p.phase] + '40',
               backgroundColor: pillarColors[p.phase] + '10',
@@ -101,12 +102,13 @@ const props = defineProps({
   streaming: { type: Boolean, default: false },
   streamingContent: { type: String, default: '' },
   toolActivity: { type: Array, default: () => [] },
-  error: { type: String, default: null }
+  error: { type: String, default: null },
+  sessionId: { type: Number, default: null }
 })
 
-defineEmits(['apply-code'])
+const emit = defineEmits(['apply-code', 'navigate-to-pillar'])
 
-const { pillarStatuses, pillarPhases } = useMCP()
+const { pillarStatuses, pillarPhases, pillarParents, pillarDbSessions } = useMCP()
 
 const pillarColors = {
   flow: '#22d3ee',
@@ -121,10 +123,14 @@ const activePillars = computed(() => {
   const result = []
   for (const [pillarId, status] of pillarStatuses) {
     if (status === 'running' || status === 'streaming') {
+      // Only show pillars belonging to the current session
+      const parentId = pillarParents.get(pillarId)
+      if (parentId !== props.sessionId) continue
       result.push({
         pillarId,
         phase: pillarPhases.get(pillarId) || 'flow',
-        status
+        status,
+        dbSessionId: pillarDbSessions.get(pillarId)
       })
     }
   }

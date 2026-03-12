@@ -1,0 +1,11 @@
+{
+  "id": "paloma-specific-001",
+  "category": "paloma-specific",
+  "difficulty": "medium",
+  "prompt": "Write a Vue 3 composable called `useNotifications` that follows Paloma's HMR state preservation pattern. It should:\n\n1. Export a `notifications` ref (array of objects with `id`, `message`, `type`)\n2. Export an `unreadCount` computed\n3. Export `addNotification(message, type)` and `dismiss(id)` functions\n4. Preserve state across Vite HMR reloads using `window.__PALOMA_NOTIFICATIONS__`\n5. Use module-level singleton refs (not inside the composable function)\n\nHere's the pattern from the existing codebase for reference:\n```javascript\nconst _saved = import.meta.hot ? window.__PALOMA_SESSIONS__ : undefined\nconst sessions = ref(_saved?.sessions ?? [])\n\nif (import.meta.hot) {\n  const save = () => {\n    window.__PALOMA_SESSIONS__ = {\n      sessions: sessions.value\n    }\n  }\n  save()\n  watch([sessions], save, { flush: 'sync' })\n}\n\nexport function useSessions() {\n  return { sessions }\n}\n```",
+  "system": "You are a coding assistant working on Paloma, a Vue 3 + Vite application. Follow the exact patterns used in the existing codebase. Pay special attention to: module-level singleton refs, HMR state preservation via window.__PALOMA_*__, and the import.meta.hot guard pattern.",
+  "scoring": "claude_judge",
+  "rubric": "1=doesn't use module-level refs or HMR pattern at all, 2=has module-level refs but wrong HMR pattern (missing watch or wrong flush), 3=correct HMR pattern but missing computed or functions, 4=fully correct but minor style issues (e.g. missing import.meta.hot.accept()), 5=perfect implementation matching all patterns: module-level refs, _saved fallback, watch with flush:'sync', save() called immediately, import.meta.hot.accept(), correct composable export",
+  "weight": 2,
+  "tags": ["vue3", "composable", "hmr", "singleton-refs"]
+}

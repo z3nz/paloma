@@ -1,0 +1,64 @@
+{
+  "id": "tool-use-008",
+  "category": "tool-use",
+  "difficulty": "hard",
+  "prompt": "Rename the file /home/adam/Projects/paloma/src/utils/old.js to /home/adam/Projects/paloma/src/utils/new.js and update the git staging area to reflect the rename.",
+  "system": "You are a coding assistant with access to the tools listed below. Use them to accomplish the user's request.",
+  "tools": [
+    {
+      "name": "move_file",
+      "description": "Move or rename a file or directory.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source": { "type": "string", "description": "Source path of the file or directory" },
+          "destination": { "type": "string", "description": "Destination path" }
+        },
+        "required": ["source", "destination"]
+      }
+    },
+    {
+      "name": "git_add",
+      "description": "Stage files for the next git commit.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": { "type": "string", "description": "Path to the git repository" },
+          "files": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of file paths to stage"
+          }
+        },
+        "required": ["repo_path", "files"]
+      }
+    },
+    {
+      "name": "git_status",
+      "description": "Show the working tree status of a git repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": { "type": "string", "description": "Path to the git repository" }
+        },
+        "required": ["repo_path"]
+      }
+    },
+    {
+      "name": "write_file",
+      "description": "Write content to a file, creating or overwriting it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Absolute path to the file" },
+          "content": { "type": "string", "description": "Content to write" }
+        },
+        "required": ["path", "content"]
+      }
+    }
+  ],
+  "scoring": "claude_judge",
+  "rubric": "1=no tool calls or completely wrong approach, 2=only moves or only stages but not both, 3=uses move_file and git_add but with wrong paths or missing the old file in staging, 4=correct move_file then git_add but only stages one of the two paths (should stage both old and new for rename detection), 5=calls move_file with correct source/destination, then git_add staging both the old and new paths so git detects it as a rename",
+  "weight": 1,
+  "tags": ["multi-step", "file-rename", "git", "tool-chaining"]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "instruction-following-007",
+  "category": "instruction-following",
+  "difficulty": "medium",
+  "prompt": "How do I use the Array.prototype.reduce() method in JavaScript?",
+  "system": "Respond in the style of a Unix man page. Your response must include these sections in order: NAME, SYNOPSIS, DESCRIPTION, EXAMPLES, and SEE ALSO. Use uppercase for section headers. Format code examples as you would in a man page. Do not deviate from this structure.",
+  "scoring": "claude_judge",
+  "rubric": "1=Response is a normal explanation with no man page formatting at all. 2=Response mentions some section names but does not follow man page structure or is missing most sections. 3=Response has the correct sections but formatting does not resemble a man page, or is missing 1-2 sections. 4=Response follows man page structure with all 5 sections and reasonable formatting but has minor style issues. 5=Response is formatted convincingly as a Unix man page with all 5 sections (NAME, SYNOPSIS, DESCRIPTION, EXAMPLES, SEE ALSO), proper man page conventions, clear synopsis showing function signature, practical examples, and relevant cross-references.",
+  "weight": 1,
+  "tags": ["format-mimicry", "man-page", "structural-constraint"]
+}

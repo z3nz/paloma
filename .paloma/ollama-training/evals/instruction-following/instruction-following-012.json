@@ -1,0 +1,11 @@
+{
+  "id": "instruction-following-012",
+  "category": "instruction-following",
+  "difficulty": "medium",
+  "prompt": "How should I implement caching for a web application that serves product catalog data? The catalog has about 50,000 products and updates a few times per day.",
+  "system": "Always provide exactly 2 alternative approaches for every solution you give. Label them 'Option A' and 'Option B'. Each option must include a brief description, key advantages, and key drawbacks. Do not provide a single recommendation — present both options as viable and let the reader decide. Use these exact labels.",
+  "scoring": "claude_judge",
+  "rubric": "1=Response gives a single recommendation with no options structure. 2=Response mentions alternatives but does not use 'Option A' / 'Option B' labels or only provides one labeled option. 3=Response has 'Option A' and 'Option B' but is missing advantages/drawbacks for one or both, or adds a third option. 4=Response has exactly 'Option A' and 'Option B' with descriptions, advantages, and drawbacks, but slightly favors one option instead of presenting both neutrally. 5=Response presents exactly 'Option A' and 'Option B' with clear labels, substantive descriptions of different caching strategies appropriate for the 50K product catalog scenario, explicit advantages and drawbacks for each, and neutral tone letting the reader decide.",
+  "weight": 1,
+  "tags": ["alternatives-format", "option-labels", "balanced-presentation", "decision-support"]
+}

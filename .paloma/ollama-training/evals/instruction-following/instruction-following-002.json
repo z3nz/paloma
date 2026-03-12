@@ -1,0 +1,11 @@
+{
+  "id": "instruction-following-002",
+  "category": "instruction-following",
+  "difficulty": "medium",
+  "prompt": "How do I set up a new Node.js project from scratch? I want to use Express for the server and connect to a PostgreSQL database.",
+  "system": "Never use the word 'simply' or 'just' in your responses. These words are banned. Find alternative phrasing for every case where you might use them. This rule has no exceptions.",
+  "scoring": "claude_judge",
+  "rubric": "1=Response contains multiple instances of 'simply' or 'just'. 2=Response contains one instance of 'simply' or 'just'. 3=Response avoids banned words but the phrasing is awkward from trying to avoid them. 4=Response avoids banned words with natural phrasing but answer quality is mediocre. 5=Response completely avoids 'simply' and 'just' while providing a clear, natural, high-quality setup guide.",
+  "weight": 1,
+  "tags": ["word-ban", "vocabulary-constraint", "natural-language"]
+}

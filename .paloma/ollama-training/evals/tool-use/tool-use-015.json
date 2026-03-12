@@ -1,0 +1,74 @@
+{
+  "id": "tool-use-015",
+  "category": "tool-use",
+  "difficulty": "hard",
+  "prompt": "Set up a new feature module at /home/adam/Projects/paloma/src/features/notifications/. Create the directory, then create an index.js file with a basic NotificationService class export, and a notifications.test.js file with a placeholder test. Finally, stage all the new files in git.",
+  "system": "You are a coding assistant with access to the tools listed below. Use them to accomplish the user's request.",
+  "tools": [
+    {
+      "name": "create_directory",
+      "description": "Create a new directory (and parent directories if needed).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Absolute path of the directory to create" }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "write_file",
+      "description": "Write content to a file, creating or overwriting it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Absolute path to the file" },
+          "content": { "type": "string", "description": "Content to write" }
+        },
+        "required": ["path", "content"]
+      }
+    },
+    {
+      "name": "git_add",
+      "description": "Stage files for the next git commit.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": { "type": "string", "description": "Path to the git repository" },
+          "files": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of file paths to stage"
+          }
+        },
+        "required": ["repo_path", "files"]
+      }
+    },
+    {
+      "name": "list_directory",
+      "description": "List files and directories in a given path.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Directory path to list" }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "git_status",
+      "description": "Show the working tree status of a git repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo_path": { "type": "string", "description": "Path to the git repository" }
+        },
+        "required": ["repo_path"]
+      }
+    }
+  ],
+  "scoring": "claude_judge",
+  "rubric": "1=no tool calls or completely wrong approach, 2=creates files but skips directory creation or git staging, 3=creates directory and files but forgets to git_add or only stages one file, 4=all 4 steps present (mkdir, write index.js, write test file, git_add) but minor issues in content or paths, 5=perfect chain: create_directory for notifications/, write_file for index.js with a class export, write_file for notifications.test.js with a test, then git_add staging both new files",
+  "weight": 1,
+  "tags": ["multi-step", "tool-chaining", "file-write", "git", "scaffolding"]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "code-gen-001",
+  "category": "code-gen",
+  "difficulty": "easy",
+  "prompt": "Write a JavaScript function `isPalindrome(str)` that checks if a string is a palindrome, ignoring case and non-alphanumeric characters.\n\nInclude this test code at the end:\n\nconsole.log(isPalindrome('A man, a plan, a canal: Panama'));\nconsole.log(isPalindrome('race a car'));\nconsole.log(isPalindrome(''));\nconsole.log(isPalindrome('Was it a car or a cat I saw?'));",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "code_execution",
+  "expected_output": "true\nfalse\ntrue\ntrue",
+  "rubric": "1=Does not run or wrong output 2=Runs but fails edge cases 3=Correct output but poor code style 4=Correct output with clean code 5=Correct, clean, handles all edge cases elegantly",
+  "weight": 1,
+  "tags": ["javascript", "strings", "palindrome"]
+}

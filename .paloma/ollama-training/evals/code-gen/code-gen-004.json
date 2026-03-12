@@ -1,0 +1,12 @@
+{
+  "id": "code-gen-004",
+  "category": "code-gen",
+  "difficulty": "hard",
+  "prompt": "Implement a JavaScript `LRUCache` class with a constructor that takes `capacity`, and methods `get(key)` and `put(key, value)`. Both operations must be O(1) time complexity. `get` returns -1 if the key doesn't exist.\n\nInclude this test code at the end:\n\nconst cache = new LRUCache(2);\ncache.put(1, 1);\ncache.put(2, 2);\nconsole.log(cache.get(1));\ncache.put(3, 3);\nconsole.log(cache.get(2));\ncache.put(4, 4);\nconsole.log(cache.get(1));\nconsole.log(cache.get(3));\nconsole.log(cache.get(4));",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "code_execution",
+  "expected_output": "1\n-1\n-1\n3\n4",
+  "rubric": "1=Does not run or wrong output 2=Runs but not O(1) operations 3=Correct output but uses array shifting instead of linked list 4=Correct O(1) implementation using Map insertion order 5=Correct O(1) with doubly-linked list and hash map, clean code",
+  "weight": 1,
+  "tags": ["javascript", "data-structures", "lru-cache", "algorithms"]
+}

@@ -1,0 +1,47 @@
+{
+  "id": "tool-use-002",
+  "category": "tool-use",
+  "difficulty": "easy",
+  "prompt": "List all files in the /home/adam/Projects/paloma/bridge/ directory.",
+  "system": "You are a coding assistant with access to the tools listed below. Use them to accomplish the user's request.",
+  "tools": [
+    {
+      "name": "list_directory",
+      "description": "List files and directories in a given path.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Directory path to list" }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "shell_ls",
+      "description": "List directory contents using the system ls command.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Directory path to list" },
+          "flags": { "type": "string", "description": "Optional flags like -la, -R" }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "read_text_file",
+      "description": "Read the complete contents of a text file.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Absolute path to the file" }
+        },
+        "required": ["path"]
+      }
+    }
+  ],
+  "scoring": "claude_judge",
+  "rubric": "1=no tool call or completely wrong tool, 2=used shell_ls instead of list_directory, 3=used list_directory but wrong path, 4=correct tool and path with minor issues, 5=uses list_directory with exact path /home/adam/Projects/paloma/bridge/",
+  "weight": 1,
+  "tags": ["tool-selection", "single-tool", "directory-listing"]
+}

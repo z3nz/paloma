@@ -1,0 +1,11 @@
+{
+  "id": "code-gen-020",
+  "category": "code-gen",
+  "difficulty": "hard",
+  "prompt": "Implement a JSON serializer in Rust. Define a custom enum `JsonValue` with variants: `Null`, `Bool(bool)`, `Number(f64)`, `Str(String)`, `Array(Vec<JsonValue>)`, `Object(Vec<(String, JsonValue)>)` (using Vec of tuples to preserve insertion order).\n\nWrite a function `fn serialize_json(value: &JsonValue) -> String` that produces valid JSON output. Strings must be properly escaped (handle `\\\"`, `\\\\`, `\\n`, `\\t`).\n\nInclude a `main` function that builds and serializes this structure:\n\n```\n{\n  \"name\": \"Paloma\",\n  \"version\": 2.5,\n  \"active\": true,\n  \"metadata\": null,\n  \"tags\": [\"ai\", \"assistant\"],\n  \"config\": {\n    \"nested\": true,\n    \"path\": \"C:\\\\Users\\\\test\"\n  }\n}\n```\n\nPrint the serialized output.",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "claude_judge",
+  "rubric": "1=Does not compile or enum definition wrong 2=Compiles but serialization incorrect (missing quotes, bad escaping) 3=Correct serialization for basic types but escaping or nested objects broken 4=Fully correct serialization with proper escaping and nested support 5=Correct, idiomatic Rust, implements Display trait, handles all escape sequences, clean recursive design",
+  "weight": 1,
+  "tags": ["rust", "json", "serialization", "enums", "pattern-matching"]
+}

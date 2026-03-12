@@ -1,0 +1,12 @@
+{
+  "id": "code-gen-012",
+  "category": "code-gen",
+  "difficulty": "medium",
+  "prompt": "Implement a Python `@memoize` decorator that caches function results based on arguments. It should work with any combination of positional and keyword arguments.\n\nInclude this test code at the end:\n\n@memoize\ndef fibonacci(n):\n    if n < 2:\n        return n\n    return fibonacci(n - 1) + fibonacci(n - 2)\n\n@memoize\ndef add(a, b=0):\n    return a + b\n\nprint(fibonacci(10))\nprint(fibonacci(30))\nprint(add(3, b=4))\nprint(add(3, b=4))\nprint(add(1, 2))",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "code_execution",
+  "expected_output": "55\n832040\n7\n7\n3",
+  "rubric": "1=Does not run or decorator broken 2=Works for simple cases but fails with kwargs 3=Correct output but doesn't use functools.wraps 4=Correct with functools.wraps and handles args/kwargs 5=Correct, preserves function metadata, includes cache_clear method, thread-safe",
+  "weight": 1,
+  "tags": ["python", "decorators", "memoization", "caching"]
+}

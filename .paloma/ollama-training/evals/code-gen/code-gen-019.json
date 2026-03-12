@@ -1,0 +1,11 @@
+{
+  "id": "code-gen-019",
+  "category": "code-gen",
+  "difficulty": "medium",
+  "prompt": "Write a Rust function `fn validate_brackets(s: &str) -> bool` that checks if all brackets in the string are properly balanced and nested. Support three types: `()`, `[]`, `{}`.\n\nIgnore all non-bracket characters.\n\nInclude a `main` function with these tests:\n\nfn main() {\n    println!(\"{}\", validate_brackets(\"()\"));           // true\n    println!(\"{}\", validate_brackets(\"()[]{}\"));       // true\n    println!(\"{}\", validate_brackets(\"(]\"));           // false\n    println!(\"{}\", validate_brackets(\"([)]\"));         // false\n    println!(\"{}\", validate_brackets(\"{[]}\"));         // true\n    println!(\"{}\", validate_brackets(\"\"));             // true\n    println!(\"{}\", validate_brackets(\"let x = arr[func(i)];\"));  // true\n    println!(\"{}\", validate_brackets(\"(((\"));          // false\n}",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "claude_judge",
+  "rubric": "1=Does not compile or wrong logic 2=Compiles but fails on nested or interleaved brackets 3=Correct logic but not idiomatic Rust 4=Correct with idiomatic use of Vec as stack and match expressions 5=Correct, idiomatic, uses chars() iterator, clean match arms, handles all edge cases",
+  "weight": 1,
+  "tags": ["rust", "stack", "brackets", "string-processing"]
+}

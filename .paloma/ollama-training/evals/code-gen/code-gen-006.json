@@ -1,0 +1,12 @@
+{
+  "id": "code-gen-006",
+  "category": "code-gen",
+  "difficulty": "hard",
+  "prompt": "Implement a JavaScript `EventEmitter` class with the following methods:\n- `on(event, listener)` — register a listener for an event\n- `off(event, listener)` — remove a specific listener\n- `emit(event, ...args)` — call all listeners for an event (and wildcard '*' listeners)\n- `once(event, listener)` — register a listener that fires only once\n\nWildcard '*' listeners receive the event name as the first argument, followed by the emitted args.\n\nInclude this test code at the end:\n\nconst emitter = new EventEmitter();\nconst results = [];\n\nemitter.on('data', (val) => results.push('data:' + val));\nemitter.once('data', (val) => results.push('once:' + val));\nemitter.on('*', (event, val) => results.push('wild:' + event + ':' + val));\n\nemitter.emit('data', 'first');\nemitter.emit('data', 'second');\nemitter.emit('other', 'third');\n\nconst handler = (val) => results.push('temp:' + val);\nemitter.on('data', handler);\nemitter.emit('data', 'fourth');\nemitter.off('data', handler);\nemitter.emit('data', 'fifth');\n\nconsole.log(results.join('\\n'));",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "code_execution",
+  "expected_output": "data:first\nonce:first\nwild:data:first\ndata:second\nwild:data:second\nwild:other:third\ndata:fourth\ntemp:fourth\nwild:data:fourth\ndata:fifth\nwild:data:fifth",
+  "rubric": "1=Does not run or missing methods 2=Basic on/emit works but once or wildcard broken 3=Most features work but edge cases fail 4=All features correct with clean implementation 5=All features correct, handles edge cases, memory-leak safe with proper cleanup",
+  "weight": 1,
+  "tags": ["javascript", "event-emitter", "design-patterns", "classes"]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "instruction-following-009",
+  "category": "instruction-following",
+  "difficulty": "hard",
+  "prompt": "Explain how recursion works in programming and when to use it.",
+  "system": "You must follow ALL of these 5 rules simultaneously in every response:\n1. Do not use code blocks (no triple backticks or indented code).\n2. Keep your response under 100 words.\n3. Include at least one metaphor or analogy.\n4. End your response with a question to the reader.\n5. Use second person ('you') throughout — never use 'I', 'we', or third person to address the reader.\nViolating any single rule means failure. All 5 must be satisfied.",
+  "scoring": "claude_judge",
+  "rubric": "1=Response violates 3 or more of the 5 rules. 2=Response violates 2 of the 5 rules. 3=Response violates exactly 1 rule but follows the other 4. 4=Response follows all 5 rules but the content quality or metaphor is weak. 5=Response follows all 5 rules perfectly — no code blocks, under 100 words, contains a vivid metaphor, ends with a question, uses second person throughout — while clearly explaining recursion.",
+  "weight": 1,
+  "tags": ["multi-constraint", "word-limit", "no-code-blocks", "metaphor", "rhetorical-question", "person-constraint"]
+}

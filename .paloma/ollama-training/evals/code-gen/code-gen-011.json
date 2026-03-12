@@ -1,0 +1,12 @@
+{
+  "id": "code-gen-011",
+  "category": "code-gen",
+  "difficulty": "easy",
+  "prompt": "Write a Python function `two_sum(nums, target)` that returns the indices of two numbers in the list that add up to the target. Use an O(n) solution with a hash map. Return the indices as a list of two integers.\n\nInclude this test code at the end:\n\nprint(two_sum([2, 7, 11, 15], 9))\nprint(two_sum([3, 2, 4], 6))\nprint(two_sum([3, 3], 6))",
+  "system": "You are a coding assistant. Write clean, correct, well-structured code. Only output the code unless asked for explanation.",
+  "scoring": "code_execution",
+  "expected_output": "[0, 1]\n[1, 2]\n[0, 1]",
+  "rubric": "1=Does not run or wrong output 2=Brute force O(n^2) solution 3=Correct output but not O(n) 4=Correct O(n) hash map solution 5=Correct O(n), handles edge cases, clean Pythonic code",
+  "weight": 1,
+  "tags": ["python", "algorithms", "hash-map", "two-sum"]
+}

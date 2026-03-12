@@ -25,6 +25,7 @@
       :session="activeSession"
       @update-session="handleUpdateSession"
       @transition-phase="handlePhaseTransition"
+      @navigate-to-pillar="handleSelectSession"
     />
     <div v-else class="h-full flex items-center justify-center">
       <div class="text-center">

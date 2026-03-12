@@ -1,0 +1,11 @@
+{
+  "id": "bug-finding-002",
+  "category": "bug-finding",
+  "difficulty": "hard",
+  "prompt": "Find the bug(s) in the following code and explain the fix:\n\n```javascript\nfunction createTimers() {\n  for (var i = 0; i < 5; i++) {\n    setTimeout(function() {\n      console.log('Timer ' + i)\n    }, i * 1000)\n  }\n}\n\n// Expected output (one per second):\n// Timer 0\n// Timer 1\n// Timer 2\n// Timer 3\n// Timer 4\n\n// Actual output:\n// Timer 5\n// Timer 5\n// Timer 5\n// Timer 5\n// Timer 5\n```",
+  "system": "You are an expert code reviewer and debugger. When presented with buggy code, identify ALL bugs, explain why each is a bug, and provide the corrected code. Be precise — mention exact line numbers or variable names.",
+  "scoring": "claude_judge",
+  "rubric": "1=Missed the bug entirely or said the code is correct. 2=Noticed the output is wrong but blamed setTimeout timing or some other unrelated cause. 3=Identified that all timers print 5 but explained it incorrectly (e.g., said setTimeout is synchronous or that i gets reassigned). 4=Correctly identified the closure-over-var issue — var has function scope so all callbacks share the same i which is 5 after the loop ends — and provided a working fix (let, IIFE, or bind), but didn't fully explain the event loop mechanics (callbacks execute after the synchronous loop completes). 5=Perfectly explained that var is function-scoped (not block-scoped), so all five closures capture the same variable i. By the time any setTimeout callback fires (after the synchronous loop finishes), i is 5. Provided a correct fix using let (block-scoped, creates a fresh binding per iteration), or an IIFE to capture the value, or setTimeout's third argument. Explained the event loop timing clearly.",
+  "weight": 1,
+  "tags": ["javascript", "closures", "var-scoping", "event-loop", "setTimeout"]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "bug-finding-004",
+  "category": "bug-finding",
+  "difficulty": "medium",
+  "prompt": "Find the bug(s) in the following code and explain the fix:\n\n```javascript\nfunction binarySearch(arr, target) {\n  let left = 0\n  let right = arr.length - 1\n\n  while (left < right) {\n    const mid = Math.floor((left + right) / 2)\n\n    if (arr[mid] === target) {\n      return mid\n    } else if (arr[mid] < target) {\n      left = mid + 1\n    } else {\n      right = mid - 1\n    }\n  }\n\n  return -1\n}\n\n// Test cases:\nconsole.log(binarySearch([1, 3, 5, 7, 9], 5))  // Expected: 2, Actual: 2 ✓\nconsole.log(binarySearch([1, 3, 5, 7, 9], 9))  // Expected: 4, Actual: -1 ✗\nconsole.log(binarySearch([1, 3, 5, 7, 9], 1))  // Expected: 0, Actual: 0 ✓\nconsole.log(binarySearch([1], 1))               // Expected: 0, Actual: -1 ✗\n```",
+  "system": "You are an expert code reviewer and debugger. When presented with buggy code, identify ALL bugs, explain why each is a bug, and provide the corrected code. Be precise — mention exact line numbers or variable names.",
+  "scoring": "claude_judge",
+  "rubric": "1=Missed the bug entirely or said the code is correct. 2=Noticed the test cases fail but diagnosed the wrong issue (e.g., blamed the mid calculation or array indexing). 3=Identified that the loop condition is wrong but gave an incorrect explanation of when it fails (e.g., said it always misses the first element). 4=Correctly identified that `while (left < right)` should be `while (left <= right)` — when left equals right there's one unchecked element, and the loop exits before checking it. Provided the fix. But didn't trace through a specific failing example to show the off-by-one. 5=Perfectly identified the off-by-one: `left < right` exits when left === right, skipping the final candidate element. Traced through a failing test case (e.g., searching for 9: eventually left=4, right=4, loop exits without checking arr[4]). Fixed to `left <= right`. Noted this is one of the most common binary search bugs and that a single-element array always fails with the strict less-than condition.",
+  "weight": 1,
+  "tags": ["javascript", "binary-search", "off-by-one", "algorithms"]
+}

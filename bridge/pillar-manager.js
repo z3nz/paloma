@@ -29,7 +29,8 @@ export class PillarManager {
     this.broadcast = broadcast // (msg) => void — send to all WS clients
     this.mcpManager = mcpManager || null // for Ollama tool execution
     this.pillars = new Map()   // pillarId → PillarSession
-    this.flowSession = null    // { cliSessionId, wsClient, currentlyStreaming, notificationQueue, model, cwd }
+    this.flowSessions = new Map()  // cliSessionId → { cliSessionId, wsClient, currentlyStreaming, notificationQueue, model, cwd }
+    this.flowSession = null          // points to the most recently registered Flow session (backward compat)
     this.notificationCooldown = new Map() // pillarId → timestamp of last notification
     this.notificationCount = 0 // notifications sent in current minute
     this.notificationWindowStart = Date.now()
@@ -103,7 +104,7 @@ export class PillarManager {
       model: modelLabel,
       backend: resolvedBackend,
       flowRequestId,
-      flowCliSessionId: this.flowSession?.cliSessionId || null,
+      flowCliSessionId: session.flowCliSessionId || this.flowSession?.cliSessionId || null,
       prompt: fullPrompt
     })
 

@@ -31,6 +31,10 @@ const flowProcessingCallback = ref(false)
 const pillarStatuses = reactive(new Map())
 // pillarId → phase name ('scout', 'chart', 'forge', 'polish', 'ship')
 const pillarPhases = reactive(new Map())
+// pillarId → parent Flow dbSessionId (for scoping pillar display to parent chat)
+const pillarParents = reactive(new Map())
+// pillarId → dbSessionId (for navigating to pillar chat)
+const pillarDbSessions = reactive(new Map())
 // Track cleanup timers to prevent unbounded accumulation
 const pillarCleanupTimers = new Map()
 // Buffer stream events that arrive before onPillarSessionCreated completes (race condition fix)
@@ -193,6 +197,8 @@ export function useMCP() {
         }
         pillarStatuses.set(msg.pillarId, 'running')
         pillarPhases.set(msg.pillarId, msg.pillar)
+        pillarParents.set(msg.pillarId, parentDbSessionId)
+        pillarDbSessions.set(msg.pillarId, dbSessionId)
 
         // Drain any stream events that arrived before the session was created (race condition)
         const buffered = pillarStreamBuffer.get(msg.pillarId)
@@ -289,6 +295,8 @@ export function useMCP() {
           const timer = setTimeout(() => {
             pillarStatuses.delete(msg.pillarId)
             pillarPhases.delete(msg.pillarId)
+            pillarParents.delete(msg.pillarId)
+            pillarDbSessions.delete(msg.pillarId)
             pillarCleanupTimers.delete(msg.pillarId)
           }, 30000)
           pillarCleanupTimers.set(msg.pillarId, timer)
@@ -701,6 +709,17 @@ export function useMCP() {
       if (session.pillarId && activePillarIds.has(session.pillarId) && !pillarSessionMap.has(session.pillarId)) {
         pillarSessionMap.set(session.pillarId, session.id)
         bridge.sendPillarDbSessionId(session.pillarId, session.id)
+        // Restore parent/session maps for UI scoping
+        if (session.parentFlowSessionId) {
+          pillarParents.set(session.pillarId, session.parentFlowSessionId)
+        }
+        pillarDbSessions.set(session.pillarId, session.id)
+        // Restore phase from activePillars list
+        const pillarInfo = activePillars.find(p => p.pillarId === session.pillarId)
+        if (pillarInfo) {
+          pillarStatuses.set(session.pillarId, pillarInfo.status || 'running')
+          pillarPhases.set(session.pillarId, session.phase || pillarInfo.pillar)
+        }
         console.log(`[pillar] Reconnected pillar ${session.pillarId.slice(0, 8)} → db session ${session.id}`)
       }
     }
@@ -787,7 +806,9 @@ export function useMCP() {
     sendPillarUserMessage,
     flowProcessingCallback,
     pillarStatuses,
-    pillarPhases
+    pillarPhases,
+    pillarParents,
+    pillarDbSessions
   }
 }
 
