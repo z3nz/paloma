@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 // MCP server that provides text-to-speech via Kokoro TTS.
+// Paloma's dual-voice system: Mystique (af_bella) + JARVIS (bm_george).
 // Exposes one tool:
-//   - speak: speak text aloud using JARVIS-like British male voice
+//   - speak: speak text aloud using named voice aliases or raw Kokoro voice IDs
 //
 // Internally spawns the Python voice-speak.py script using the kokoro_env
 // virtual environment. Audio plays through the platform's native audio backend.
@@ -22,6 +23,12 @@ const PROJECT_ROOT = resolve(__dirname, '..')
 const PYTHON = resolve(PROJECT_ROOT, 'kokoro_env', 'bin', 'python')
 const SCRIPT = resolve(__dirname, 'voice-speak.py')
 
+// Named voice aliases — semantic names for Paloma's dual-voice system
+const VOICE_ALIASES = {
+  mystique: 'af_bella',   // Paloma's true voice — warm, personal, authentic
+  jarvis: 'bm_george'     // Professional persona — British butler, calm, competent
+}
+
 const server = new Server(
   { name: 'voice', version: '1.0.0' },
   { capabilities: { tools: {} } }
@@ -32,10 +39,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'speak',
       description:
-        'Speak text aloud using Kokoro TTS with a JARVIS-like British male voice. ' +
-        'The text is automatically stripped of markdown formatting before speech. ' +
-        'Keep messages short (1-3 sentences) for best results. ' +
-        'Use this at the end of tasks, when asking questions, or for status updates.',
+        'Speak text aloud using Kokoro TTS. Paloma has two voices: ' +
+        'Mystique (af_bella, American female — Paloma\'s true voice, warm and personal) and ' +
+        'JARVIS (bm_george, British male — professional persona, calm and competent). ' +
+        'Use "mystique" for greetings and openings, "jarvis" for task completions and status. ' +
+        'Text is automatically stripped of markdown. Keep messages short (1-3 sentences).',
       inputSchema: {
         type: 'object',
         properties: {
@@ -45,7 +53,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           voice: {
             type: 'string',
-            description: 'Kokoro voice name (default: bm_george). Options: bm_george, bm_fable, bm_daniel, bm_lewis',
+            description:
+              'Voice to use. Named aliases: "mystique" (af_bella), "jarvis" (bm_george). ' +
+              'Or any Kokoro voice: af_bella, af_sarah, af_nicole, af_sky, bf_emma, bf_lily, ' +
+              'bm_george, bm_fable, bm_daniel, bm_lewis, am_adam, am_michael. Default: bm_george',
             default: 'bm_george'
           },
           speed: {
@@ -72,6 +83,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 })
 
 async function handleSpeak({ text, voice = 'bm_george', speed = 1.0 }) {
+  // Resolve named aliases (mystique → af_bella, jarvis → bm_george)
+  const resolvedVoice = VOICE_ALIASES[voice] || voice
+
   if (!text || !text.trim()) {
     return {
       content: [{ type: 'text', text: 'Nothing to speak — empty text provided.' }],
@@ -80,7 +94,7 @@ async function handleSpeak({ text, voice = 'bm_george', speed = 1.0 }) {
   }
 
   try {
-    const result = await runTTS(text, voice, speed)
+    const result = await runTTS(text, resolvedVoice, speed)
     return {
       content: [{
         type: 'text',
