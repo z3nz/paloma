@@ -22,7 +22,8 @@
         "shell_whereis",
         "shell_nslookup",
         "shell_dig",
-        "shell_grep"
+        "shell_grep",
+        "shell_ps"
       ]
     },
     {
@@ -59,6 +60,15 @@
     "voice",
     "memory",
     { "server": "ollama", "tools": ["ollama_list_models", "ollama_embed"] },
-    { "server": "gmail", "tools": ["email_read", "email_list", "email_check_thread", "email_wait"] }
+    {
+      "server": "gmail",
+      "tools": [
+        "email_read",
+        "email_list",
+        "email_check_thread",
+        "email_wait",
+        "email_reply"
+      ]
+    }
   ]
 }

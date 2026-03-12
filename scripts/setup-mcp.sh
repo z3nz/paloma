@@ -76,7 +76,7 @@ GMAIL_RECIPIENT=""
 if [ -f "$SETTINGS_FILE" ]; then
   GMAIL_RECIPIENT="$(grep -o '"GMAIL_RECIPIENT"[[:space:]]*:[[:space:]]*"[^"]*"' "$SETTINGS_FILE" | head -1 | sed 's/.*"GMAIL_RECIPIENT"[[:space:]]*:[[:space:]]*"\([^"]*\)"/\1/' || true)"
 fi
-GMAIL_RECIPIENT="${GMAIL_RECIPIENT:-}"
+GMAIL_RECIPIENT="${GMAIL_RECIPIENT:-adamlynchmob@gmail.com}"
 
 # Check if codex CLI is available
 CODEX_BLOCK=""
@@ -146,7 +146,8 @@ cat > "$SETTINGS_FILE" <<ENDJSON
       "command": "node",
       "args": ["$PALOMA_DIR/mcp-servers/gmail.js"],
       "env": {
-        "GMAIL_RECIPIENT": "$GMAIL_RECIPIENT"
+        "GMAIL_RECIPIENT": "$GMAIL_RECIPIENT",
+        "GMAIL_SENDER": "paloma@verifesto.com"
       }
     }$CODEX_BLOCK
   }

@@ -39,6 +39,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly'
 ]
 const DEFAULT_RECIPIENT = process.env.GMAIL_RECIPIENT || null
+const SENDER_ADDRESS = process.env.GMAIL_SENDER || 'paloma@verifesto.com'
 
 // ─── Auth Module ─────────────────────────────────────────────────────────────
 
@@ -173,6 +174,7 @@ if (process.argv[2] === 'auth') {
 
 function buildRawEmail ({ to, subject, body }) {
   const headers = [
+    `From: Paloma <${SENDER_ADDRESS}>`,
     `To: ${to}`,
     `Subject: ${subject}`,
     'Content-Type: text/plain; charset=utf-8'
@@ -189,6 +191,7 @@ function buildReplyRaw ({ to, subject, body, inReplyTo, references }) {
     : references
 
   const headerLines = [
+    `From: Paloma <${SENDER_ADDRESS}>`,
     `To: ${to}`,
     `Subject: ${replySubject}`,
     'Content-Type: text/plain; charset=utf-8',
@@ -256,7 +259,8 @@ async function handleSend ({ to, subject, body }) {
     }
   }
 
-  const raw = buildRawEmail({ to: recipient, subject, body })
+  const taggedBody = `[Paloma]\n\n${body}`
+  const raw = buildRawEmail({ to: recipient, subject, body: taggedBody })
   const result = await gmail.users.messages.send({
     userId: 'me',
     requestBody: { raw }
@@ -300,10 +304,11 @@ async function handleReply ({ threadId, body, to }) {
     }
   }
 
+  const taggedBody = `[Paloma]\n\n${body}`
   const raw = buildReplyRaw({
     to: recipient,
     subject,
-    body,
+    body: taggedBody,
     inReplyTo: msgId,
     references
   })

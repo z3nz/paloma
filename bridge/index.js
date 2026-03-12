@@ -10,6 +10,7 @@ import { CodexCliManager } from './codex-cli.js'
 import { OllamaManager } from './ollama-manager.js'
 import { McpProxyServer } from './mcp-proxy-server.js'
 import { PillarManager } from './pillar-manager.js'
+import { EmailWatcher } from './email-watcher.js'
 
 const port = parseInt(process.argv.find((_, i, a) => a[i - 1] === '--port') || '19191', 10)
 const proxyPort = 19192
@@ -20,6 +21,7 @@ const codexManager = new CodexCliManager()
 const ollamaManager = new OllamaManager()
 let mcpProxy = null
 let pillarManager = null
+let emailWatcher = null
 
 // Pending ask_user requests: id → { resolve, createdAt }
 const pendingAskUser = new Map()
@@ -110,6 +112,10 @@ async function main() {
     broadcast
   })
   mcpProxy.pillarManager = pillarManager
+
+  // Start email watcher — polls Gmail, spawns new session per email
+  emailWatcher = new EmailWatcher(cliManager, { broadcast })
+  emailWatcher.start()
 
   // Heartbeat: detect dead connections (30s interval, 10s timeout)
   const HEARTBEAT_INTERVAL = 30000
@@ -356,6 +362,7 @@ async function main() {
   const shutdown = async () => {
     console.log('\nShutting down...')
     if (staleRequestInterval) clearInterval(staleRequestInterval)
+    if (emailWatcher) emailWatcher.shutdown()
     if (pillarManager) pillarManager.shutdown()
     cliManager.shutdown()
     codexManager.shutdown()
