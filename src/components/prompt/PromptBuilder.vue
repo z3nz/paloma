@@ -210,19 +210,32 @@ const currentModel = computed(() => props.session?.model || '')
 const currentPhase = computed(() => props.session?.phase || 'research')
 const canSend = computed(() => input.value.trim().length > 0 && !props.streaming)
 
-// Voice: live preview — voice controls textarea while listening
+// Voice: live preview — show buffered pending text + current speech
 watch(interimTranscript, (text) => {
   if (isListening.value) {
-    input.value = text
+    const pending = pendingSend.value ? pendingSend.value + ' ' : ''
+    input.value = pending + text
   }
 })
 
-// Voice: send trigger — composable signals "done speaking, send this"
+// Voice: send trigger — emit directly, bypass canSend/streaming check
+// If streaming, hold the text — the streaming watcher below will send it when done
 watch(pendingSend, (text) => {
-  if (text) {
-    input.value = text
+  if (!text) return
+  if (props.streaming) return  // buffer until streaming ends — display handled by interimTranscript watcher
+
+  pendingSend.value = null
+  input.value = ''
+  emit('send', { content: text, files: [] })
+})
+
+// When streaming ends, flush any buffered voice text
+watch(() => props.streaming, (isStreaming, wasStreaming) => {
+  if (wasStreaming && !isStreaming && pendingSend.value) {
+    const text = pendingSend.value
     pendingSend.value = null
-    nextTick(() => send())
+    input.value = ''
+    nextTick(() => emit('send', { content: text, files: [] }))
   }
 })
 

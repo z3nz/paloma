@@ -80,7 +80,7 @@ const {
   resolveToolConfirmation, rejectToolConfirmation
 } = useChat()
 const { detectChanges, loadSessionChanges } = useChanges()
-const { voiceMode, startListening } = useVoiceInput()
+const { voiceMode, isListening, startListening } = useVoiceInput()
 const { apiKey } = useSettings()
 const { dirHandle, projectRoot, projectInstructions, activePlans, roots, mcpConfig, refreshActivePlans } = useProject()
 const { search: searchFiles } = useFileIndex()
@@ -151,9 +151,9 @@ watch(streaming, (newVal, oldVal) => {
       detectChanges(lastMsg.content, dirHandle.value)
     }
 
-    // Conversation loop — restart listening after response completes
-    if (voiceMode.value) {
-      setTimeout(() => startListening(), 500)
+    // Safety net — if recognition died while AI was responding, restart it
+    if (voiceMode.value && !isListening.value) {
+      setTimeout(() => startListening(), 300)
     }
   }
 })
