@@ -85,12 +85,10 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
         }
       }
     } else if (chunk.type === 'tool_use') {
-      console.log('[cli] GOT tool_use:', chunk.id, chunk.name, JSON.stringify(chunk.input)?.slice(0, 200))
       const activityId = addActivity(chunk.name, chunk.input)
       toolUseToActivity.set(chunk.id, activityId)
       toolUseMeta.set(chunk.id, { name: chunk.name, args: chunk.input })
     } else if (chunk.type === 'tool_result') {
-      console.log('[cli] GOT tool_result:', chunk.toolUseId, typeof chunk.content, JSON.stringify(chunk.content)?.slice(0, 200))
       const activityId = toolUseToActivity.get(chunk.toolUseId)
       const meta = toolUseMeta.get(chunk.toolUseId)
 

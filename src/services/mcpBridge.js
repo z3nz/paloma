@@ -126,7 +126,6 @@ export function createMcpBridge() {
         if (msg.emailTriggered) {
           onEmailDone?.(msg.id, msg.sessionId, msg.exitCode)
         } else {
-          console.log(`[cli] done: exitCode=${msg.exitCode}`)
           const listener = streamListeners.get(msg.id)
           if (listener) {
             streamListeners.delete(msg.id)
@@ -156,7 +155,6 @@ export function createMcpBridge() {
           listener.onStream?.(msg.event)
         }
       } else if (msg.type === 'codex_done' && msg.id) {
-        console.log(`[codex] done: exitCode=${msg.exitCode}`)
         const listener = streamListeners.get(msg.id)
         if (listener) {
           streamListeners.delete(msg.id)
@@ -181,7 +179,6 @@ export function createMcpBridge() {
           listener.onStream?.(msg.event)
         }
       } else if (msg.type === 'ollama_done' && msg.id) {
-        console.log(`[ollama] done: exitCode=${msg.exitCode}`)
         const listener = streamListeners.get(msg.id)
         if (listener) {
           streamListeners.delete(msg.id)

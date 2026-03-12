@@ -41,7 +41,6 @@ if (!initialProjectName && hashState.project) {
     const cached = sessionStorage.getItem(STORAGE_KEY)
     if (cached) {
       initialProjectName = cached
-      console.log('[Recovery] Restored projectName from sessionStorage:', initialProjectName)
     }
   } catch {
     // Ignore errors
@@ -78,7 +77,6 @@ watch(projectName, (name) => {
 }, { flush: 'sync' })
 
 if (import.meta.hot) {
-  console.log('[HMR] useProject.js — restored projectName:', projectName.value)
   const save = () => {
     window.__PALOMA_PROJECT__ = {
       dirHandle: dirHandle.value,
@@ -219,8 +217,6 @@ export function useProject() {
       mcpConfig.value = mcp
       dirHandle.value = null // Not using browser handles anymore
 
-      console.log(`[Project] Switched to "${name}" at ${root} (${plans.length} active plans)`)
-
       return {
         name,
         root,
@@ -316,7 +312,6 @@ export function useProject() {
       projectInstructions.value = instructions
       activePlans.value = plans
       mcpConfig.value = mcp
-      console.log('[Recovery] Auto-recovered project:', name)
       return handle
     } catch (e) {
       console.warn('[Project] Failed to recover dirHandle:', e)
@@ -332,7 +327,6 @@ export function useProject() {
       const path = await resolveProjectPath(projectName.value)
       if (path) {
         projectRoot.value = path
-        console.log('[Project] Resolved root:', path)
       }
     } catch (e) {
       console.warn('[Project] Failed to resolve root:', e)
