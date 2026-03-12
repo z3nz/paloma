@@ -163,6 +163,13 @@ function execCommand(command, cwd, timeout, extraEnv) {
     proc.stdout.on('data', (data) => { stdout += data.toString() })
     proc.stderr.on('data', (data) => { stderr += data.toString() })
 
+    proc.stdout.on('error', (err) => {
+      stderr += `\nstdout error: ${err.message}`
+    })
+    proc.stderr.on('error', (err) => {
+      stderr += `\nstderr error: ${err.message}`
+    })
+
     proc.on('close', (code, signal) => {
       if (timedOut) {
         resolve({

@@ -171,7 +171,6 @@ watch([projectName, activeSessionId], ([name, sid]) => {
 // Load OpenRouter models when API key is available (optional enhancement)
 watch(apiKey, (key) => {
   if (import.meta.hot && models.value.length > 0) {
-    console.log('[HMR] App.vue — skipping redundant loadModels')
     return
   }
   if (key) loadModels(key)

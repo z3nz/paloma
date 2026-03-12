@@ -134,7 +134,7 @@ watch(
   () => props.session?.id,
   (id) => {
     if (import.meta.hot && id && messages.value.length > 0 && messages.value[0]?.sessionId === id) {
-      console.log('[HMR] ChatView — skipping redundant loadMessages')
+      // HMR — skip redundant loadMessages
     } else {
       loadMessages(id)
     }
