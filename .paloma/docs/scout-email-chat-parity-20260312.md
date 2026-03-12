@@ -1,7 +1,8 @@
 # Scout: Email Chat vs Regular Chat Parity
 **Date:** 2026-03-12  
 **Scope:** Full codebase audit — email chat vs regular chat rendering, data structures, tool tracking, token usage  
-**Purpose:** Blueprint for making email sessions behave identically to regular chats in the Paloma UI
+**Purpose:** Blueprint for making email sessions behave identically to regular chats in the Paloma UI  
+**Status:** ✅ SHIPPED — fix implemented in commit `c85f7c5` (2026-03-12). Option A applied: all event types handled in `onEmailStream`, usage + toolActivity attached in `onEmailDone`, model fixed to `'claude-cli:opus'`. Lessons documented in `.paloma/lessons/stream-handling.md`.
 
 ---
 

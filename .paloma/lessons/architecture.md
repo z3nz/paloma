@@ -52,6 +52,22 @@
 
 ---
 
+### Lesson: Python warnings on stderr cause false failures in Node MCP servers
+- **Context:** `mcp__paloma__voice__speak` was reporting "Speech failed" errors even when audio was playing correctly. The 30s fixed timeout was also too short for longer text. Root cause: Python's torch and HuggingFace libraries emit `UserWarning` and `FutureWarning` messages to stderr on startup. The Node MCP server checked `exit code !== 0` as the failure indicator and included `stderr` content in its error message — so warnings looked like failures.
+- **Insight:** Python ML libraries (torch, transformers, huggingface_hub) routinely emit deprecation and performance warnings to stderr. These aren't errors — they're informational noise. Any Node process that spawns Python and treats stderr as an error signal will have false positives. Two-part fix: (1) Suppress at source — call `warnings.filterwarnings('ignore', ...)` BEFORE any torch/HF imports in the Python script. (2) Filter known patterns in the Node error handler — parse stderr line by line and discard lines matching known warning signatures before reporting as an error. Both layers are needed: suppression at source handles clean runs; Node-side filtering handles anything that slips through.
+- **Action:** For any Python subprocess called from Node that uses torch/HF: (1) Add `import warnings; warnings.filterwarnings('ignore', category=UserWarning); warnings.filterwarnings('ignore', category=FutureWarning)` at the TOP of the Python file, before all other imports. (2) In the Node caller's `close` handler, filter stderr through a deny-list of known warning patterns before treating stderr as an error. (3) Scale the timeout proportionally to input size (see timeout lesson below).
+- **Applied:** YES — both fixes applied in `mcp-servers/voice-speak.py` (suppress at source) and `mcp-servers/voice.js` (filter + dynamic timeout)
+
+---
+
+### Lesson: Scale subprocess timeouts proportionally to input size
+- **Context:** The voice TTS server had a fixed 30s timeout for all speech. Short text ("Done, sir.") would finish in 3s. Long text (a paragraph-length explanation) could legitimately take 45s+. The fixed timeout caused intermittent failures on longer speech that had nothing to do with actual errors.
+- **Insight:** Fixed timeouts are appropriate only when execution time is independent of input. When execution time scales with input (TTS synthesis, file transcoding, embedding generation, chunked LLM inference), the timeout must scale too. The formula: `base_timeout + (input_size / processing_unit) * time_per_unit`. For TTS: `30_000 + Math.ceil(text.length / 100) * 2000` — 30s base, ~2s per 100 characters. This is conservative; real synthesis is faster, but generous is better than tight for background audio work.
+- **Action:** When a subprocess takes variable time: (1) Measure typical performance at different input sizes. (2) Define a base timeout (handles startup + fixed overhead). (3) Add a scaling term proportional to input size. (4) Make the formula a named constant or comment so it's obvious why it's not a round number.
+- **Applied:** YES — `mcp-servers/voice.js` now uses `const timeoutMs = 30_000 + Math.ceil(text.length / 100) * 2000`
+
+---
+
 ### Lesson: Establish a single source of truth for rules
 - **Context:** Before this work, the most correct rules lived in CLAUDE.md — a file that bridge-spawned pillars never see. base.js, phases.js, instructions.md, and CLAUDE.md all had overlapping rules that drifted. When rules changed in one place, they weren't updated everywhere.
 - **Insight:** Having multiple files with the same rules creates a maintenance nightmare and guarantees drift. When the drift includes contradictions (file A says do X, file B says don't do X), the system behavior becomes unpredictable based on which file the session happened to prioritize.
