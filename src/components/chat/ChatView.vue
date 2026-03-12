@@ -77,7 +77,7 @@ const emit = defineEmits(['update-session', 'transition-phase'])
 const {
   messages, streaming, streamingContent, toolActivity, error,
   pendingToolConfirmation, contextWarning, loadMessages, sendMessage, stopStreaming,
-  resolveToolConfirmation, rejectToolConfirmation
+  resolveToolConfirmation, rejectToolConfirmation, clearChat
 } = useChat()
 const { detectChanges, loadSessionChanges } = useChanges()
 const { voiceMode, isListening, startListening } = useVoiceInput()
