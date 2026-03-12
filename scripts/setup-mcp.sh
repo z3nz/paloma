@@ -6,10 +6,10 @@ set -euo pipefail
 # Run: npm run setup (or directly: bash scripts/setup-mcp.sh)
 
 PALOMA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-MEMORY_REPO="$HOME/paloma-memory"
 CONFIG_DIR="$HOME/.paloma"
 SETTINGS_FILE="$CONFIG_DIR/mcp-settings.json"
 VENV_DIR="$PALOMA_DIR/kokoro_env"
+NODE_MODULES="$PALOMA_DIR/node_modules"
 
 echo "==> Paloma MCP Setup"
 echo "    Project: $PALOMA_DIR"
@@ -18,28 +18,6 @@ echo ""
 
 # --- Ensure ~/.paloma/ exists ---
 mkdir -p "$CONFIG_DIR"
-
-# --- Clone paloma-memory repo if not present ---
-if [ -d "$MEMORY_REPO" ] && [ -f "$MEMORY_REPO/server.js" ]; then
-  echo "==> Memory repo already exists at $MEMORY_REPO"
-else
-  echo "==> Cloning paloma-memory repo..."
-  if git clone git@github.com:z3nz/paloma-memory.git "$MEMORY_REPO" 2>/dev/null; then
-    echo "    Done."
-  else
-    echo "    [WARN] Could not clone paloma-memory — creating local copy"
-    mkdir -p "$MEMORY_REPO"
-    cp "$PALOMA_DIR/mcp-servers/memory.js" "$MEMORY_REPO/server.js" 2>/dev/null || true
-    mkdir -p "$MEMORY_REPO/data"
-  fi
-fi
-
-# Install memory server dependencies
-if [ -f "$MEMORY_REPO/package.json" ] && [ ! -d "$MEMORY_REPO/node_modules" ]; then
-  echo "==> Installing memory server dependencies..."
-  (cd "$MEMORY_REPO" && npm install --quiet)
-  echo "    Done."
-fi
 
 # --- Detect platform ---
 OS="$(uname -s)"
@@ -107,23 +85,23 @@ cat > "$SETTINGS_FILE" <<ENDJSON
 {
   "servers": {
     "brave-search": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "command": "node",
+      "args": ["$NODE_MODULES/@modelcontextprotocol/server-brave-search/dist/index.js"],
       "env": {
         "BRAVE_API_KEY": "$BRAVE_KEY"
       }
     },
     "git": {
-      "command": "npx",
-      "args": ["-y", "@mseep/git-mcp-server"]
+      "command": "node",
+      "args": ["$NODE_MODULES/@mseep/git-mcp-server/dist/index.js"]
     },
     "shell": {
-      "command": "npx",
-      "args": ["-y", "@kevinwatt/shell-mcp"]
+      "command": "node",
+      "args": ["$NODE_MODULES/@kevinwatt/shell-mcp/build/index.js"]
     },
     "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "$HOME"]
+      "command": "node",
+      "args": ["$NODE_MODULES/@modelcontextprotocol/server-filesystem/dist/index.js", "$HOME"]
     },
     "web": {
       "command": "node",
@@ -138,8 +116,8 @@ cat > "$SETTINGS_FILE" <<ENDJSON
       "args": ["$PALOMA_DIR/mcp-servers/exec.js"]
     },
     "cloudflare-dns": {
-      "command": "npx",
-      "args": ["-y", "@thelord/mcp-cloudflare"],
+      "command": "node",
+      "args": ["$NODE_MODULES/@thelord/mcp-cloudflare/dist/cli.js"],
       "env": {
         "CLOUDFLARE_API_TOKEN": "$CF_TOKEN",
         "CLOUDFLARE_ZONE_ID": "$CF_ZONE"
@@ -151,7 +129,11 @@ cat > "$SETTINGS_FILE" <<ENDJSON
     },
     "memory": {
       "command": "node",
-      "args": ["$MEMORY_REPO/server.js"]
+      "args": ["$PALOMA_DIR/mcp-servers/memory.js"]
+    },
+    "ollama": {
+      "command": "node",
+      "args": ["$PALOMA_DIR/mcp-servers/ollama.js"]
     }$CODEX_BLOCK
   }
 }
@@ -198,6 +180,7 @@ echo "      - exec (bash execution)"
 echo "      - memory (persistent semantic memory)"
 echo "      - voice (Kokoro TTS)"
 echo "      - brave-search (web search)"
+echo "      - ollama (local AI models)"
 echo "      - cloudflare-dns (DNS management)"
 if command -v codex &>/dev/null; then
   echo "      - codex (OpenAI Codex MCP)"
