@@ -1,6 +1,7 @@
 # Ollama Local Model Integration
 
-**Status:** active
+**Status:** completed
+**Completed:** 2026-03-12
 **Created:** 2026-03-11
 **Scope:** paloma
 **Research:** `.paloma/docs/scout-ollama-integration-20260311.md`
@@ -36,14 +37,14 @@ OllamaManager checks Ollama availability on first use. If Ollama isn't running, 
 
 #### WU-1: Ollama MCP Server
 - **Feature:** MCP tool server for Ollama
-- **Status:** pending
+- **Status:** complete
 - **Files:** mcp-servers/ollama.js
 - **Scope:** Create `mcp-servers/ollama.js` following the `voice.js` pattern (MCP SDK stdio transport). Tools: `ollama_chat` (single-turn, `stream: false`), `ollama_generate` (raw completion), `ollama_embed` (embeddings), `ollama_list_models` (list installed), `ollama_pull_model` (download model). Base URL from env `OLLAMA_HOST` or default `http://localhost:11434`. Always pass `options: { num_ctx: args.num_ctx || 32768 }`. On fetch failure, return `isError: true` with message "Is Ollama running? Try: ollama serve".
 - **Acceptance:** `ollama_list_models` returns installed models, `ollama_chat` returns a response, `ollama_embed` returns a vector array
 
 #### WU-2: Register Ollama MCP in Setup
 - **Feature:** Setup script and permissions for Ollama MCP
-- **Status:** pending
+- **Status:** complete
 - **Depends on:** WU-1
 - **Files:** scripts/setup-mcp.sh, .paloma/mcp.json
 - **Scope:** Add `"ollama"` server entry to setup script pointing to `$PALOMA_DIR/mcp-servers/ollama.js`. Add to `.paloma/mcp.json` `enabled` array. Add to `autoExecute` with safe tools: `ollama_list_models`, `ollama_embed`. Keep `ollama_chat`, `ollama_generate`, `ollama_pull_model` as confirmation-required.
@@ -51,7 +52,7 @@ OllamaManager checks Ollama availability on first use. If Ollama isn't running, 
 
 #### WU-3: Memory Embeddings Upgrade
 - **Feature:** Switch memory.js from Xenova to Ollama nomic-embed-text
-- **Status:** pending
+- **Status:** complete
 - **Files:** mcp-servers/memory.js, package.json
 - **Scope:** Remove `@xenova/transformers` import and `initEmbeddings()` pipeline loading. Replace `embed()` with `fetch()` to `OLLAMA_HOST/api/embed` using model `nomic-embed-text`. Update `EMBEDDING_DIM` to 1024, `EMBEDDING_MODEL` to `nomic-embed-text`. Keep `embeddingReady` flag — set true after first successful call. Keep keyword fallback. Add `OLLAMA_HOST` env var support. Remove `@xenova/transformers` from `package.json`. Backward compat: `cosineSimilarity()` already returns 0 for dimension mismatch, so old 384-dim memories fall back to keyword search naturally.
 - **Acceptance:** `memory_store` creates 1024-dim embeddings, `memory_recall` finds them, keyword fallback works when Ollama is down
@@ -65,7 +66,7 @@ OllamaManager checks Ollama availability on first use. If Ollama isn't running, 
 
 #### WU-5: Wire OllamaManager into Bridge
 - **Feature:** Connect OllamaManager to WebSocket server and PillarManager
-- **Status:** pending
+- **Status:** complete
 - **Depends on:** WU-4
 - **Files:** bridge/index.js, bridge/pillar-manager.js
 - **Scope:** In `index.js`: import OllamaManager, instantiate, add to backends map `{ claude, codex, ollama }`, add `ollama_chat` message handler (mirrors `claude_chat` pattern), add `ollama_stop` handler, add to shutdown sequence. Note: no `mcpProxyPort` for OllamaManager (no tool loop in v1). In `pillar-manager.js`: add `ollama_stream`/`ollama_done`/`ollama_error` to event type checks in `_handleCliEvent` (line 789-791). Text extraction: no changes needed — ollama events use Claude's `content_block_delta` shape by design. Add `_defaultModel` ollama case: `if (backend === 'ollama') return 'qwen2.5-coder:32b'`. Update model label in `spawn()`: add `resolvedBackend === 'ollama' ? \`ollama:${resolvedModel}\`` case.
@@ -73,7 +74,7 @@ OllamaManager checks Ollama availability on first use. If Ollama isn't running, 
 
 #### WU-6: Frontend Ollama Rendering
 - **Feature:** Frontend support for Ollama backend streaming
-- **Status:** pending
+- **Status:** complete (no changes needed — Claude-compatible event shape works)
 - **Depends on:** WU-5
 - **Files:** src/composables/useChat.js, src/components/chat/MessageItem.vue
 - **Scope:** Check for any backend-specific conditionals in stream processing that only handle `claude`/`codex` — add `ollama`. Ollama events use Claude's `content_block_delta` shape so most rendering should work unchanged. Verify `pillar_stream` with `backend: 'ollama'` renders correctly. This WU may be trivially small if no backend-specific checks exist in the frontend — verify by reading the files first.
@@ -113,6 +114,6 @@ WU-4 (OllamaManager)  ──→ WU-5 (bridge wiring) ──→ WU-6 (frontend)
 
 ## Pre-Forge Checklist
 
-- [ ] Ollama installed (`brew install ollama`)
-- [ ] Core models pulled: `nomic-embed-text`, `qwen2.5-coder:32b`, `qwen2.5-coder:7b`
-- [ ] Ollama server running (`ollama serve` or app launched)
+- [x] Ollama installed (`brew install ollama`)
+- [x] Core models pulled: `nomic-embed-text`, `qwen2.5-coder:7b` (32b downloading)
+- [x] Ollama server running (`ollama serve` or app launched)

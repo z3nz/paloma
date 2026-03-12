@@ -1,6 +1,7 @@
 # MCP Server Restructuring — Self-Contained Project
 
-**Status:** active
+**Status:** completed
+**Completed:** 2026-03-12
 **Created:** 2026-03-11
 **Scope:** paloma
 
@@ -25,8 +26,8 @@ Move ALL MCP servers into the Paloma project repo. No more dependencies on home 
 
 ## Remaining
 
-- [ ] Restart bridge and verify all MCP servers connect with new paths
-- [ ] Test each MCP server works end-to-end
+- [x] Restart bridge and verify all MCP servers connect with new paths
+- [x] Test each MCP server works end-to-end
 - [ ] Commit changes
 - [ ] Update `instructions.md` to document the new structure
 

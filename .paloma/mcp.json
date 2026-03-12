@@ -34,7 +34,8 @@
         "git_status",
         "git_set_working_dir",
         "git_show",
-        "git_commit"
+        "git_commit",
+        "git_add"
       ]
     },
     {
@@ -59,7 +60,14 @@
     "fs-extra",
     "voice",
     "memory",
-    { "server": "ollama", "tools": ["ollama_list_models", "ollama_embed"] },
+    {
+      "server": "ollama",
+      "tools": [
+        "ollama_list_models",
+        "ollama_embed",
+        "ollama_chat"
+      ]
+    },
     {
       "server": "gmail",
       "tools": [
