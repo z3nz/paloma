@@ -89,6 +89,7 @@ import { useMCP } from './composables/useMCP.js'
 import { useChanges } from './composables/useChanges.js'
 import { useSessionState } from './composables/useSessionState.js'
 import { useKeyboardShortcuts, registerKeyboardShortcuts } from './composables/useKeyboardShortcuts.js'
+import { useVoiceInput } from './composables/useVoiceInput.js'
 import { useChat } from './composables/useChat.js'
 import { PHASE_MODEL_SUGGESTIONS } from './prompts/phases.js'
 
@@ -106,6 +107,7 @@ const {
 
 const { sidebarCollapsed } = useKeyboardShortcuts()
 const { streaming, stopStreaming } = useChat()
+const { toggleVoiceMode, isListening, stopListening } = useVoiceInput()
 
 const showSettings = ref(false)
 const diffModalChange = ref(null)
@@ -117,8 +119,10 @@ const cleanupShortcuts = registerKeyboardShortcuts({
   onCloseModals: () => {
     if (diffModalChange.value) { diffModalChange.value = null; return true }
     if (showSettings.value) { showSettings.value = false; return true }
+    if (isListening.value) { stopListening(); return true }
     return false
-  }
+  },
+  onToggleVoice: () => toggleVoiceMode()
 })
 onBeforeUnmount(cleanupShortcuts)
 

@@ -58,6 +58,7 @@ import ToolConfirmation from './ToolConfirmation.vue'
 import AskUserDialog from './AskUserDialog.vue'
 import { useChat } from '../../composables/useChat.js'
 import { useChanges } from '../../composables/useChanges.js'
+import { useVoiceInput } from '../../composables/useVoiceInput.js'
 import { useSettings } from '../../composables/useSettings.js'
 import { useProject } from '../../composables/useProject.js'
 import { useFileIndex } from '../../composables/useFileIndex.js'
@@ -79,6 +80,7 @@ const {
   resolveToolConfirmation, rejectToolConfirmation
 } = useChat()
 const { detectChanges, loadSessionChanges } = useChanges()
+const { voiceMode, startListening } = useVoiceInput()
 const { apiKey } = useSettings()
 const { dirHandle, projectRoot, projectInstructions, activePlans, roots, mcpConfig, refreshActivePlans } = useProject()
 const { search: searchFiles } = useFileIndex()
@@ -147,6 +149,11 @@ watch(streaming, (newVal, oldVal) => {
     if (lastMsg?.content) {
       // detectChanges needs the project root to read original files via MCP
       detectChanges(lastMsg.content, dirHandle.value)
+    }
+
+    // Conversation loop — restart listening after response completes
+    if (voiceMode.value) {
+      setTimeout(() => startListening(), 500)
     }
   }
 })

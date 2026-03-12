@@ -25,7 +25,7 @@ export function useKeyboardShortcuts() {
  *   Ctrl+N  — new chat
  *   Escape  — close modals, then stop streaming
  */
-export function registerKeyboardShortcuts({ onNewChat, onStopStreaming, onCloseModals }) {
+export function registerKeyboardShortcuts({ onNewChat, onStopStreaming, onCloseModals, onToggleVoice }) {
   function handleKeyDown(e) {
     // Escape — always available, even in inputs
     if (e.key === 'Escape') {
@@ -46,6 +46,12 @@ export function registerKeyboardShortcuts({ onNewChat, onStopStreaming, onCloseM
       if (e.key === 'n') {
         e.preventDefault()
         onNewChat?.()
+        return
+      }
+
+      if (e.key === 'm') {
+        e.preventDefault()
+        onToggleVoice?.()
         return
       }
     }
