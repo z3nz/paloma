@@ -20,6 +20,8 @@ import { homedir } from 'node:os'
 const OAUTH_KEYS_PATH = resolve(homedir(), '.paloma', 'gmail-oauth-keys.json')
 const TOKENS_PATH = resolve(homedir(), '.paloma', 'gmail-tokens.json')
 const POLL_INTERVAL_MS = 30_000 // 30 seconds
+const RETRY_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes before retry check
+const MAX_RETRIES = 2 // max retry attempts per thread
 
 export class EmailWatcher {
   constructor (cliManager, { broadcast } = {}) {
@@ -28,6 +30,7 @@ export class EmailWatcher {
     this.gmail = null
     this.interval = null
     this.seenIds = new Set()
+    this.threadTracker = new Map()
     this.running = false
   }
 
@@ -172,6 +175,15 @@ export class EmailWatcher {
    * as a new chat in the browser.
    */
   _spawnEmailSession ({ messageId, threadId, from, subject, body }) {
+    // Clean up existing tracker entry for this thread (new email resets everything)
+    const existingEntry = this.threadTracker.get(threadId)
+    if (existingEntry) {
+      clearTimeout(existingEntry.timer)
+      try { this.cliManager.stop(existingEntry.requestId) } catch (e) {
+        console.warn(`[email-watcher] Failed to stop stale session for thread ${threadId}:`, e.message)
+      }
+    }
+
     const prompt = [
       `You just received an email. Read it and respond thoughtfully.`,
       ``,
@@ -202,6 +214,21 @@ export class EmailWatcher {
     )
 
     console.log(`[email-watcher] Spawned session ${sessionId} (opus) for email: ${subject}`)
+
+    // Track thread for retry timeout
+    const timer = setTimeout(() => this._checkAndRetryThread(threadId), RETRY_TIMEOUT_MS)
+    this.threadTracker.set(threadId, {
+      threadId,
+      messageId,
+      requestId,
+      sessionId,
+      from,
+      subject,
+      body,
+      spawnedAt: Date.now(),
+      timer,
+      retryCount: 0
+    })
   }
 
   /**
@@ -310,6 +337,134 @@ export class EmailWatcher {
     console.log(`[email-watcher] Continuity session spawned (opus): ${sessionId}`)
   }
 
+  /**
+   * Check if Paloma has already replied to a thread after a given message.
+   * Uses Gmail API directly (NOT MCP) — inline check for speed.
+   * Returns false on API error (safe default — triggers retry).
+   */
+  async _isThreadReplied (threadId, sinceMessageId) {
+    try {
+      const thread = await this.gmail.users.threads.get({
+        userId: 'me',
+        id: threadId,
+        format: 'metadata',
+        metadataHeaders: ['From']
+      })
+
+      let messages = thread.data.messages || []
+
+      if (sinceMessageId) {
+        const idx = messages.findIndex(m => m.id === sinceMessageId)
+        if (idx !== -1) messages = messages.slice(idx + 1)
+      }
+
+      return messages.some(m => {
+        const from = this._getHeader(m, 'From') || ''
+        return from.includes('paloma@verifesto.com')
+      })
+    } catch (err) {
+      console.warn(`[email-watcher] _isThreadReplied API error for thread ${threadId}:`, err.message)
+      return false
+    }
+  }
+
+  /**
+   * Timer callback — fires 30 min after session spawn.
+   * Checks if thread was replied to; if not, retries or abandons.
+   */
+  async _checkAndRetryThread (threadId) {
+    try {
+      const entry = this.threadTracker.get(threadId)
+      if (!entry) return
+
+      const replied = await this._isThreadReplied(threadId, entry.messageId)
+
+      if (replied) {
+        console.log(`[email-watcher] Thread ${threadId} has reply — cleanup`)
+        this.threadTracker.delete(threadId)
+        return
+      }
+
+      if (entry.retryCount >= MAX_RETRIES) {
+        console.warn(`[email-watcher] Thread ${threadId} abandoned after ${MAX_RETRIES} retries — "${entry.subject}" from ${entry.from}`)
+        this.threadTracker.delete(threadId)
+        return
+      }
+
+      console.log(`[email-watcher] Thread ${threadId} no reply after ${Math.round((Date.now() - entry.spawnedAt) / 60000)} min — retrying`)
+
+      // Stop the stale session before spawning retry
+      try { this.cliManager.stop(entry.requestId) } catch (e) {
+        console.warn(`[email-watcher] Failed to stop stale session:`, e.message)
+      }
+
+      this._spawnRetrySession(entry)
+    } catch (err) {
+      console.error(`[email-watcher] _checkAndRetryThread error for thread ${threadId}:`, err.message)
+    }
+  }
+
+  /**
+   * Spawn a retry session with urgency-framed prompt.
+   * Updates threadTracker with new session info and incremented retryCount.
+   */
+  _spawnRetrySession (entry) {
+    const retryNum = entry.retryCount + 1
+    const minutesAgo = Math.round((Date.now() - entry.spawnedAt) / 60000)
+
+    const prompt = [
+      `⚠️ RETRY ${retryNum}/${MAX_RETRIES} — This email has NOT been responded to.`,
+      ``,
+      `A session was spawned ${minutesAgo} minutes ago but did not send a reply.`,
+      `Your one job: read this email and reply to it now.`,
+      ``,
+      `From: ${entry.from}`,
+      `Subject: ${entry.subject}`,
+      `Thread ID: ${entry.threadId}`,
+      `Message ID: ${entry.messageId}`,
+      ``,
+      `--- Email Body ---`,
+      entry.body,
+      `--- End ---`,
+      ``,
+      `First, use email_check_thread("${entry.threadId}") to see if there are any messages`,
+      `in the thread you should be aware of (someone else may have replied).`,
+      `Then respond thoughtfully using email_reply(threadId, body).`,
+      `Set the chat title to "Retry: ${entry.subject}".`
+    ].join('\n')
+
+    const { requestId, sessionId } = this.cliManager.chat(
+      { prompt, model: 'opus' },
+      (event) => {
+        this.broadcast({ ...event, emailTriggered: true, emailSubject: entry.subject })
+      }
+    )
+
+    console.log(`[email-watcher] Retry ${retryNum}/${MAX_RETRIES} spawned session ${sessionId} for: ${entry.subject}`)
+
+    // Update tracker with new session info
+    const timer = setTimeout(() => this._checkAndRetryThread(entry.threadId), RETRY_TIMEOUT_MS)
+    this.threadTracker.set(entry.threadId, {
+      ...entry,
+      requestId,
+      sessionId,
+      spawnedAt: Date.now(),
+      timer,
+      retryCount: retryNum
+    })
+
+    // Broadcast retry event to browser
+    this.broadcast({
+      type: 'email_retry',
+      threadId: entry.threadId,
+      messageId: entry.messageId,
+      from: entry.from,
+      subject: entry.subject,
+      retryCount: retryNum,
+      maxRetries: MAX_RETRIES
+    })
+  }
+
   _getHeader (message, name) {
     return message.payload?.headers?.find(
       h => h.name.toLowerCase() === name.toLowerCase()
@@ -387,6 +542,11 @@ export class EmailWatcher {
       clearInterval(this.dailyInterval)
       this.dailyInterval = null
     }
+    // Clear all thread retry timers
+    for (const [, entry] of this.threadTracker) {
+      clearTimeout(entry.timer)
+    }
+    this.threadTracker.clear()
     console.log('[email-watcher] Stopped')
   }
 }
