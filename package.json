@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "concurrently -k -n vite,bridge -c cyan,magenta \"vite\" \"node bridge/index.js\"",
+    "setup": "bash scripts/setup-mcp.sh",
+    "postinstall": "bash scripts/setup-mcp.sh",
     "dev": "vite",
     "bridge": "node bridge/index.js",
     "build": "vite build",
