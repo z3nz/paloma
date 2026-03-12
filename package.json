@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "start": "npm install && bash scripts/setup-mcp.sh && concurrently -k -n vite,bridge -c cyan,magenta \"vite\" \"node bridge/run.js\"",
+    "start": "git pull && npm install && bash scripts/setup-mcp.sh && concurrently -k -n vite,bridge -c cyan,magenta \"vite\" \"node bridge/run.js\"",
     "first-run": "bash scripts/first-run.sh",
     "setup": "bash scripts/setup-mcp.sh",
     "postinstall": "bash scripts/setup-mcp.sh",
