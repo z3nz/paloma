@@ -58,6 +58,20 @@
             <span class="text-xs text-text-muted ml-1">Direct</span>
           </div>
         </template>
+        <!-- Ollama local models -->
+        <template v-if="filteredOllamaModels.length">
+          <div class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">Ollama (Local)</div>
+          <div
+            v-for="cliId in filteredOllamaModels"
+            :key="cliId"
+            @click="selectModel(cliId)"
+            class="px-3 py-2 text-sm cursor-pointer transition-colors"
+            :class="cliId === modelValue ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
+          >
+            {{ CLI_MODELS.find(m => m.id === cliId)?.name || cliId.replace('ollama:', '') }}
+            <span class="text-xs text-text-muted ml-1">Local</span>
+          </div>
+        </template>
         <!-- Codex CLI models -->
         <template v-if="filteredCodexModels.length">
           <div class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">Codex (CLI)</div>
@@ -93,7 +107,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { CLI_MODELS, isCliModel, isCodexModel } from '../../services/claudeStream.js'
+import { CLI_MODELS, isCliModel, isCodexModel, isOllamaModel } from '../../services/claudeStream.js'
 import { useSettings } from '../../composables/useSettings.js'
 
 const props = defineProps({
@@ -126,6 +140,7 @@ const displayName = computed(() => {
   if (isCliModel(props.modelValue)) {
     const cli = CLI_MODELS.find(m => m.id === props.modelValue)
     if (cli) return cli.name
+    if (isOllamaModel(props.modelValue)) return props.modelValue.replace('ollama:', '') + ' (Ollama)'
     if (isCodexModel(props.modelValue)) return props.modelValue.split(':').pop() + ' (Codex)'
     return props.modelValue.split(':').pop() + ' (CLI)'
   }
@@ -133,7 +148,7 @@ const displayName = computed(() => {
 })
 
 const filteredPalomaModels = computed(() => {
-  const ids = CLI_MODELS.filter(m => !m.direct && !m.codex).map(m => m.id)
+  const ids = CLI_MODELS.filter(m => !m.direct && !m.codex && !m.ollama).map(m => m.id)
   if (!filter.value) return ids
   const q = filter.value.toLowerCase()
   return ids.filter(id => id.toLowerCase().includes(q) || CLI_MODELS.find(m => m.id === id)?.name.toLowerCase().includes(q))
@@ -141,6 +156,13 @@ const filteredPalomaModels = computed(() => {
 
 const filteredDirectModels = computed(() => {
   const ids = CLI_MODELS.filter(m => m.direct).map(m => m.id)
+  if (!filter.value) return ids
+  const q = filter.value.toLowerCase()
+  return ids.filter(id => id.toLowerCase().includes(q) || CLI_MODELS.find(m => m.id === id)?.name.toLowerCase().includes(q))
+})
+
+const filteredOllamaModels = computed(() => {
+  const ids = CLI_MODELS.filter(m => m.ollama).map(m => m.id)
   if (!filter.value) return ids
   const q = filter.value.toLowerCase()
   return ids.filter(id => id.toLowerCase().includes(q) || CLI_MODELS.find(m => m.id === id)?.name.toLowerCase().includes(q))

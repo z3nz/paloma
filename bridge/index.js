@@ -298,21 +298,111 @@ async function main() {
         }
       } else if (msg.type === 'ollama_chat') {
         try {
+          // Convert MCP tools to Ollama's tool format
+          const ollamaTools = []
+          const toolRouteMap = new Map() // ollamaName → { server, tool }
+          const mcpServers = manager.getTools()
+          for (const [serverName, serverInfo] of Object.entries(mcpServers)) {
+            if (serverInfo.status !== 'connected') continue
+            for (const tool of serverInfo.tools) {
+              const ollamaName = `${serverName}__${tool.name}`
+              ollamaTools.push({
+                type: 'function',
+                function: {
+                  name: ollamaName,
+                  description: tool.description || '',
+                  parameters: tool.inputSchema || { type: 'object', properties: {} }
+                }
+              })
+              toolRouteMap.set(ollamaName, { server: serverName, tool: tool.name })
+            }
+          }
+
+          let toolRounds = 0
+          const MAX_TOOL_ROUNDS = 20
+
+          // Event handler that intercepts tool_call events and executes them
+          const handleOllamaEvent = async (event) => {
+            if (ws.readyState !== 1) return
+
+            if (event.type === 'ollama_tool_call') {
+              toolRounds++
+              if (toolRounds > MAX_TOOL_ROUNDS) {
+                console.warn(`[ollama] Hit max tool rounds (${MAX_TOOL_ROUNDS}), stopping`)
+                ws.send(JSON.stringify({ type: 'ollama_done', id: msg.id, requestId: event.requestId, sessionId: event.sessionId, exitCode: 0 }))
+                cliRequestToWs.delete(event.requestId)
+                return
+              }
+
+              // Emit tool_use events to frontend so UI shows tool activity
+              for (const tc of event.toolCalls) {
+                const toolId = randomUUID()
+                const toolName = tc.function?.name || 'unknown'
+                const toolArgs = tc.function?.arguments || {}
+                ws.send(JSON.stringify({
+                  type: 'ollama_stream', id: msg.id,
+                  event: { type: 'tool_use', tool_use: { id: toolId, name: toolName, input: toolArgs } }
+                }))
+              }
+
+              // Execute each tool call via MCP
+              const results = []
+              for (const tc of event.toolCalls) {
+                const toolName = tc.function?.name || ''
+                const toolArgs = tc.function?.arguments || {}
+                const route = toolRouteMap.get(toolName)
+
+                if (!route) {
+                  console.warn(`[ollama] Unknown tool: ${toolName}`)
+                  results.push({ content: `Error: Unknown tool "${toolName}"` })
+                  continue
+                }
+
+                try {
+                  console.log(`[ollama] Executing tool ${route.server}/${route.tool}`)
+                  const result = await manager.callTool(route.server, route.tool, toolArgs)
+                  const content = result.content?.map(c => c.text || JSON.stringify(c)).join('\n') || ''
+                  results.push({ content })
+                } catch (e) {
+                  console.error(`[ollama] Tool error (${toolName}):`, e.message)
+                  results.push({ content: `Error executing ${toolName}: ${e.message}` })
+                }
+              }
+
+              // Emit tool results to frontend
+              for (let i = 0; i < results.length; i++) {
+                ws.send(JSON.stringify({
+                  type: 'ollama_stream', id: msg.id,
+                  event: { type: 'tool_result', content: results[i].content }
+                }))
+              }
+
+              // Continue conversation with tool results
+              ollamaManager.continueWithToolResults(
+                event.requestId, event.sessionId,
+                event.assistantMessage, results,
+                handleOllamaEvent
+              )
+              return
+            }
+
+            // Pass through all other events (stream, done, error)
+            ws.send(JSON.stringify({ ...event, id: msg.id }))
+            if (event.type === 'ollama_done' || event.type === 'ollama_error') {
+              cliRequestToWs.delete(event.requestId)
+            }
+          }
+
           const { requestId, sessionId } = ollamaManager.chat(
             {
               prompt: msg.prompt,
               model: msg.model,
               sessionId: msg.sessionId,
               systemPrompt: msg.systemPrompt,
-              cwd: msg.cwd
+              cwd: msg.cwd,
+              tools: ollamaTools
             },
-            (event) => {
-              if (ws.readyState !== 1) return
-              ws.send(JSON.stringify({ ...event, id: msg.id }))
-              if (event.type === 'ollama_done' || event.type === 'ollama_error') {
-                cliRequestToWs.delete(requestId)
-              }
-            }
+            handleOllamaEvent
           )
           cliRequestToWs.set(requestId, ws)
           ws.send(JSON.stringify({ type: 'ollama_ack', id: msg.id, requestId, sessionId }))

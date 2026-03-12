@@ -1,8 +1,10 @@
 import { randomUUID } from 'crypto'
 
+const MAX_TOOL_ROUNDS = 20  // Safety limit on tool call loops
+
 export class OllamaManager {
   constructor() {
-    this.sessions = new Map()   // sessionId → { messages[], model, lastActivity }
+    this.sessions = new Map()   // sessionId → { messages[], model, tools[], lastActivity }
     this.requests = new Map()   // requestId → { sessionId, abortController }
     this.baseURL = process.env.OLLAMA_HOST || 'http://localhost:11434'
     this.defaultNumCtx = 32768
@@ -12,7 +14,7 @@ export class OllamaManager {
     this._cleanupInterval.unref() // Don't prevent process exit
   }
 
-  chat({ prompt, model, sessionId, systemPrompt, cwd }, onEvent) {
+  chat({ prompt, model, sessionId, systemPrompt, cwd, tools }, onEvent) {
     const requestId = randomUUID()
 
     if (!sessionId) {
@@ -22,7 +24,7 @@ export class OllamaManager {
     // Create or resume session
     let session = this.sessions.get(sessionId)
     if (!session) {
-      session = { messages: [], model: model || 'qwen2.5-coder:32b', lastActivity: Date.now() }
+      session = { messages: [], model: model || 'qwen2.5-coder:32b', tools: null, lastActivity: Date.now() }
       // Prepend system message on new session
       if (systemPrompt) {
         session.messages.push({ role: 'system', content: systemPrompt })
@@ -38,6 +40,11 @@ export class OllamaManager {
       session.model = model
     }
 
+    // Store tools on session (used for all rounds including continuations)
+    if (tools?.length > 0) {
+      session.tools = tools
+    }
+
     // Append user message
     session.messages.push({ role: 'user', content: prompt })
     session.lastActivity = Date.now()
@@ -47,28 +54,64 @@ export class OllamaManager {
     this.requests.set(requestId, { sessionId, abortController })
 
     // Start streaming (fire and forget — events flow via onEvent callback)
-    this._streamChat(requestId, sessionId, session.model, [...session.messages], abortController, onEvent)
+    this._streamChat(requestId, sessionId, session, abortController, onEvent)
 
     return { requestId, sessionId }
   }
 
-  async _streamChat(requestId, sessionId, model, messages, controller, onEvent) {
+  /**
+   * Continue conversation after tool results have been executed.
+   * Called by the bridge after it executes the tool calls.
+   */
+  continueWithToolResults(requestId, sessionId, assistantMessage, toolResults, onEvent) {
+    const session = this.sessions.get(sessionId)
+    if (!session) {
+      onEvent({ type: 'ollama_error', requestId, event: { error: `Session ${sessionId} not found` } })
+      return
+    }
+
+    // Append the assistant message that contained tool_calls
+    session.messages.push(assistantMessage)
+
+    // Append each tool result
+    for (const result of toolResults) {
+      session.messages.push({ role: 'tool', content: result.content })
+    }
+
+    session.lastActivity = Date.now()
+
+    // Set up new abort controller for this round
+    const abortController = new AbortController()
+    this.requests.set(requestId, { sessionId, abortController })
+
+    // Continue streaming
+    this._streamChat(requestId, sessionId, session, abortController, onEvent)
+  }
+
+  async _streamChat(requestId, sessionId, session, controller, onEvent) {
     try {
+      const body = {
+        model: session.model,
+        messages: [...session.messages],
+        stream: true,
+        options: { num_ctx: this.defaultNumCtx }
+      }
+
+      // Include tools if available
+      if (session.tools?.length > 0) {
+        body.tools = session.tools
+      }
+
       const response = await fetch(`${this.baseURL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          messages,
-          stream: true,
-          options: { num_ctx: this.defaultNumCtx }
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal
       })
 
       if (!response.ok) {
-        const body = await response.text().catch(() => '')
-        const errorMsg = `Ollama API error ${response.status}: ${body || response.statusText}`
+        const responseBody = await response.text().catch(() => '')
+        const errorMsg = `Ollama API error ${response.status}: ${responseBody || response.statusText}`
         console.error(`[ollama] ${errorMsg}`)
         this.requests.delete(requestId)
         onEvent({ type: 'ollama_error', requestId, event: { error: errorMsg } })
@@ -79,6 +122,7 @@ export class OllamaManager {
       const decoder = new TextDecoder()
       let buffer = ''
       let fullAssistantText = ''
+      let collectedToolCalls = []
 
       while (true) {
         const { done, value } = await reader.read()
@@ -95,11 +139,11 @@ export class OllamaManager {
           try {
             const chunk = JSON.parse(trimmed)
 
+            // Stream text content
             if (chunk.message?.content) {
               const text = chunk.message.content
               fullAssistantText += text
 
-              // Emit with Claude-compatible content_block_delta shape
               onEvent({
                 type: 'ollama_stream',
                 requestId,
@@ -110,7 +154,13 @@ export class OllamaManager {
               })
             }
 
-            // Ollama signals completion with done: true
+            // Collect tool calls from the response
+            if (chunk.message?.tool_calls?.length > 0) {
+              for (const tc of chunk.message.tool_calls) {
+                collectedToolCalls.push(tc)
+              }
+            }
+
             if (chunk.done) {
               break
             }
@@ -135,16 +185,38 @@ export class OllamaManager {
               }
             })
           }
+          if (chunk.message?.tool_calls?.length > 0) {
+            for (const tc of chunk.message.tool_calls) {
+              collectedToolCalls.push(tc)
+            }
+          }
         } catch {
           // skip
         }
       }
 
-      // Append assistant message to session history
-      const session = this.sessions.get(sessionId)
-      if (session) {
-        session.messages.push({ role: 'assistant', content: fullAssistantText })
-        session.lastActivity = Date.now()
+      // If tool calls were returned, emit them for bridge to execute
+      if (collectedToolCalls.length > 0) {
+        console.log(`[ollama] ${collectedToolCalls.length} tool call(s): ${collectedToolCalls.map(tc => tc.function?.name).join(', ')}`)
+
+        const assistantMessage = { role: 'assistant', content: fullAssistantText || '', tool_calls: collectedToolCalls }
+
+        this.requests.delete(requestId)
+        onEvent({
+          type: 'ollama_tool_call',
+          requestId,
+          sessionId,
+          assistantMessage,
+          toolCalls: collectedToolCalls
+        })
+        return
+      }
+
+      // No tool calls — normal completion
+      const session2 = this.sessions.get(sessionId)
+      if (session2) {
+        session2.messages.push({ role: 'assistant', content: fullAssistantText })
+        session2.lastActivity = Date.now()
       }
 
       this.requests.delete(requestId)
@@ -177,7 +249,6 @@ export class OllamaManager {
 
   shutdown() {
     clearInterval(this._cleanupInterval)
-    // Abort all active requests
     for (const [id, entry] of this.requests) {
       entry.abortController.abort()
     }

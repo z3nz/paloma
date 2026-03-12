@@ -368,6 +368,15 @@ export function useMCP() {
     if (bridge) bridge.stopCodexChat(requestId)
   }
 
+  function sendOllamaChat(options, callbacks) {
+    if (!bridge || !connected.value) throw new Error('Bridge not connected')
+    return bridge.sendOllamaChat(options, callbacks)
+  }
+
+  function stopOllamaChat(requestId) {
+    if (bridge) bridge.stopOllamaChat(requestId)
+  }
+
   function registerFlowSession(cliSessionId, model, cwd, dbSessionId) {
     if (bridge) bridge.registerFlowSession(cliSessionId, model, cwd)
     if (dbSessionId && cliSessionId) {
@@ -477,6 +486,8 @@ export function useMCP() {
     stopClaudeChat,
     sendCodexChat,
     stopCodexChat,
+    sendOllamaChat,
+    stopOllamaChat,
     respondToAskUser,
     approveCliTool,
     denyCliTool,

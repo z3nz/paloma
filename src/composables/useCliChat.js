@@ -1,4 +1,4 @@
-import { isDirectCliModel, isCodexModel, getCliModelName, getCodexModelName, streamClaudeChat, streamCodexChat } from '../services/claudeStream.js'
+import { isDirectCliModel, isCodexModel, isOllamaModel, getCliModelName, getCodexModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamOllamaChat } from '../services/claudeStream.js'
 import { useMCP } from './useMCP.js'
 import { useProject } from './useProject.js'
 import { useToolExecution } from './useToolExecution.js'
@@ -23,19 +23,20 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     sessionState = activeState()
   }
 
-  const { sendClaudeChat, sendCodexChat } = useMCP()
+  const { sendClaudeChat, sendCodexChat, sendOllamaChat } = useMCP()
   const { addActivity, markActivityDone, toolActivity } = useToolExecution(sessionState)
 
   const useCodex = isCodexModel(model)
+  const useOllama = isOllamaModel(model)
   const session = await db.sessions.get(sessionId)
 
   // If backend changed from previous session, start fresh
   const existingBackend = session?.cliBackend || 'claude'
-  const currentBackend = useCodex ? 'codex' : 'claude'
+  const currentBackend = useOllama ? 'ollama' : useCodex ? 'codex' : 'claude'
   const existingCliSession = (existingBackend === currentBackend) ? (session?.cliSessionId || null) : null
   console.log(`[cli] ${existingCliSession ? 'Resuming' : 'New'} ${currentBackend} session, model=${model}`)
 
-  const resolvedModel = useCodex ? getCodexModelName(model) : getCliModelName(model)
+  const resolvedModel = useOllama ? getOllamaModelName(model) : useCodex ? getCodexModelName(model) : getCliModelName(model)
   const cliOptions = {
     prompt: fullContent,
     model: resolvedModel,
@@ -49,10 +50,12 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   const toolUseToActivity = new Map()  // toolUseId → activityId
   const toolUseMeta = new Map()        // toolUseId → { name, args }
 
-  const sendFn = useCodex
-    ? (opts, cbs) => sendCodexChat(opts, cbs)
-    : (opts, cbs) => sendClaudeChat(opts, cbs)
-  const streamGenerator = useCodex ? streamCodexChat : streamClaudeChat
+  const sendFn = useOllama
+    ? (opts, cbs) => sendOllamaChat(opts, cbs)
+    : useCodex
+      ? (opts, cbs) => sendCodexChat(opts, cbs)
+      : (opts, cbs) => sendClaudeChat(opts, cbs)
+  const streamGenerator = useOllama ? streamOllamaChat : useCodex ? streamCodexChat : streamClaudeChat
 
   for await (const chunk of streamGenerator(sendFn, cliOptions)) {
     if (chunk.type === 'content') {
@@ -69,7 +72,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
         await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId, cliBackend: currentBackend })
       }
       // Register Flow sessions for pillar auto-callback notifications (Claude only)
-      if (phase === 'flow' && !useCodex) {
+      if (phase === 'flow' && !useCodex && !useOllama) {
         const cliSessionIdToRegister = chunk.sessionId || existingCliSession
         if (cliSessionIdToRegister) {
           const { registerFlowSession } = useMCP()
@@ -142,8 +145,10 @@ export function stopCli(sessionState, model) {
     sessionState = activeState()
   }
   if (sessionState.cliRequestId) {
-    const { stopClaudeChat, stopCodexChat } = useMCP()
-    if (model && isCodexModel(model)) {
+    const { stopClaudeChat, stopCodexChat, stopOllamaChat } = useMCP()
+    if (model && isOllamaModel(model)) {
+      stopOllamaChat(sessionState.cliRequestId)
+    } else if (model && isCodexModel(model)) {
       stopCodexChat(sessionState.cliRequestId)
     } else {
       stopClaudeChat(sessionState.cliRequestId)
