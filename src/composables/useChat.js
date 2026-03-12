@@ -218,6 +218,7 @@ export function useChat() {
 
     s.streaming.value = true
     s.streamingContent.value = ''
+    s.currentModel = model
     s.abortController = new AbortController()
 
     // Start periodic streaming draft save (crash recovery)
@@ -350,6 +351,7 @@ export function useChat() {
       s.streamingContent.value = ''
       s.abortController = null
       s.streamInterrupted = false
+      s.currentModel = null
       clearCliRequestId(s)
       // Clear live tool activity — persisted snapshot is now on the assistant message
       clearActivity()
@@ -422,8 +424,10 @@ export function useChat() {
 
     s.streamInterrupted = true
 
-    // Signal abort to both paths
-    stopCli(s)
+    // Signal abort to both paths — capture model before clearing
+    const modelForStop = s.currentModel
+    s.currentModel = null
+    stopCli(s, modelForStop)
     if (s.abortController) {
       s.abortController.abort()
       s.abortController = null
