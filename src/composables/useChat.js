@@ -270,11 +270,12 @@ export function useChat() {
             // We'll update the message after tool execution via onUpdateAssistantActivity.
             return saveAssistantMessage(sessionId, s, content, toolCalls, usage, model)
           },
-          async onSaveTool(callId, toolName, args, content) {
+          async onSaveTool(callId, toolName, args, content, activityId) {
             const toolMsg = sanitizeForDB({
               sessionId,
               role: 'tool',
               toolCallId: callId,
+              activityId: activityId || callId,
               toolName,
               toolArgs: args,
               content,

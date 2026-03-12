@@ -40,9 +40,9 @@
       </div>
     </div>
 
-    <!-- Live tool activity (during streaming) -->
+    <!-- Live tool activity (during streaming only — persisted tools render inside MessageItem) -->
     <ToolCallGroup
-      v-if="toolActivity.length"
+      v-if="toolActivity.length && streaming"
       :activities="toolActivity"
       :tool-messages="liveToolMessages"
       :live="true"
@@ -129,12 +129,8 @@ const consumedToolIds = computed(() => {
  * Messages to display — filters out tool messages that are consumed by ToolCallGroup.
  */
 const displayMessages = computed(() => {
-  return visibleMessages.value.filter(msg => {
-    if (msg.role === 'tool' && consumedToolIds.value.has(msg.id)) {
-      return false
-    }
-    return true
-  })
+  // Tool messages are never rendered standalone — they're shown inside ToolCallGroup
+  return visibleMessages.value.filter(msg => msg.role !== 'tool')
 })
 
 /**
@@ -253,11 +249,17 @@ watch(
   }
 )
 
-// Flush on stream end to ensure final content is rendered
+// Scroll when streaming starts (show blinking cursor immediately),
+// and flush on stream end to ensure final content is rendered
 watch(
   () => props.streaming,
   (val) => {
-    if (!val && props.streamingContent) {
+    if (val) {
+      // Streaming just started — scroll to show the loading indicator
+      if (isNearBottom.value) {
+        scrollToBottom('instant')
+      }
+    } else if (props.streamingContent) {
       if (throttleTimer) {
         clearTimeout(throttleTimer)
         throttleTimer = null

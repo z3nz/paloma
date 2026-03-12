@@ -102,7 +102,7 @@ export async function runOpenRouterLoop({
         // Save tool result message
         const content = typeof result === 'string' ? result : JSON.stringify(result)
         markActivityDone(activityId, content)
-        await onSaveTool(call.id, toolName, args, content)
+        await onSaveTool(call.id, toolName, args, content, activityId)
         apiMessages.push({
           role: 'tool',
           tool_call_id: call.id,

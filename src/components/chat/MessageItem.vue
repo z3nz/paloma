@@ -1,26 +1,9 @@
 <template>
-  <!-- Tool message: hidden if parent assistant has toolActivity (rendered inside ToolCallGroup instead) -->
-  <div
-    v-if="message.role === 'tool' && !message._consumed"
-    class="px-6 py-1.5"
-  >
-    <div class="max-w-3xl mx-auto flex items-start gap-2 text-xs text-text-muted">
-      <span class="uppercase tracking-wider text-warning font-medium shrink-0">Tool</span>
-      <button
-        @click="expanded = !expanded"
-        class="font-mono hover:text-text-secondary text-left"
-      >
-        {{ message.toolName }}({{ formatArgs }}) {{ expanded ? '&#x25BE;' : '&#x25B8;' }}
-      </button>
-    </div>
-    <div v-if="expanded" class="max-w-3xl mx-auto mt-1 ml-10">
-      <pre class="text-xs text-text-muted font-mono whitespace-pre-wrap bg-bg-primary border border-border rounded-md p-2 max-h-48 overflow-y-auto">{{ truncatedResult }}</pre>
-    </div>
-  </div>
+  <!-- Tool messages are never rendered standalone — they're shown inside ToolCallGroup -->
 
   <!-- Assistant message with toolActivity (new rich display) -->
   <div
-    v-else-if="message.role === 'assistant' && hasToolActivity"
+    v-if="message.role === 'assistant' && hasToolActivity"
     class="px-6"
     :class="message.content ? 'py-4 bg-bg-secondary/50' : 'py-2'"
   >
@@ -33,18 +16,19 @@
         <span class="text-xs font-medium uppercase tracking-wider text-purple-400">Paloma</span>
       </div>
 
-      <!-- Tool call group -->
-      <ToolCallGroup
-        :activities="message.toolActivity"
-        :tool-messages="toolMessages"
-      />
-
       <!-- Content (if any) -->
       <div
         v-if="message.content"
-        class="message-content text-sm text-text-primary mt-3"
+        class="message-content text-sm text-text-primary"
         v-html="renderedHtml"
         @click="handleContentClick"
+      />
+
+      <!-- Tool call group (below content) -->
+      <ToolCallGroup
+        :activities="message.toolActivity"
+        :tool-messages="toolMessages"
+        class="mt-3"
       />
 
       <!-- Interrupted indicator -->
