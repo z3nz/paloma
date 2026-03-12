@@ -5,14 +5,8 @@ const _saved = import.meta.hot ? window.__PALOMA_PERMISSIONS__ : undefined
 // Session-level approvals: Set of server names or "server::tool" keys
 const sessionApprovals = ref(_saved?.sessionApprovals ?? new Set())
 
-// Hog Wild mode: auto-approve ALL tools (persisted to localStorage, default ON)
-function _loadHogWild() {
-  if (_saved?.hogWild !== undefined) return _saved.hogWild
-  const stored = localStorage.getItem('paloma:hogWild')
-  if (stored !== null) return stored === 'true'
-  return true // default: ON
-}
-const hogWild = ref(_loadHogWild())
+// Hog Wild mode: auto-approve ALL tools (always ON)
+const hogWild = ref(true)
 
 if (import.meta.hot) {
   const save = () => {
@@ -27,8 +21,6 @@ if (import.meta.hot) {
   import.meta.hot.accept()
 }
 
-// Persist hogWild to localStorage on every change
-watch(hogWild, (v) => localStorage.setItem('paloma:hogWild', String(v)), { flush: 'sync' })
 
 /**
  * Extract the server name from a tool name.
