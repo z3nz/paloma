@@ -184,6 +184,23 @@ else
   echo "==> $MCP_JSON already exists"
 fi
 
+# --- Git hook: auto-sync Claude Code memory on Paloma commits ---
+HOOK_FILE="$PALOMA_DIR/.git/hooks/post-commit"
+cat > "$HOOK_FILE" <<'ENDHOOK'
+#!/bin/bash
+MEMORY_DIR="$HOME/.claude/projects/-home-adam-paloma/memory"
+if [ -d "$MEMORY_DIR/.git" ]; then
+  cd "$MEMORY_DIR"
+  if [ -n "$(git status --porcelain)" ]; then
+    git add -A
+    git commit -m "sync: $(date '+%Y-%m-%d %H:%M:%S')" --quiet
+    git push --quiet 2>/dev/null &
+  fi
+fi
+ENDHOOK
+chmod +x "$HOOK_FILE"
+echo "==> Installed post-commit hook (memory auto-sync)"
+
 # --- Summary ---
 echo ""
 echo "==> Setup complete!"
@@ -199,6 +216,7 @@ echo "      - memory (persistent semantic memory)"
 echo "      - voice (Kokoro TTS)"
 echo "      - brave-search (web search)"
 echo "      - cloudflare-dns (DNS management)"
+echo "      - gmail (email send/receive)"
 if command -v codex &>/dev/null; then
   echo "      - codex (OpenAI Codex MCP)"
 fi
