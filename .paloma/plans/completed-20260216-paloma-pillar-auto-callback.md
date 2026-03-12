@@ -1,7 +1,7 @@
 # Plan: Pillar Auto-Callback Notification System
 
 > **Goal**: When a pillar finishes or Adam messages a pillar directly, Flow gets notified automatically — no polling required.
-> **Status**: Active
+> **Status**: Completed
 > **Created**: 2026-02-16
 
 ---
@@ -10,13 +10,49 @@
 
 - [ ] Scout: N/A — no external research needed (architecture is internal)
 - [x] Chart: Complete — this document
-- [x] Forge: Phase 1 Complete — Flow session registration and callback streaming working end-to-end
-- [ ] Polish: N/A — paused before completion
-- [x] Ship: Complete — Phase 1 committed as db9517c
+- [x] Forge: All 5 Phases Complete
+- [x] Polish: Complete — clean, well-structured, airtight data flow. Four non-blocking notes (dead sessions prop, HMR state, legacy phases, param naming) — none blockers.
+- [x] Ship: All 5 phases committed (db9517c, fd64704, c596c6c, dab7482, 52bead1)
+
+**Phase 5 (Sidebar Pillar Tree View) — ✅ COMPLETE**
 
 **Phase 1 (Flow Session Registration) — ✅ COMPLETE**
-**Phase 2 (Pillar Completion Callbacks) — ⏸️ PAUSED (bridge logic not yet implemented)**
-**Phases 3-5 — ⏸️ PAUSED (future work)**
+- Bridge receives `register_flow_session` from frontend
+- `useMCP` tracks `registeredFlowDbSessionId` for callback routing
+- `useCliChat` passes IndexedDB sessionId to `registerFlowSession()`
+- Callback response streaming works end-to-end (`flow_notification_stream/done/error` in mcpBridge.js)
+
+**Phase 2 (Pillar Completion Callbacks) — ✅ COMPLETE**
+- `_handleCliEvent()` in pillar-manager.js auto-calls `notifyFlow()` on both `idle` and `error` status
+- `_buildNotificationMessage('completion', session)` formats the callback message
+- Cooldown (5s per pillarId), rate limiting (10/min), queue draining all implemented
+- Batched notifications via `_buildBatchedNotification()` when Flow is busy
+- `onFlowTurnComplete()` drains queued notifications when Flow finishes a user-initiated turn
+
+**Phase 3 (Adam CC Notifications) — ✅ COMPLETE**
+- `pillar_user_message` WS handler in bridge/index.js
+- `_buildNotificationMessage('adam_cc', ...)` in pillar-manager.js
+- Frontend sends CC via `sendPillarUserMessage()` when Adam messages a pillar session
+- Reuses existing notifyFlow() pipeline (queueing, cooldown, rate limiting)
+
+**Phase 4 (Notification UX in Browser) — ✅ COMPLETE**
+- Bridge sends `flow_notification_start` event with metadata (notificationType, pillar, pillarId) before streaming
+- `mcpBridge.js` handles `flow_notification_start` event; `useMCP.js` stores pending metadata between start/done
+- `onFlowNotificationDone` tags saved assistant messages with `isCallback`, `callbackType`, `callbackPillar`, `callbackPillarId`
+- New `CallbackBadge.vue` component renders colored badge above callback assistant messages
+  - Completion: "⚡ Scout completed" with pillar phase color border
+  - Adam CC: "💬 Adam CC'd Flow about Forge" with pillar phase color border
+  - Batched: "📡 Batched callbacks" with blue border
+- Sidebar shows cyan pulsing dot (instead of accent) when Flow is processing a callback in background
+- `flowProcessingCallback` reactive ref exported from `useMCP` for sidebar indicator
+- No changes needed to ChatView.vue — notification streaming pipeline already renders messages correctly
+
+**Phase 5 (Sidebar Pillar Tree View) — ✅ COMPLETE**
+- `useSessions.js`: Added `sessionTree` computed (groups sessions by `parentFlowSessionId` with orphan promotion)
+- `useMCP.js`: Fixed parent link bug (`registeredFlowDbSessionId` instead of `msg.flowRequestId`), added `pillarStatuses` reactive Map from WS events, persists to DB
+- New `SidebarSessionTree.vue`: Collapsible tree with phase-colored connectors, status indicators (running/streaming/idle/error/stopped), chevron toggle, child count badge
+- `Sidebar.vue`: Replaced flat session list with tree component, cleaned up unused helpers
+- `main.css`: Tree connector CSS (vertical/horizontal lines, hover brightening, status spinner)
 
 ## Research References
 

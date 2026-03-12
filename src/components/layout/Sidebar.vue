@@ -19,62 +19,15 @@
       </button>
     </div>
 
-    <!-- Session list -->
+    <!-- Session tree -->
     <div class="flex-1 overflow-y-auto px-2">
-      <div v-if="sessions.length === 0" class="text-text-muted text-sm text-center py-8 px-4">
-        No chats yet. Start a new conversation.
-      </div>
-
-      <div
-        v-for="session in sessions"
-        :key="session.id"
-        @click="$emit('select-session', session.id)"
-        @contextmenu.prevent="showContextMenu($event, session.id)"
-        class="group relative px-3 py-2.5 rounded-md cursor-pointer mb-0.5 transition-colors"
-        :class="session.id === activeSessionId
-          ? 'bg-bg-hover text-text-primary'
-          : 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary'"
-      >
-        <div class="text-sm truncate flex items-center gap-1.5">
-          <!-- Spawned pillar badge -->
-          <span v-if="session.pillarId"
-            class="inline-flex items-center px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded"
-            :class="pillarBadgeColor(session.phase)"
-            :title="`Spawned by Flow (${session.pillarId.slice(0, 8)})`"
-          >⚙</span>
-          {{ session.title }}
-        </div>
-        <div class="flex items-center gap-2 mt-1">
-          <!-- Streaming indicator -->
-          <span v-if="isStreaming(session.id)"
-            class="w-2 h-2 rounded-full bg-accent animate-pulse shrink-0"
-            title="Streaming..."
-          />
-          <!-- Tool activity indicator -->
-          <span v-else-if="hasToolActivity(session.id)"
-            class="w-2 h-2 rounded-full bg-purple-400 animate-pulse shrink-0"
-            title="Running tools..."
-          />
-          <!-- Phase dot (default) -->
-          <span v-else
-            class="w-2 h-2 rounded-full shrink-0"
-            :class="phaseColor(session.phase)"
-          />
-          <span class="text-xs text-text-muted truncate">{{ formatModel(session.model) }}</span>
-          <span class="text-xs text-text-muted ml-auto shrink-0">{{ formatTime(session.updatedAt) }}</span>
-        </div>
-
-        <!-- Delete button -->
-        <button
-          @click.stop="$emit('delete-session', session.id)"
-          class="absolute top-2 right-2 text-text-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity p-1"
-          title="Delete chat"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
-        </button>
-      </div>
+      <SidebarSessionTree
+        :session-tree="sessionTree"
+        :active-session-id="activeSessionId"
+        :pillar-statuses="pillarStatuses"
+        @select-session="id => $emit('select-session', id)"
+        @delete-session="id => $emit('delete-session', id)"
+      />
     </div>
 
     <!-- Export chats -->
@@ -94,9 +47,10 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onBeforeUnmount } from 'vue'
 import { useMCP } from '../../composables/useMCP.js'
-import { useSessionState } from '../../composables/useSessionState.js'
+import { useSessions } from '../../composables/useSessions.js'
+import SidebarSessionTree from './SidebarSessionTree.vue'
 
 const props = defineProps({
   sessions: { type: Array, default: () => [] },
@@ -107,10 +61,12 @@ const props = defineProps({
 
 defineEmits(['new-chat', 'select-session', 'delete-session'])
 
-const { exportChats, connected } = useMCP()
-const { isStreaming, hasToolActivity } = useSessionState()
+const { exportChats, connected, pillarStatuses } = useMCP()
+const { sessionTree } = useSessions()
 const exporting = ref(false)
 const exportLabel = ref('Export Chats')
+let _exportTimer = null
+onBeforeUnmount(() => { if (_exportTimer) clearTimeout(_exportTimer) })
 
 async function handleExport() {
   if (!props.projectPath || !connected.value) return
@@ -123,62 +79,12 @@ async function handleExport() {
     exportLabel.value = 'Export failed'
     console.error('[Export]', e)
   } finally {
-    setTimeout(() => {
+    if (_exportTimer) clearTimeout(_exportTimer)
+    _exportTimer = setTimeout(() => {
       exporting.value = false
       exportLabel.value = 'Export Chats'
+      _exportTimer = null
     }, 3000)
   }
-}
-
-function phaseColor(phase) {
-  const colors = {
-    flow: 'bg-blue-400',
-    scout: 'bg-cyan-400',
-    chart: 'bg-yellow-400',
-    forge: 'bg-orange-400',
-    polish: 'bg-pink-400',
-    ship: 'bg-green-400',
-    // Legacy fallbacks
-    research: 'bg-blue-400',
-    plan: 'bg-yellow-400',
-    implement: 'bg-green-400',
-    review: 'bg-orange-400',
-    commit: 'bg-purple-400'
-  }
-  return colors[phase] || 'bg-text-muted'
-}
-
-function formatModel(model) {
-  if (!model) return ''
-  if (model.startsWith('claude-cli:')) {
-    return model.split(':').pop() + ' (CLI)'
-  }
-  return model.split('/').pop()
-}
-
-function pillarBadgeColor(phase) {
-  const colors = {
-    scout: 'bg-cyan-500/20 text-cyan-400',
-    chart: 'bg-yellow-500/20 text-yellow-400',
-    forge: 'bg-orange-500/20 text-orange-400',
-    polish: 'bg-pink-500/20 text-pink-400',
-    ship: 'bg-green-500/20 text-green-400'
-  }
-  return colors[phase] || 'bg-blue-500/20 text-blue-400'
-}
-
-function formatTime(ts) {
-  if (!ts) return ''
-  const d = new Date(ts)
-  const now = new Date()
-  const diffMs = now - d
-  const diffMins = Math.floor(diffMs / 60000)
-  if (diffMins < 1) return 'now'
-  if (diffMins < 60) return `${diffMins}m`
-  const diffHours = Math.floor(diffMins / 60)
-  if (diffHours < 24) return `${diffHours}h`
-  const diffDays = Math.floor(diffHours / 24)
-  if (diffDays < 7) return `${diffDays}d`
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 </script>

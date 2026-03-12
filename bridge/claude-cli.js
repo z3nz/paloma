@@ -111,6 +111,11 @@ export class ClaudeCliManager {
   stop(requestId) {
     const entry = this.processes.get(requestId)
     if (entry) {
+      // Clean up temp MCP config before deleting the entry
+      // (the close handler won't be able to find it after delete)
+      if (entry.mcpConfigPath) {
+        try { unlinkSync(entry.mcpConfigPath) } catch {}
+      }
       entry.process.kill('SIGTERM')
       this.processes.delete(requestId)
     }

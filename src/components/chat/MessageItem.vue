@@ -1,47 +1,34 @@
 <template>
-  <!-- Tool message: hidden if parent assistant has toolActivity (rendered inside ToolCallGroup instead) -->
-  <div
-    v-if="message.role === 'tool' && !message._consumed"
-    class="px-6 py-1.5"
-  >
-    <div class="max-w-3xl mx-auto flex items-start gap-2 text-xs text-text-muted">
-      <span class="uppercase tracking-wider text-warning font-medium shrink-0">Tool</span>
-      <button
-        @click="expanded = !expanded"
-        class="font-mono hover:text-text-secondary text-left"
-      >
-        {{ message.toolName }}({{ formatArgs }}) {{ expanded ? '&#x25BE;' : '&#x25B8;' }}
-      </button>
-    </div>
-    <div v-if="expanded" class="max-w-3xl mx-auto mt-1 ml-10">
-      <pre class="text-xs text-text-muted font-mono whitespace-pre-wrap bg-bg-primary border border-border rounded-md p-2 max-h-48 overflow-y-auto">{{ truncatedResult }}</pre>
-    </div>
-  </div>
+  <!-- Tool messages are never rendered standalone — they're shown inside ToolCallGroup -->
 
   <!-- Assistant message with toolActivity (new rich display) -->
   <div
-    v-else-if="message.role === 'assistant' && hasToolActivity"
+    v-if="message.role === 'assistant' && hasToolActivity"
     class="px-6"
     :class="message.content ? 'py-4 bg-bg-secondary/50' : 'py-2'"
   >
     <div class="max-w-3xl mx-auto">
+      <!-- Callback badge -->
+      <CallbackBadge v-if="message.isCallback" :message="message" />
+
       <!-- Role label (only if there's content) -->
       <div v-if="message.content" class="flex items-center gap-2 mb-2">
         <span class="text-xs font-medium uppercase tracking-wider text-purple-400">Paloma</span>
       </div>
 
-      <!-- Tool call group -->
-      <ToolCallGroup
-        :activities="message.toolActivity"
-        :tool-messages="toolMessages"
-      />
-
       <!-- Content (if any) -->
       <div
         v-if="message.content"
-        class="message-content text-sm text-text-primary mt-3"
+        class="message-content text-sm text-text-primary"
         v-html="renderedHtml"
         @click="handleContentClick"
+      />
+
+      <!-- Tool call group (below content) -->
+      <ToolCallGroup
+        :activities="message.toolActivity"
+        :tool-messages="toolMessages"
+        class="mt-3"
       />
 
       <!-- Interrupted indicator -->
@@ -52,7 +39,7 @@
 
       <!-- Token/cost annotation -->
       <div v-if="message.usage" class="mt-2 text-xs text-text-muted flex items-center gap-3">
-        <span>{{ formatTokens(message.usage.totalTokens) }} tokens</span>
+        <span :title="formatTokenBreakdown(message.usage)">{{ formatTokens(message.usage.totalTokens) }} tokens</span>
         <span>{{ formatCost(messageCost) }}</span>
       </div>
     </div>
@@ -77,6 +64,9 @@
     :class="message.role === 'user' ? 'bg-bg-primary' : 'bg-bg-secondary/50'"
   >
     <div class="max-w-3xl mx-auto">
+      <!-- Callback badge -->
+      <CallbackBadge v-if="message.role === 'assistant' && message.isCallback" :message="message" />
+
       <!-- Role label -->
       <div class="flex items-center gap-2 mb-2">
         <span
@@ -118,7 +108,7 @@
 
       <!-- Token/cost annotation for assistant messages -->
       <div v-if="message.role === 'assistant' && message.usage" class="mt-2 text-xs text-text-muted flex items-center gap-3">
-        <span>{{ formatTokens(message.usage.totalTokens) }} tokens</span>
+        <span :title="formatTokenBreakdown(message.usage)">{{ formatTokens(message.usage.totalTokens) }} tokens</span>
         <span>{{ formatCost(messageCost) }}</span>
       </div>
     </div>
@@ -131,6 +121,7 @@ import { marked } from 'marked'
 import hljs from 'highlight.js'
 import { useCostTracking } from '../../composables/useCostTracking.js'
 import ToolCallGroup from './ToolCallGroup.vue'
+import CallbackBadge from './CallbackBadge.vue'
 
 const props = defineProps({
   message: { type: Object, required: true },
@@ -139,11 +130,12 @@ const props = defineProps({
 
 const emit = defineEmits(['apply-code'])
 
+const HTML_CACHE_MAX = 100
 const htmlCache = new Map()
 
 const expanded = ref(false)
 
-const { formatCost, formatTokens, calculateMessageCost } = useCostTracking()
+const { formatCost, formatTokens, formatTokenBreakdown, calculateMessageCost } = useCostTracking()
 const messageCost = computed(() => calculateMessageCost(props.message))
 
 const hasToolActivity = computed(() =>
@@ -234,6 +226,11 @@ const renderedHtml = computed(() => {
   )
 
   codeBlocks.value = blocks
+  // LRU eviction: drop oldest entries when cache exceeds limit
+  if (htmlCache.size >= HTML_CACHE_MAX) {
+    const firstKey = htmlCache.keys().next().value
+    htmlCache.delete(firstKey)
+  }
   htmlCache.set(props.message.content, { html: result, blocks })
   return result
 })

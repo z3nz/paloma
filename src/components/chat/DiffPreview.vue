@@ -82,7 +82,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, onBeforeUnmount } from 'vue'
 import { diffLines as computeDiff } from 'diff'
 
 const props = defineProps({
@@ -92,13 +92,32 @@ const props = defineProps({
   error: { type: String, default: null }
 })
 
-defineEmits(['apply', 'cancel'])
+const emit = defineEmits(['apply', 'cancel'])
+
+function handleKeyDown(e) {
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    emit('cancel')
+  } else if (e.key === 'Enter' && !props.error) {
+    e.preventDefault()
+    emit('apply')
+  }
+}
+
+onMounted(() => document.addEventListener('keydown', handleKeyDown))
+onBeforeUnmount(() => document.removeEventListener('keydown', handleKeyDown))
 
 const isNewFile = computed(() => props.originalContent === null)
 
 const diffLines = computed(() => {
   const original = props.originalContent ?? ''
-  const changes = computeDiff(original, props.newContent)
+  let changes
+  try {
+    changes = computeDiff(original, props.newContent)
+  } catch {
+    // Diff computation can fail on very large files
+    return [{ type: 'context', marker: ' ', oldNum: 1, newNum: 1, text: '(diff too large to display)' }]
+  }
   const lines = []
   let oldNum = 1
   let newNum = 1

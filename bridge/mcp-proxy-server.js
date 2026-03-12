@@ -1,6 +1,8 @@
+import crypto from 'crypto'
 import { createServer } from 'http'
 import { Server } from '@modelcontextprotocol/sdk/server'
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema
@@ -18,30 +20,41 @@ export class McpProxyServer {
     this.onSetTitle = onSetTitle || (() => {})
     this.pillarManager = null // set by bridge/index.js after construction
     this.httpServer = null
-    this.transports = new Map() // sessionId → { transport, server }
+    this.transports = new Map() // sessionId → { transport, server } (SSE)
+    this.streamableTransports = new Map() // sessionId → { transport, server } (Streamable HTTP)
   }
 
   async start() {
     this.httpServer = createServer((req, res) => {
-      // CORS for local CLI
-      res.setHeader('Access-Control-Allow-Origin', '*')
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+      try {
+        // CORS for local CLI
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
-      if (req.method === 'OPTIONS') {
-        res.writeHead(204)
-        res.end()
-        return
-      }
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204)
+          res.end()
+          return
+        }
 
-      const pathname = new URL(req.url, `http://localhost:${this.port}`).pathname
-      if (req.method === 'GET' && pathname === '/sse') {
-        this._handleSSE(req, res)
-      } else if (req.method === 'POST' && req.url?.startsWith('/messages')) {
-        this._handlePost(req, res)
-      } else {
-        res.writeHead(404)
-        res.end('Not found')
+        const pathname = new URL(req.url, `http://localhost:${this.port}`).pathname
+        if (req.method === 'GET' && pathname === '/sse') {
+          this._handleSSE(req, res)
+        } else if (req.method === 'POST' && req.url?.startsWith('/messages')) {
+          this._handlePost(req, res)
+        } else if (pathname === '/mcp') {
+          this._handleStreamableHTTP(req, res)
+        } else {
+          res.writeHead(404)
+          res.end('Not found')
+        }
+      } catch (e) {
+        console.error('[mcp-proxy] HTTP handler error:', e.message)
+        if (!res.headersSent) {
+          res.writeHead(500)
+          res.end(JSON.stringify({ error: 'Internal server error' }))
+        }
       }
     })
 
@@ -58,6 +71,10 @@ export class McpProxyServer {
       try { await entry.transport.close() } catch {}
     }
     this.transports.clear()
+    for (const [, entry] of this.streamableTransports) {
+      try { await entry.transport.close() } catch {}
+    }
+    this.streamableTransports.clear()
     if (this.httpServer) {
       return new Promise(resolve => this.httpServer.close(resolve))
     }
@@ -121,7 +138,9 @@ export class McpProxyServer {
           properties: {
             pillar: { type: 'string', enum: ['scout', 'chart', 'forge', 'polish', 'ship'], description: 'Which pillar to spawn' },
             prompt: { type: 'string', description: 'The initial message/task for the pillar' },
-            model: { type: 'string', enum: ['opus', 'sonnet', 'haiku'], description: 'Optional model override (defaults to phase suggestion)' }
+            model: { type: 'string', description: 'Optional model override (e.g., "opus", "sonnet" for Claude; "gpt-5.1-codex-max" for Codex). Defaults to phase suggestion.' },
+            planFile: { type: 'string', description: 'Optional: only load this specific plan file into the pillar system prompt (e.g., "active-20260301-verifesto-saas.md")' },
+            backend: { type: 'string', enum: ['claude', 'codex'], description: 'AI backend for this pillar session (default: claude). Use codex for focused coding or code review.' }
           },
           required: ['pillar', 'prompt']
         }
@@ -185,7 +204,51 @@ export class McpProxyServer {
           required: ['pillarId']
         }
       })
+
+      tools.push({
+        name: 'pillar_orchestrate',
+        description: 'Analyze a plan\'s work units and get orchestration recommendations. Parses all WUs, checks dependencies, determines which are ready, and suggests dispatch order with parallelism analysis.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            planFile: { type: 'string', description: 'Plan filename containing work units (e.g., "active-20260301-verifesto-saas.md")' }
+          },
+          required: ['planFile']
+        }
+      })
+
+      tools.push({
+        name: 'pillar_decompose',
+        description: 'Add or update a work unit in a plan document. Writes a formatted work unit spec to the ## Work Units section. Use this for recursive orchestration — decomposing large plans into focused work units.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            planFile: { type: 'string', description: 'Plan filename (e.g., "active-20260301-verifesto-saas.md")' },
+            unitId: { type: 'string', description: 'Work unit ID (e.g., "WU-1")' },
+            feature: { type: 'string', description: 'Feature group name (e.g., "Backend Foundation")' },
+            status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'failed', 'skipped'], description: 'Work unit status (default: pending)' },
+            dependsOn: { type: 'array', items: { type: 'string' }, description: 'WU-IDs this depends on (e.g., ["WU-1", "WU-3"])' },
+            files: { type: 'array', items: { type: 'string' }, description: 'Files to create/modify' },
+            scope: { type: 'string', description: '1-3 sentence description of what this unit does' },
+            acceptance: { type: 'string', description: 'How to verify success' },
+            result: { type: 'string', description: 'Completion summary (set after done)' }
+          },
+          required: ['planFile', 'unitId', 'scope', 'files']
+        }
+      })
     }
+
+    // --- Bridge self-restart tool ---
+    tools.push({
+      name: 'restart_bridge',
+      description: 'Restart the Paloma bridge server. Performs a graceful shutdown (stops all MCP servers, email watcher, pillar sessions) then respawns. Use after code changes to bridge files.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          reason: { type: 'string', description: 'Why the restart is needed (logged to console)' }
+        }
+      }
+    })
 
     return tools
   }
@@ -198,6 +261,16 @@ export class McpProxyServer {
 
     if (name === 'ask_user') {
       return this._handleAskUser(args, cliRequestId)
+    }
+
+    if (name === 'restart_bridge') {
+      const reason = args.reason || 'no reason given'
+      console.log(`[mcp-proxy] Bridge restart requested: ${reason}`)
+      // Return response before restarting (short delay so the response reaches the CLI)
+      setTimeout(() => {
+        if (this.restartBridge) this.restartBridge()
+      }, 500)
+      return { content: [{ type: 'text', text: `Bridge restart initiated. Reason: ${reason}. The bridge will be back in ~2 seconds.` }] }
     }
 
     // --- Pillar orchestration tools ---
@@ -305,6 +378,12 @@ export class McpProxyServer {
         case 'pillar_stop':
           result = this.pillarManager.stop(args)
           break
+        case 'pillar_decompose':
+          result = await this.pillarManager.decompose(args)
+          break
+        case 'pillar_orchestrate':
+          result = await this.pillarManager.orchestrate(args)
+          break
         default:
           return { content: [{ type: 'text', text: `Unknown pillar tool: ${name}` }], isError: true }
       }
@@ -354,7 +433,12 @@ export class McpProxyServer {
     }
 
     console.log(`[mcp-proxy] SSE session started: ${transport.sessionId}, cliRequestId=${cliRequestId}`)
-    await server.connect(transport)
+    try {
+      await server.connect(transport)
+    } catch (e) {
+      console.error(`[mcp-proxy] SSE connect failed for ${transport.sessionId}:`, e.message)
+      this.transports.delete(transport.sessionId)
+    }
   }
 
   async _handlePost(req, res) {
@@ -369,6 +453,79 @@ export class McpProxyServer {
       return
     }
 
-    await entry.transport.handlePostMessage(req, res)
+    try {
+      await entry.transport.handlePostMessage(req, res)
+    } catch (e) {
+      console.error(`[mcp-proxy] Error handling POST for session ${sessionId}:`, e.message)
+      if (!res.headersSent) {
+        res.writeHead(500)
+        res.end(JSON.stringify({ error: 'Internal error' }))
+      }
+    }
+  }
+
+  /**
+   * Handle Streamable HTTP MCP transport requests (used by Codex CLI).
+   * POST /mcp — JSON-RPC requests (initialize, tools/list, tools/call)
+   * GET /mcp — SSE stream for server-initiated notifications
+   * DELETE /mcp — close session
+   */
+  async _handleStreamableHTTP(req, res) {
+    const url = new URL(req.url, `http://localhost:${this.port}`)
+    const cliRequestId = url.searchParams.get('cliRequestId')
+
+    // Check for existing session
+    const sessionId = req.headers['mcp-session-id']
+    if (sessionId && this.streamableTransports.has(sessionId)) {
+      const entry = this.streamableTransports.get(sessionId)
+      try {
+        await entry.transport.handleRequest(req, res)
+      } catch (e) {
+        console.error(`[mcp-proxy] Streamable HTTP error for session ${sessionId}:`, e.message)
+        if (!res.headersSent) {
+          res.writeHead(500)
+          res.end(JSON.stringify({ error: 'Internal error' }))
+        }
+      }
+      return
+    }
+
+    // New session — only POST (initialize) can create one
+    if (req.method !== 'POST') {
+      res.writeHead(400)
+      res.end(JSON.stringify({ error: 'No valid session. Send an initialize request first.' }))
+      return
+    }
+
+    // Create new server + transport for this connection
+    const server = this._createServer(cliRequestId)
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => crypto.randomUUID()
+    })
+
+    transport.onclose = () => {
+      const sid = transport.sessionId
+      this.streamableTransports.delete(sid)
+      console.log(`[mcp-proxy] Streamable HTTP session closed: ${sid}`)
+    }
+
+    console.log(`[mcp-proxy] Streamable HTTP session starting, cliRequestId=${cliRequestId}`)
+
+    try {
+      await server.connect(transport)
+      // handleRequest processes the initialize and sets the session ID
+      await transport.handleRequest(req, res)
+      // Now sessionId is available — store for routing subsequent requests
+      if (transport.sessionId) {
+        this.streamableTransports.set(transport.sessionId, { transport, server, cliRequestId })
+        console.log(`[mcp-proxy] Streamable HTTP session started: ${transport.sessionId}`)
+      }
+    } catch (e) {
+      console.error(`[mcp-proxy] Streamable HTTP init failed:`, e.message)
+      if (!res.headersSent) {
+        res.writeHead(500)
+        res.end(JSON.stringify({ error: 'Failed to initialize session' }))
+      }
+    }
   }
 }

@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center" @click.self="$emit('deny')">
+  <div class="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="tool-confirm-title" @click.self="$emit('deny')">
     <div class="absolute inset-0 bg-black/60" @click="$emit('deny')"></div>
     <div class="relative bg-bg-secondary border border-border rounded-lg w-full max-w-lg mx-4 shadow-2xl max-h-[80vh] flex flex-col">
       <!-- Header -->
@@ -11,7 +11,7 @@
           >
             {{ actionLabel }}
           </span>
-          <h2 class="text-sm font-mono text-text-primary truncate">{{ primaryPath }}</h2>
+          <h2 id="tool-confirm-title" class="text-sm font-mono text-text-primary truncate">{{ primaryPath }}</h2>
         </div>
         <button
           @click="$emit('deny')"
@@ -44,9 +44,10 @@
       <div class="flex items-center justify-between px-6 py-4 border-t border-border shrink-0">
         <button
           @click="$emit('deny')"
-          class="px-4 py-2 text-sm text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors"
+          class="px-4 py-2 text-sm text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors flex items-center gap-1.5"
         >
           Deny
+          <kbd class="text-[10px] text-text-muted bg-bg-primary border border-border rounded px-1 py-0.5 font-mono">N</kbd>
         </button>
         <div class="flex items-center gap-2">
           <!-- Session/project approve for server-backed tools -->
@@ -103,6 +104,7 @@
               : 'bg-success/90 hover:bg-success'"
           >
             Allow
+            <kbd class="text-[10px] bg-white/10 border border-white/20 rounded px-1 py-0.5 font-mono">Y</kbd>
           </button>
         </div>
       </div>
@@ -118,7 +120,7 @@ const props = defineProps({
   confirmation: { type: Object, required: true }
 })
 
-defineEmits(['allow', 'deny', 'allow-session', 'allow-always', 'allow-tool-session', 'allow-tool-always'])
+const emit = defineEmits(['allow', 'deny', 'allow-session', 'allow-always', 'allow-tool-session', 'allow-tool-always'])
 
 const showMenu = ref(false)
 const menuAnchor = ref(null)
@@ -130,8 +132,28 @@ function handleClickOutside(e) {
   }
 }
 
-onMounted(() => document.addEventListener('click', handleClickOutside))
-onBeforeUnmount(() => document.removeEventListener('click', handleClickOutside))
+// Keyboard shortcuts: Y to allow, N to deny
+function handleKeyDown(e) {
+  // Don't capture if user is typing in an input
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+
+  if (e.key === 'y' || e.key === 'Y') {
+    e.preventDefault()
+    emit('allow')
+  } else if (e.key === 'n' || e.key === 'N' || e.key === 'Escape') {
+    e.preventDefault()
+    emit('deny')
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+  document.addEventListener('keydown', handleKeyDown)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside)
+  document.removeEventListener('keydown', handleKeyDown)
+})
 
 const isMcp = computed(() => props.confirmation.toolName.startsWith('mcp__'))
 // CLI proxy tools have names like "git__git_status" (server__tool format, no mcp__ prefix)

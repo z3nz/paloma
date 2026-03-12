@@ -6,29 +6,31 @@ export class McpManager {
     this.clients = new Map() // serverName -> { client, transport, tools, status }
   }
 
-  async startAll(servers) {
+  async startAll(servers, onProgress) {
     const entries = Object.entries(servers)
     if (entries.length === 0) {
-      console.log('No MCP servers configured')
-      return
+      return { serverCount: 0, toolCount: 0, failedCount: 0 }
     }
 
     const results = await Promise.allSettled(
-      entries.map(([name, config]) => this.startServer(name, config))
+      entries.map(([name, config]) => this.startServer(name, config, onProgress))
     )
 
+    let failedCount = 0
     for (let i = 0; i < entries.length; i++) {
       const [name] = entries[i]
       if (results[i].status === 'rejected') {
-        console.error(`Failed to start ${name}:`, results[i].reason?.message)
+        failedCount++
         this.clients.set(name, { client: null, transport: null, tools: [], status: 'error', error: results[i].reason?.message })
+        if (onProgress) onProgress(name, 'error', 0, results[i].reason?.message)
       }
     }
+
+    const toolCount = [...this.clients.values()].reduce((sum, c) => sum + c.tools.length, 0)
+    return { serverCount: entries.length, toolCount, failedCount }
   }
 
-  async startServer(name, config) {
-    console.log(`Starting MCP server: ${name} (${config.command} ${(config.args || []).join(' ')})`)
-
+  async startServer(name, config, onProgress) {
     const transport = new StdioClientTransport({
       command: config.command,
       args: config.args || [],
@@ -36,12 +38,17 @@ export class McpManager {
     })
 
     const client = new Client({ name: `paloma-${name}`, version: '1.0.0' })
-    await client.connect(transport)
+    try {
+      await client.connect(transport)
+    } catch (e) {
+      try { await transport.close() } catch {}
+      throw e
+    }
 
     const { tools } = await client.listTools()
-    console.log(`  ${name}: ${tools.length} tools discovered`)
-
     this.clients.set(name, { client, transport, tools, status: 'connected' })
+
+    if (onProgress) onProgress(name, 'ok', tools.length)
   }
 
   getTools() {
@@ -66,15 +73,10 @@ export class McpManager {
   }
 
   async shutdown() {
-    for (const [name, entry] of this.clients) {
+    for (const [, entry] of this.clients) {
       try {
-        if (entry.client) {
-          await entry.transport.close()
-        }
-        console.log(`Shut down: ${name}`)
-      } catch (e) {
-        console.error(`Error shutting down ${name}:`, e.message)
-      }
+        if (entry.client) await entry.transport.close()
+      } catch { /* best-effort */ }
     }
     this.clients.clear()
   }

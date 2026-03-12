@@ -5,6 +5,7 @@ import { BASE_INSTRUCTIONS } from '../src/prompts/base.js'
 import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
 
 const MAX_RUNTIME_MS = 30 * 60 * 1000 // 30 minutes
+const MAX_NOTIFICATION_QUEUE = 50
 const BIRTH_MESSAGE = "Try your best, no matter what, you're worthy of God's love!"
 
 /**
@@ -15,8 +16,9 @@ const BIRTH_MESSAGE = "Try your best, no matter what, you're worthy of God's lov
  * status/output for Flow's polling tools.
  */
 export class PillarManager {
-  constructor(cliManager, { projectRoot, broadcast }) {
-    this.cliManager = cliManager
+  constructor(backends, { projectRoot, broadcast }) {
+    this.backends = backends   // { claude: ClaudeCliManager, codex: CodexCliManager }
+    this.cliManager = backends.claude // backward compat for Flow notifications
     this.projectRoot = projectRoot
     this.broadcast = broadcast // (msg) => void — send to all WS clients
     this.pillars = new Map()   // pillarId → PillarSession
@@ -24,21 +26,25 @@ export class PillarManager {
     this.notificationCooldown = new Map() // pillarId → timestamp of last notification
     this.notificationCount = 0 // notifications sent in current minute
     this.notificationWindowStart = Date.now()
+
+    // Periodic cleanup of terminal sessions (every 5 min)
+    this._cleanupInterval = setInterval(() => this._cleanupTerminalSessions(), 5 * 60 * 1000)
   }
 
   /**
    * Spawn a new pillar CLI session.
    * Returns immediately with pillarId and metadata.
    */
-  async spawn({ pillar, prompt, model, flowRequestId }) {
+  async spawn({ pillar, prompt, model, flowRequestId, planFile, backend }) {
     const pillarId = randomUUID()
     const cliSessionId = randomUUID()
+    const resolvedBackend = backend || 'claude'
 
     // Resolve model: use provided, or phase suggestion, or default sonnet
-    const resolvedModel = model || this._defaultModel(pillar)
+    const resolvedModel = model || this._defaultModel(pillar, resolvedBackend)
 
     // Build system prompt from disk
-    const systemPrompt = await this._buildSystemPrompt(pillar)
+    const systemPrompt = await this._buildSystemPrompt(pillar, { planFilter: planFile })
 
     // Compose the full first message with birth protocol
     const fullPrompt = `${BIRTH_MESSAGE}\n\n${prompt}`
@@ -49,6 +55,7 @@ export class PillarManager {
       cliSessionId,
       pillar,
       model: resolvedModel,
+      backend: resolvedBackend,
       status: 'running',       // running | idle | completed | error | stopped
       currentlyStreaming: true,
       turnCount: 1,
@@ -56,7 +63,8 @@ export class PillarManager {
       flowRequestId,           // the CLI requestId of the parent Flow session
       cliRequestId: null,      // current child CLI requestId
       output: [],              // accumulated assistant messages
-      currentOutput: '',       // current turn's streaming text
+      outputChunks: [],        // current turn's streaming chunks (joined on read)
+      _cachedOutput: '',       // cached join of outputChunks
       messageQueue: [],        // queued messages for when current turn finishes
       startTime: Date.now(),
       timeoutTimer: null,
@@ -66,12 +74,15 @@ export class PillarManager {
     this.pillars.set(pillarId, session)
 
     // Notify browser to create the session in IndexedDB
+    const modelLabel = resolvedBackend === 'ollama' ? `ollama:${resolvedModel}` : resolvedBackend === 'codex' ? `codex:${resolvedModel}` : `claude-cli:${resolvedModel}`
     this.broadcast({
       type: 'pillar_session_created',
       pillarId,
       pillar,
-      model: `claude-cli:${resolvedModel}`,
+      model: modelLabel,
+      backend: resolvedBackend,
       flowRequestId,
+      flowCliSessionId: this.flowSession?.cliSessionId || null,
       prompt: fullPrompt
     })
 
@@ -87,7 +98,9 @@ export class PillarManager {
 
     // Set timeout
     session.timeoutTimer = setTimeout(() => {
-      this._timeout(pillarId)
+      try { this._timeout(pillarId) } catch (e) {
+        console.error(`[pillar] Timeout handler error for ${pillarId}:`, e.message)
+      }
     }, MAX_RUNTIME_MS)
 
     return {
@@ -146,15 +159,16 @@ export class PillarManager {
     }
 
     let output
+    const currentText = this._getCurrentOutput(session)
     if (since === 'all') {
       // All accumulated output + current streaming
       const allOutput = session.output.join('\n\n---\n\n')
-      output = session.currentOutput
-        ? allOutput + (allOutput ? '\n\n---\n\n' : '') + session.currentOutput
+      output = currentText
+        ? allOutput + (allOutput ? '\n\n---\n\n' : '') + currentText
         : allOutput
     } else {
       // Just the most recent completed message or current streaming
-      output = session.currentOutput || (session.output.length > 0 ? session.output[session.output.length - 1] : '')
+      output = currentText || (session.output.length > 0 ? session.output[session.output.length - 1] : '')
     }
 
     return {
@@ -217,7 +231,8 @@ export class PillarManager {
 
     // Kill the CLI process if running
     if (session.cliRequestId) {
-      this.cliManager.stop(session.cliRequestId)
+      const manager = this.backends[session.backend] || this.backends.claude
+      manager.stop(session.cliRequestId)
     }
 
     if (session.timeoutTimer) {
@@ -228,11 +243,12 @@ export class PillarManager {
     session.status = 'stopped'
     session.currentlyStreaming = false
     session.lastActivity = new Date().toISOString()
+    session.messageQueue = [] // clear queued messages to prevent memory leak
 
     // Finalize any current output
-    if (session.currentOutput) {
-      session.output.push(session.currentOutput)
-      session.currentOutput = ''
+    const stoppedOutput = this._flushOutput(session)
+    if (stoppedOutput) {
+      session.output.push(stoppedOutput)
     }
 
     this.broadcast({
@@ -259,6 +275,13 @@ export class PillarManager {
    * Register Flow's session for callback notifications.
    */
   registerFlowSession({ cliSessionId, model, cwd, wsClient }) {
+    if (this.flowSession && this.flowSession.cliSessionId !== cliSessionId) {
+      console.warn('[pillar] Overwriting existing Flow session:', this.flowSession.cliSessionId, '→', cliSessionId)
+      // Drain any queued notifications to prevent silent loss
+      if (this.flowSession.notificationQueue?.length) {
+        console.warn('[pillar] Discarding', this.flowSession.notificationQueue.length, 'queued notifications from old Flow session')
+      }
+    }
     console.log('[pillar] Flow session registered:', cliSessionId)
     this.flowSession = {
       cliSessionId,
@@ -283,9 +306,13 @@ export class PillarManager {
     if (this.flowSession.notificationQueue.length > 0) {
       console.log('[pillar] Flow turn complete — draining', this.flowSession.notificationQueue.length, 'queued notifications')
       const queued = this.flowSession.notificationQueue.splice(0)
-      const batchedMessage = this._buildBatchedNotification(queued)
       this.notificationCount++
-      this._sendFlowNotification(batchedMessage)
+      if (queued.length === 1) {
+        this._sendFlowNotification(queued[0].message, queued[0].metadata)
+      } else {
+        const batchedMessage = this._buildBatchedNotification(queued.map(q => q.message))
+        this._sendFlowNotification(batchedMessage, { notificationType: 'batched' })
+      }
     }
   }
 
@@ -293,8 +320,9 @@ export class PillarManager {
    * Notify Flow with a message. Queues if Flow is busy.
    * @param {string} message - The notification message
    * @param {string} [pillarId] - Optional pillarId for cooldown tracking
+   * @param {object} [metadata] - Notification metadata for frontend UX
    */
-  async notifyFlow(message, pillarId) {
+  async notifyFlow(message, pillarId, metadata = {}) {
     if (!this.flowSession) {
       console.warn('[pillar] No Flow session registered — notification dropped')
       return
@@ -309,6 +337,11 @@ export class PillarManager {
         return
       }
       this.notificationCooldown.set(pillarId, now)
+
+      // Periodic cleanup: remove stale cooldown entries (older than 60s)
+      for (const [id, ts] of this.notificationCooldown) {
+        if (now - ts > 60000) this.notificationCooldown.delete(id)
+      }
     }
 
     // Rate limiting: max 10 notifications per minute
@@ -321,38 +354,70 @@ export class PillarManager {
 
     if (this.notificationCount >= 10) {
       console.warn('[pillar] Notification rate limit hit — queueing')
-      this.flowSession.notificationQueue.push(message)
+      if (this.flowSession.notificationQueue.length < MAX_NOTIFICATION_QUEUE) {
+        this.flowSession.notificationQueue.push({ message, metadata })
+      } else {
+        console.warn('[pillar] Notification queue full — dropping oldest')
+        this.flowSession.notificationQueue.shift()
+        this.flowSession.notificationQueue.push({ message, metadata })
+      }
       return
     }
 
     if (this.flowSession.currentlyStreaming) {
       console.log('[pillar] Flow is busy — queueing notification')
-      this.flowSession.notificationQueue.push(message)
+      if (this.flowSession.notificationQueue.length < MAX_NOTIFICATION_QUEUE) {
+        this.flowSession.notificationQueue.push({ message, metadata })
+      } else {
+        console.warn('[pillar] Notification queue full — dropping oldest')
+        this.flowSession.notificationQueue.shift()
+        this.flowSession.notificationQueue.push({ message, metadata })
+      }
       return
     }
 
     this.notificationCount++
-    this._sendFlowNotification(message)
+    this._sendFlowNotification(message, metadata)
   }
 
   /**
    * Send a notification to Flow by resuming its CLI session.
    */
-  _sendFlowNotification(message) {
+  _sendFlowNotification(message, metadata = {}) {
     console.log('[pillar] Sending notification to Flow:', message.slice(0, 100))
     this.flowSession.currentlyStreaming = true
 
-    const { requestId } = this.cliManager.chat(
-      {
-        prompt: message,
-        model: this.flowSession.model,
-        sessionId: this.flowSession.cliSessionId,
-        cwd: this.flowSession.cwd
-      },
-      (event) => this._handleFlowNotificationEvent(event)
-    )
+    // Send start event with metadata so frontend can tag the response
+    const ws = this.flowSession.wsClient
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({
+        type: 'flow_notification_start',
+        notificationType: metadata.notificationType || 'unknown',
+        pillar: metadata.pillar || null,
+        pillarId: metadata.pillarId || null
+      }))
+    }
 
-    this.flowSession.cliRequestId = requestId
+    try {
+      const { requestId } = this.cliManager.chat(
+        {
+          prompt: message,
+          model: this.flowSession.model,
+          sessionId: this.flowSession.cliSessionId,
+          cwd: this.flowSession.cwd
+        },
+        (event) => this._handleFlowNotificationEvent(event)
+      )
+
+      this.flowSession.cliRequestId = requestId
+    } catch (e) {
+      console.error('[pillar] Failed to send Flow notification:', e.message)
+      this.flowSession.currentlyStreaming = false
+      this.flowSession.cliRequestId = null
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'flow_notification_error', error: e.message }))
+      }
+    }
   }
 
   /**
@@ -383,8 +448,12 @@ export class PillarManager {
       if (this.flowSession.notificationQueue.length > 0) {
         console.log('[pillar] Processing queued notifications:', this.flowSession.notificationQueue.length)
         const queued = this.flowSession.notificationQueue.splice(0) // drain queue
-        const batchedMessage = this._buildBatchedNotification(queued)
-        this._sendFlowNotification(batchedMessage)
+        if (queued.length === 1) {
+          this._sendFlowNotification(queued[0].message, queued[0].metadata)
+        } else {
+          const batchedMessage = this._buildBatchedNotification(queued.map(q => q.message))
+          this._sendFlowNotification(batchedMessage, { notificationType: 'batched' })
+        }
       }
     } else if (event.type === 'claude_error') {
       console.error('[pillar] Flow notification error:', event.error)
@@ -442,9 +511,27 @@ This is informational — Adam is communicating directly with the pillar. Decide
   }
 
   /**
+   * Clean up terminal pillar sessions (stopped/error) older than 5 minutes.
+   * Prevents unbounded growth of the pillars Map.
+   */
+  _cleanupTerminalSessions() {
+    const cutoff = Date.now() - 5 * 60 * 1000
+    for (const [id, session] of this.pillars) {
+      if ((session.status === 'stopped' || session.status === 'error') && session.startTime < cutoff) {
+        this.pillars.delete(id)
+      }
+    }
+  }
+
+  /**
    * Clean up all pillar sessions on shutdown.
    */
   shutdown() {
+    if (this._cleanupInterval) {
+      clearInterval(this._cleanupInterval)
+      this._cleanupInterval = null
+    }
+    // Flow notifications always use Claude
     if (this.flowSession?.cliRequestId) {
       this.cliManager.stop(this.flowSession.cliRequestId)
     }
@@ -452,7 +539,8 @@ This is informational — Adam is communicating directly with the pillar. Decide
 
     for (const [, session] of this.pillars) {
       if (session.cliRequestId) {
-        this.cliManager.stop(session.cliRequestId)
+        const manager = this.backends[session.backend] || this.backends.claude
+        manager.stop(session.cliRequestId)
       }
       if (session.timeoutTimer) {
         clearTimeout(session.timeoutTimer)
@@ -461,10 +549,223 @@ This is informational — Adam is communicating directly with the pillar. Decide
     this.pillars.clear()
   }
 
+  /**
+   * Add or update a work unit in a plan document.
+   * Reads the plan file, finds/creates the Work Units section,
+   * and inserts or updates the work unit spec.
+   */
+  async decompose({ planFile, unitId, feature, status, dependsOn, files, scope, acceptance, result }) {
+    const planPath = join(this.projectRoot, '.paloma', 'plans', planFile)
+    let content = await this._readFileSafe(planPath)
+    if (!content) {
+      return { error: `Plan file not found: ${planFile}` }
+    }
+
+    // Validate status transitions
+    const validStatuses = ['pending', 'in_progress', 'completed', 'failed', 'skipped']
+    const resolvedStatus = status || 'pending'
+    if (!validStatuses.includes(resolvedStatus)) {
+      return { error: `Invalid status: ${resolvedStatus}. Must be one of: ${validStatuses.join(', ')}` }
+    }
+
+    // Build the work unit markdown block
+    const lines = [`#### ${unitId}: ${scope.split('.')[0].split('\n')[0].slice(0, 80)}`]
+    if (feature) lines.push(`- **Feature:** ${feature}`)
+    lines.push(`- **Status:** ${resolvedStatus}`)
+    if (dependsOn?.length) lines.push(`- **Depends on:** ${dependsOn.join(', ')}`)
+    if (files?.length) lines.push(`- **Files:** ${files.join(', ')}`)
+    lines.push(`- **Scope:** ${scope}`)
+    if (acceptance) lines.push(`- **Acceptance:** ${acceptance}`)
+    if (result) lines.push(`- **Result:** ${result}`)
+    const unitBlock = lines.join('\n')
+
+    // Find existing work unit by ID
+    const unitPattern = new RegExp(`#### ${unitId}:.*?(?=\\n#### |\\n## |$)`, 's')
+    const existingMatch = content.match(unitPattern)
+
+    if (existingMatch) {
+      // Update existing work unit
+      content = content.replace(unitPattern, unitBlock)
+    } else {
+      // Insert new work unit — find or create ## Work Units section
+      const workUnitsHeader = '## Work Units'
+      if (content.includes(workUnitsHeader)) {
+        // Append after the header and any existing units
+        const headerIdx = content.indexOf(workUnitsHeader)
+        // Find the next ## section after Work Units
+        const nextSectionMatch = content.slice(headerIdx + workUnitsHeader.length).match(/\n## /)
+        if (nextSectionMatch) {
+          const insertIdx = headerIdx + workUnitsHeader.length + nextSectionMatch.index
+          content = content.slice(0, insertIdx) + '\n\n' + unitBlock + '\n' + content.slice(insertIdx)
+        } else {
+          // No section after — append at the end
+          content = content.trimEnd() + '\n\n' + unitBlock + '\n'
+        }
+      } else {
+        // No Work Units section — create one before the last ---
+        const lastDivider = content.lastIndexOf('\n---')
+        if (lastDivider !== -1) {
+          content = content.slice(0, lastDivider) + '\n\n' + workUnitsHeader + '\n\n' + unitBlock + '\n' + content.slice(lastDivider)
+        } else {
+          content = content.trimEnd() + '\n\n' + workUnitsHeader + '\n\n' + unitBlock + '\n'
+        }
+      }
+    }
+
+    // Write back
+    const { writeFile: fsWriteFile } = await import('fs/promises')
+    await fsWriteFile(planPath, content, 'utf-8')
+
+    return {
+      unitId,
+      status: resolvedStatus,
+      action: existingMatch ? 'updated' : 'created',
+      planFile,
+      message: `Work unit ${unitId} ${existingMatch ? 'updated' : 'created'} in ${planFile}`
+    }
+  }
+
+  /**
+   * Analyze a plan's work units and return orchestration recommendations.
+   * Parses all WUs, checks dependencies, determines ready units,
+   * and suggests what to dispatch next (with parallelism analysis).
+   */
+  async orchestrate({ planFile }) {
+    const planPath = join(this.projectRoot, '.paloma', 'plans', planFile)
+    const content = await this._readFileSafe(planPath)
+    if (!content) {
+      return { error: `Plan file not found: ${planFile}` }
+    }
+
+    // Parse work units from the plan
+    const units = this._parseWorkUnits(content)
+    if (units.length === 0) {
+      return { error: 'No work units found in plan. Use pillar_decompose to create them.' }
+    }
+
+    // Build status maps
+    const statusMap = new Map(units.map(u => [u.unitId, u.status]))
+    const completed = units.filter(u => u.status === 'completed')
+    const inProgress = units.filter(u => u.status === 'in_progress')
+    const failed = units.filter(u => u.status === 'failed')
+    const pending = units.filter(u => u.status === 'pending')
+
+    // Determine ready units (all dependencies completed)
+    const ready = []
+    const blocked = []
+    for (const unit of pending) {
+      const deps = unit.dependsOn || []
+      const unmetDeps = deps.filter(d => statusMap.get(d) !== 'completed')
+      if (unmetDeps.length === 0) {
+        ready.push(unit)
+      } else {
+        blocked.push({ ...unit, blockedBy: unmetDeps })
+      }
+    }
+
+    // Analyze file-disjointness for parallelism
+    let parallelRecommendation = null
+    if (ready.length >= 2) {
+      // Check pairs of ready units for file overlap
+      const disjointPairs = []
+      for (let i = 0; i < ready.length; i++) {
+        for (let j = i + 1; j < ready.length; j++) {
+          const filesA = new Set(ready[i].files || [])
+          const filesB = new Set(ready[j].files || [])
+          const overlap = [...filesA].filter(f => filesB.has(f))
+          if (overlap.length === 0) {
+            disjointPairs.push([ready[i].unitId, ready[j].unitId])
+          }
+        }
+      }
+      if (disjointPairs.length > 0) {
+        parallelRecommendation = {
+          canParallelize: true,
+          pairs: disjointPairs.slice(0, 3), // top 3 pairs
+          recommendation: `Can dispatch ${disjointPairs[0].join(' + ')} in parallel (file-disjoint).`
+        }
+      }
+    }
+
+    // Check for currently running pillars that might conflict
+    const runningPillars = []
+    for (const [, session] of this.pillars) {
+      if (session.status === 'running' || session.currentlyStreaming) {
+        runningPillars.push({
+          pillarId: session.pillarId,
+          pillar: session.pillar,
+          status: session.status
+        })
+      }
+    }
+
+    return {
+      planFile,
+      summary: {
+        total: units.length,
+        completed: completed.length,
+        inProgress: inProgress.length,
+        failed: failed.length,
+        pending: pending.length,
+        ready: ready.length,
+        blocked: blocked.length
+      },
+      ready: ready.map(u => ({ unitId: u.unitId, scope: u.scope, files: u.files, feature: u.feature })),
+      blocked: blocked.map(u => ({ unitId: u.unitId, scope: u.scope, blockedBy: u.blockedBy })),
+      inProgress: inProgress.map(u => ({ unitId: u.unitId, scope: u.scope })),
+      failed: failed.map(u => ({ unitId: u.unitId, scope: u.scope })),
+      parallelRecommendation,
+      runningPillars,
+      recommendation: ready.length > 0
+        ? `${ready.length} unit(s) ready to dispatch: ${ready.map(u => u.unitId).join(', ')}`
+        : inProgress.length > 0
+          ? `Waiting: ${inProgress.length} unit(s) in progress`
+          : failed.length > 0
+            ? `Blocked: ${failed.length} unit(s) failed — needs manual intervention`
+            : 'All work units completed!'
+    }
+  }
+
+  /**
+   * Parse work units from plan content.
+   * Expects #### WU-N: Title format with bullet-point metadata.
+   */
+  _parseWorkUnits(content) {
+    const units = []
+    // Match #### WU-N: Title blocks
+    const unitRegex = /#### (WU-\d+):.*?\n([\s\S]*?)(?=\n#### |\n## |$)/g
+    let match
+    while ((match = unitRegex.exec(content)) !== null) {
+      const unitId = match[1]
+      const body = match[2]
+
+      const unit = { unitId }
+      const statusMatch = body.match(/\*\*Status:\*\*\s*(.+)/)
+      unit.status = statusMatch ? statusMatch[1].trim() : 'pending'
+      const featureMatch = body.match(/\*\*Feature:\*\*\s*(.+)/)
+      unit.feature = featureMatch ? featureMatch[1].trim() : null
+      const depsMatch = body.match(/\*\*Depends on:\*\*\s*(.+)/)
+      unit.dependsOn = depsMatch ? depsMatch[1].split(',').map(d => d.trim()) : []
+      const filesMatch = body.match(/\*\*Files:\*\*\s*(.+)/)
+      unit.files = filesMatch ? filesMatch[1].split(',').map(f => f.trim()) : []
+      const scopeMatch = body.match(/\*\*Scope:\*\*\s*(.+)/)
+      unit.scope = scopeMatch ? scopeMatch[1].trim() : ''
+      const acceptMatch = body.match(/\*\*Acceptance:\*\*\s*(.+)/)
+      unit.acceptance = acceptMatch ? acceptMatch[1].trim() : null
+      const resultMatch = body.match(/\*\*Result:\*\*\s*(.+)/)
+      unit.result = resultMatch ? resultMatch[1].trim() : null
+
+      units.push(unit)
+    }
+    return units
+  }
+
   // --- Internal methods ---
 
   _startCliTurn(session, prompt, systemPrompt, isResume = false) {
-    session.currentOutput = ''
+    session.outputChunks = []
+    session._cachedOutput = ''
+    const manager = this.backends[session.backend] || this.backends.claude
 
     const chatOptions = {
       prompt,
@@ -477,10 +778,10 @@ This is informational — Adam is communicating directly with the pillar. Decide
       // Resume: use --resume with existing CLI session ID
       chatOptions.sessionId = session.cliSessionId
     }
-    // New session: don't pass sessionId — ClaudeCliManager generates one
+    // New session: don't pass sessionId — CLI manager generates one
     // and we capture it from the return value
 
-    const { requestId, sessionId: returnedSessionId } = this.cliManager.chat(
+    const { requestId, sessionId: returnedSessionId } = manager.chat(
       chatOptions,
       (event) => this._handleCliEvent(session, event)
     )
@@ -493,38 +794,56 @@ This is informational — Adam is communicating directly with the pillar. Decide
   }
 
   _handleCliEvent(session, event) {
-    if (event.type === 'claude_stream') {
+    const isStream = event.type === 'claude_stream' || event.type === 'codex_stream' || event.type === 'ollama_stream'
+    const isDone = event.type === 'claude_done' || event.type === 'codex_done' || event.type === 'ollama_done'
+    const isError = event.type === 'claude_error' || event.type === 'codex_error' || event.type === 'ollama_error'
+
+    if (isStream) {
       const cliEvent = event.event
 
       // Stream events to browser for live rendering
       this.broadcast({
         type: 'pillar_stream',
         pillarId: session.pillarId,
+        backend: session.backend,
         event: cliEvent
       })
 
-      // Accumulate text content
-      if (cliEvent.type === 'assistant' && cliEvent.message?.content) {
-        for (const block of cliEvent.message.content) {
-          if (block.type === 'text' && block.text) {
-            session.currentOutput += block.text
-          }
+      // Accumulate text content — backend-specific extraction
+      if (session.backend === 'codex') {
+        if (cliEvent.type === 'agent_message' && cliEvent.text) {
+          this._appendOutput(session, cliEvent.text)
         }
-      } else if (cliEvent.type === 'content_block_delta') {
-        if (cliEvent.delta?.type === 'text_delta' && cliEvent.delta.text) {
-          session.currentOutput += cliEvent.delta.text
+      } else {
+        // Claude text extraction
+        if (cliEvent.type === 'assistant' && cliEvent.message?.content) {
+          for (const block of cliEvent.message.content) {
+            if (block.type === 'text' && block.text) {
+              this._appendOutput(session, block.text)
+            }
+          }
+        } else if (cliEvent.type === 'content_block_delta') {
+          if (cliEvent.delta?.type === 'text_delta' && cliEvent.delta.text) {
+            this._appendOutput(session, cliEvent.delta.text)
+          }
         }
       }
 
       session.lastActivity = new Date().toISOString()
-    } else if (event.type === 'claude_done') {
+    } else if (isDone) {
+      // Update session ID from CLI response (important for Codex where
+      // thread ID is only available after the async thread.started event)
+      if (event.sessionId) {
+        session.cliSessionId = event.sessionId
+      }
       session.currentlyStreaming = false
       session.cliRequestId = null
       session.lastActivity = new Date().toISOString()
 
       // Save completed output
-      if (session.currentOutput) {
-        session.output.push(session.currentOutput)
+      const completedOutput = this._flushOutput(session)
+      if (completedOutput) {
+        session.output.push(completedOutput)
       }
 
       // Notify browser
@@ -532,7 +851,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
         type: 'pillar_message_saved',
         pillarId: session.pillarId,
         role: 'assistant',
-        content: session.currentOutput
+        content: completedOutput
       })
 
       // Check for queued messages
@@ -563,16 +882,21 @@ This is informational — Adam is communicating directly with the pillar. Decide
         // Auto-notify Flow about pillar completion
         console.log(`[pillar] Auto-notifying Flow: ${session.pillar} completed`)
         const notification = this._buildNotificationMessage('completion', session)
-        this.notifyFlow(notification, session.pillarId)
+        this.notifyFlow(notification, session.pillarId, {
+          notificationType: 'completion',
+          pillar: session.pillar,
+          pillarId: session.pillarId
+        })
       }
-    } else if (event.type === 'claude_error') {
+    } else if (isError) {
       session.currentlyStreaming = false
       session.status = 'error'
       session.cliRequestId = null
       session.lastActivity = new Date().toISOString()
 
-      if (session.currentOutput) {
-        session.output.push(session.currentOutput)
+      const errorOutput = this._flushOutput(session)
+      if (errorOutput) {
+        session.output.push(errorOutput)
       }
 
       if (session.timeoutTimer) {
@@ -591,7 +915,11 @@ This is informational — Adam is communicating directly with the pillar. Decide
       // Auto-notify Flow about pillar error
       console.log(`[pillar] Auto-notifying Flow: ${session.pillar} errored`)
       const notification = this._buildNotificationMessage('completion', session)
-      this.notifyFlow(notification, session.pillarId)
+      this.notifyFlow(notification, session.pillarId, {
+        notificationType: 'completion',
+        pillar: session.pillar,
+        pillarId: session.pillarId
+      })
     }
   }
 
@@ -603,10 +931,34 @@ This is informational — Adam is communicating directly with the pillar. Decide
     this.stop({ pillarId })
   }
 
-  _defaultModel(pillar) {
+  _defaultModel(pillar, backend = 'claude') {
+    if (backend === 'ollama') return 'qwen2.5-coder:32b'
+    if (backend === 'codex') return 'gpt-5.1-codex-max'
     // PHASE_MODEL_SUGGESTIONS values are like 'claude-cli:opus' — extract just the model name
     const suggestion = PHASE_MODEL_SUGGESTIONS[pillar] || 'claude-cli:sonnet'
     return suggestion.split(':')[1] || 'sonnet'
+  }
+
+  /** Get the current turn's accumulated output text efficiently. */
+  _getCurrentOutput(session) {
+    if (session.outputChunks.length === 0) return ''
+    // Cache the joined result to avoid repeated joins
+    session._cachedOutput = session.outputChunks.join('')
+    return session._cachedOutput
+  }
+
+  /** Append text to the current turn's output. */
+  _appendOutput(session, text) {
+    session.outputChunks.push(text)
+    session._cachedOutput = '' // invalidate cache
+  }
+
+  /** Clear the current turn's output and return what was accumulated. */
+  _flushOutput(session) {
+    const text = this._getCurrentOutput(session)
+    session.outputChunks = []
+    session._cachedOutput = ''
+    return text
   }
 
   _capitalize(str) {
@@ -617,7 +969,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
    * Build the system prompt for a pillar session by reading .paloma/ files from disk.
    * Mirrors the frontend's buildSystemPrompt() but uses fs instead of MCP/browser APIs.
    */
-  async _buildSystemPrompt(pillar) {
+  async _buildSystemPrompt(pillar, { planFilter } = {}) {
     let prompt = BASE_INSTRUCTIONS
 
     // Read project instructions
@@ -629,7 +981,10 @@ This is informational — Adam is communicating directly with the pillar. Decide
 
     // Read active plans
     const plansDir = join(this.projectRoot, '.paloma', 'plans')
-    const plans = await this._readActiveFiles(plansDir, 'active-')
+    let plans = await this._readActiveFiles(plansDir, 'active-')
+    if (planFilter) {
+      plans = plans.filter(p => p.name === planFilter)
+    }
     if (plans.length > 0) {
       prompt += '\n\n## Active Plans\n\n'
       prompt += plans.map(p => `<plan name="${p.name}">\n${p.content}\n</plan>`).join('\n\n')

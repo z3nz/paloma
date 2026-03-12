@@ -5,7 +5,11 @@
     "shell",
     "filesystem",
     "web",
-    "fs-extra"
+    "fs-extra",
+    "codex",
+    "voice",
+    "memory",
+    "gmail"
   ],
   "autoExecute": [
     "brave-search",
@@ -17,7 +21,8 @@
         "shell_whereis",
         "shell_nslookup",
         "shell_dig",
-        "shell_grep"
+        "shell_grep",
+        "shell_ps"
       ]
     },
     {
@@ -27,7 +32,10 @@
         "git_log",
         "git_status",
         "git_set_working_dir",
-        "git_show"
+        "git_show",
+        "git_commit",
+        "git_add",
+        "git_pull"
       ]
     },
     {
@@ -46,6 +54,28 @@
       "server": "exec",
       "tools": [
         "bash_exec"
+      ]
+    },
+    "codex",
+    "fs-extra",
+    "voice",
+    "memory",
+    {
+      "server": "ollama",
+      "tools": [
+        "ollama_list_models",
+        "ollama_embed",
+        "ollama_chat"
+      ]
+    },
+    {
+      "server": "gmail",
+      "tools": [
+        "email_read",
+        "email_list",
+        "email_check_thread",
+        "email_wait",
+        "email_reply"
       ]
     }
   ]

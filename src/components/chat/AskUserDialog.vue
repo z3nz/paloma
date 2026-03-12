@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center" @click.self="dismiss">
+  <div class="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="ask-user-title" @click.self="dismiss">
     <div class="absolute inset-0 bg-black/60" @click="dismiss"></div>
     <div class="relative bg-bg-secondary border border-border rounded-lg w-full max-w-lg mx-4 shadow-2xl flex flex-col">
       <!-- Header -->
@@ -8,7 +8,7 @@
           <span class="text-xs font-medium uppercase tracking-wider px-2 py-0.5 rounded bg-accent-muted text-accent-hover">
             Question
           </span>
-          <h2 class="text-sm font-medium text-text-primary">Agent needs your input</h2>
+          <h2 id="ask-user-title" class="text-sm font-medium text-text-primary">Agent needs your input</h2>
         </div>
         <button
           @click="dismiss"
@@ -27,11 +27,12 @@
         <!-- Options buttons -->
         <div v-if="askUser.options?.length" class="mt-4 flex flex-wrap gap-2">
           <button
-            v-for="option in askUser.options"
+            v-for="(option, idx) in askUser.options"
             :key="option"
             @click="$emit('respond', option)"
-            class="px-4 py-2 text-sm bg-accent/90 hover:bg-accent text-white rounded-md transition-colors"
+            class="px-4 py-2 text-sm bg-accent/90 hover:bg-accent text-white rounded-md transition-colors flex items-center gap-2"
           >
+            <kbd class="inline-flex items-center justify-center w-5 h-5 text-[10px] font-mono bg-white/20 rounded">{{ idx + 1 }}</kbd>
             {{ option }}
           </button>
         </div>
@@ -60,7 +61,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 
 const props = defineProps({
   askUser: { type: Object, required: true }
@@ -71,11 +72,32 @@ const emit = defineEmits(['respond'])
 const freeText = ref('')
 const inputRef = ref(null)
 
+function handleKeyDown(e) {
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    dismiss()
+    return
+  }
+  // Number keys 1-9 select options
+  if (props.askUser.options?.length) {
+    const num = parseInt(e.key, 10)
+    if (num >= 1 && num <= props.askUser.options.length) {
+      e.preventDefault()
+      emit('respond', props.askUser.options[num - 1])
+    }
+  }
+}
+
 onMounted(async () => {
+  document.addEventListener('keydown', handleKeyDown)
   if (!props.askUser.options?.length) {
     await nextTick()
     inputRef.value?.focus()
   }
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', handleKeyDown)
 })
 
 function submitFreeText() {

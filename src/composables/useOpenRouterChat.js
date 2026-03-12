@@ -59,7 +59,8 @@ export async function runOpenRouterLoop({
         let args
         try {
           args = JSON.parse(call.function.arguments)
-        } catch {
+        } catch (e) {
+          console.warn(`[chat] Failed to parse tool arguments for ${call.function.name}:`, e.message)
           args = {}
         }
 
@@ -101,7 +102,7 @@ export async function runOpenRouterLoop({
         // Save tool result message
         const content = typeof result === 'string' ? result : JSON.stringify(result)
         markActivityDone(activityId, content)
-        await onSaveTool(call.id, toolName, args, content)
+        await onSaveTool(call.id, toolName, args, content, activityId)
         apiMessages.push({
           role: 'tool',
           tool_call_id: call.id,

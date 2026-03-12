@@ -3,7 +3,7 @@
     <!-- Header / collapsed summary -->
     <button
       class="tool-call-group__header"
-      @click="expanded = !expanded"
+      @click="expanded = !expanded; userToggled = true"
     >
       <svg
         width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -70,6 +70,7 @@ const props = defineProps({
 })
 
 const expanded = ref(false)
+const userToggled = ref(false)  // Track if user manually toggled — respect their choice
 
 // When not live (persisted message), all tools are definitionally complete —
 // the message wouldn't exist if the turn was still in progress.
@@ -85,9 +86,9 @@ const totalDuration = computed(() => {
   return total > 0 ? total : null
 })
 
-// Auto-expand when tools start running (live mode)
+// Auto-expand when tools start running (live mode) — but only if user hasn't manually toggled
 watch(runningCount, (count, prev) => {
-  if (props.live && count > 0 && prev === 0) expanded.value = true
+  if (props.live && count > 0 && prev === 0 && !userToggled.value) expanded.value = true
 })
 
 // Server breakdown for the summary pills
@@ -110,9 +111,13 @@ const serverBreakdown = computed(() => {
  * Strategy: match by tool call ID if available, otherwise by position order.
  */
 function getToolMessage(activity) {
-  // Direct ID match (activity.id corresponds to toolCallId on the message)
-  const byId = props.toolMessages.find(m => m.toolCallId === activity.id)
-  if (byId) return byId
+  // Direct ID match — activityId stored on tool message matches activity.id
+  const byActivityId = props.toolMessages.find(m => m.activityId === activity.id)
+  if (byActivityId) return byActivityId
+
+  // Legacy: toolCallId may equal activity.id (CLI path)
+  const byCallId = props.toolMessages.find(m => m.toolCallId === activity.id)
+  if (byCallId) return byCallId
 
   // Fallback: match by tool name + position
   const actIdx = props.activities.indexOf(activity)

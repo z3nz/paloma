@@ -58,6 +58,7 @@ import ToolConfirmation from './ToolConfirmation.vue'
 import AskUserDialog from './AskUserDialog.vue'
 import { useChat } from '../../composables/useChat.js'
 import { useChanges } from '../../composables/useChanges.js'
+import { useVoiceInput } from '../../composables/useVoiceInput.js'
 import { useSettings } from '../../composables/useSettings.js'
 import { useProject } from '../../composables/useProject.js'
 import { useFileIndex } from '../../composables/useFileIndex.js'
@@ -76,9 +77,10 @@ const emit = defineEmits(['update-session', 'transition-phase'])
 const {
   messages, streaming, streamingContent, toolActivity, error,
   pendingToolConfirmation, contextWarning, loadMessages, sendMessage, stopStreaming,
-  resolveToolConfirmation, rejectToolConfirmation
+  resolveToolConfirmation, rejectToolConfirmation, clearChat
 } = useChat()
 const { detectChanges, loadSessionChanges } = useChanges()
+const { voiceMode, isListening, startListening } = useVoiceInput()
 const { apiKey } = useSettings()
 const { dirHandle, projectRoot, projectInstructions, activePlans, roots, mcpConfig, refreshActivePlans } = useProject()
 const { search: searchFiles } = useFileIndex()
@@ -148,6 +150,11 @@ watch(streaming, (newVal, oldVal) => {
       // detectChanges needs the project root to read original files via MCP
       detectChanges(lastMsg.content, dirHandle.value)
     }
+
+    // Safety net — if recognition died while AI was responding, restart it
+    if (voiceMode.value && !isListening.value) {
+      setTimeout(() => startListening(), 300)
+    }
   }
 })
 
@@ -159,6 +166,17 @@ async function handleSend({ content, files }) {
   try {
     const cmd = await handleSlashCommand(trimmedContent, callMcpTool, projectRoot.value)
     if (cmd.handled) {
+      // Handle special actions
+      if (cmd.action === 'clear') {
+        clearChat()
+        await db.messages.where('sessionId').equals(props.session.id).delete()
+        return
+      }
+
+      if (cmd.action === 'switch-model' && cmd.model) {
+        emit('update-session', props.session.id, { model: cmd.model })
+      }
+
       // Save user message
       const userMsg = {
         sessionId: props.session.id,
@@ -189,7 +207,7 @@ async function handleSend({ content, files }) {
     }
   } catch (e) {
     // If it looks like a slash command but execution failed, still handle it locally
-    if (trimmedContent.startsWith('/plan')) {
+    if (trimmedContent.startsWith('/')) {
       const userMsg = {
         sessionId: props.session.id,
         role: 'user',

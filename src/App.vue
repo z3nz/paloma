@@ -12,11 +12,13 @@
     :sessions="sessions"
     :active-session-id="activeSessionId"
     :active-model="activeSession?.model || ''"
+    :sidebar-collapsed="sidebarCollapsed"
     @open-settings="showSettings = true"
     @open-project="handleOpenProject"
     @new-chat="handleNewChat"
     @select-session="handleSelectSession"
     @delete-session="handleDeleteSession"
+    @toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
   >
     <ChatView
       v-if="activeSession"
@@ -74,7 +76,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import SplashScreen from './components/welcome/SplashScreen.vue'
 import WelcomeScreen from './components/welcome/WelcomeScreen.vue'
 import AppLayout from './components/layout/AppLayout.vue'
@@ -90,6 +92,9 @@ import { useOpenRouter } from './composables/useOpenRouter.js'
 import { useMCP } from './composables/useMCP.js'
 import { useChanges } from './composables/useChanges.js'
 import { useSessionState } from './composables/useSessionState.js'
+import { useKeyboardShortcuts, registerKeyboardShortcuts } from './composables/useKeyboardShortcuts.js'
+import { useVoiceInput } from './composables/useVoiceInput.js'
+import { useChat } from './composables/useChat.js'
 import { PHASE_MODEL_SUGGESTIONS } from './prompts/phases.js'
 
 const { apiKey, defaultModel } = useSettings()
@@ -104,9 +109,27 @@ const {
   applyChange, applyAll, dismissChange, dismissAll
 } = useChanges()
 
+const { sidebarCollapsed } = useKeyboardShortcuts()
+const { streaming, stopStreaming } = useChat()
+const { toggleVoiceMode, isListening, stopListening } = useVoiceInput()
+
 const showSplash = ref(true)
 const showSettings = ref(false)
 const diffModalChange = ref(null)
+
+// Global keyboard shortcuts (Ctrl+/, Ctrl+N, Escape)
+const cleanupShortcuts = registerKeyboardShortcuts({
+  onNewChat: () => { if (bridgeConnected.value) handleNewChat() },
+  onStopStreaming: () => { if (streaming.value) stopStreaming() },
+  onCloseModals: () => {
+    if (diffModalChange.value) { diffModalChange.value = null; return true }
+    if (showSettings.value) { showSettings.value = false; return true }
+    if (isListening.value) { stopListening(); return true }
+    return false
+  },
+  onToggleVoice: () => toggleVoiceMode()
+})
+onBeforeUnmount(cleanupShortcuts)
 
 const activeSession = computed(() =>
   sessions.value.find(s => s.id === activeSessionId.value) || null

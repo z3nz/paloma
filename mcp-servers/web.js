@@ -12,7 +12,14 @@ import {
   CallToolRequestSchema
 } from '@modelcontextprotocol/sdk/types.js'
 import { writeFile, mkdir } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname, resolve } from 'node:path'
+import { homedir } from 'node:os'
+
+const ALLOWED_ROOT = resolve(homedir())
+
+function isAllowed(filePath) {
+  return resolve(filePath).startsWith(ALLOWED_ROOT)
+}
 
 const server = new Server(
   { name: 'web', version: '1.0.0' },
@@ -113,6 +120,15 @@ async function handleWebFetch({ url, headers = {} }) {
 
 async function handleWebDownload({ url, path, headers = {} }) {
   try {
+    const resolvedPath = resolve(path)
+
+    if (!isAllowed(resolvedPath)) {
+      return {
+        content: [{ type: 'text', text: `Blocked: path is outside allowed root (${ALLOWED_ROOT})` }],
+        isError: true
+      }
+    }
+
     const response = await fetch(url, {
       headers: { 'User-Agent': 'Paloma/1.0', ...headers },
       redirect: 'follow',
@@ -129,14 +145,14 @@ async function handleWebDownload({ url, path, headers = {} }) {
     const buffer = Buffer.from(await response.arrayBuffer())
 
     // Ensure parent directory exists
-    await mkdir(dirname(path), { recursive: true })
-    await writeFile(path, buffer)
+    await mkdir(dirname(resolvedPath), { recursive: true })
+    await writeFile(resolvedPath, buffer)
 
     const contentType = response.headers.get('content-type') || 'unknown'
     return {
       content: [{
         type: 'text',
-        text: `Downloaded ${buffer.length} bytes to ${path}\nContent-Type: ${contentType}`
+        text: `Downloaded ${buffer.length} bytes to ${resolvedPath}\nContent-Type: ${contentType}`
       }]
     }
   } catch (e) {

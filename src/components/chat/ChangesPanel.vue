@@ -196,9 +196,13 @@ function startResize(e) {
   document.body.style.userSelect = 'none'
   document.addEventListener('mousemove', onMouseMove)
   document.addEventListener('mouseup', onMouseUp)
+  _dragCleanup = onMouseUp
 }
 
+let _dragCleanup = null
+
 onBeforeUnmount(() => {
+  if (_dragCleanup) _dragCleanup()
   document.body.style.cursor = ''
   document.body.style.userSelect = ''
 })

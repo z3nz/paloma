@@ -1,14 +1,40 @@
-import { ref, computed, watch } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { createMcpBridge } from '../services/mcpBridge.js'
 import { useSessions } from './useSessions.js'
 import { useSessionState } from './useSessionState.js'
+import { useToolExecution } from './useToolExecution.js'
 import { useProject } from './useProject.js'
+import { classifyResult } from '../utils/toolClassifier.js'
 import db from '../services/db.js'
 
 // Map pillarId → dbSessionId for routing stream events
 const pillarSessionMap = new Map()
-// Track the registered Flow session's dbSessionId for callback routing
-let registeredFlowDbSessionId = null
+// Map Flow CLI session IDs to their browser DB session IDs for correct pillar routing
+const flowDbSessionMap = new Map()
+// The most recently registered Flow dbSessionId (used for notification routing)
+let activeFlowDbSessionId = null
+// Track pending notification metadata between start and done events
+let pendingNotificationMeta = null
+// Email session routing
+const emailSessionMap = new Map() // requestId → dbSessionId
+const pendingEmailSessions = new Map() // emailSubject → dbSessionId
+let activeEmailDbSessionId = null
+// Email tool tracking (parallel to useCliChat.js toolUseToActivity/toolUseMeta)
+const emailToolUseToActivity = new Map() // `${requestId}:${toolUseId}` → activityId
+const emailToolUseMeta = new Map()       // `${requestId}:${toolUseId}` → { name, args }
+const emailUsageMap = new Map()          // requestId → { promptTokens, completionTokens, totalTokens }
+
+// Reactive: whether Flow is currently processing a callback notification
+const flowProcessingCallback = ref(false)
+
+// pillarId → 'running' | 'streaming' | 'idle' | 'error' | 'stopped'
+const pillarStatuses = reactive(new Map())
+// pillarId → phase name ('scout', 'chart', 'forge', 'polish', 'ship')
+const pillarPhases = reactive(new Map())
+// Track cleanup timers to prevent unbounded accumulation
+const pillarCleanupTimers = new Map()
+// Buffer stream events that arrive before onPillarSessionCreated completes (race condition fix)
+const pillarStreamBuffer = new Map() // pillarId → [{ event, backend }]
 
 const _saved = import.meta.hot ? window.__PALOMA_MCP__ : undefined
 
@@ -78,6 +104,27 @@ function getAutoExecuteServers(mcpConfig) {
   return new Set(mcpConfig?.autoExecute || [])
 }
 
+// Shared helper: accumulate text from a pillar stream event into session state
+function _accumulatePillarStream(state, event, backend) {
+  if (backend === 'codex') {
+    if (event.type === 'agent_message' && event.text) {
+      state.streamingContent.value += event.text
+    }
+  } else {
+    if (event.type === 'assistant' && event.message?.content) {
+      for (const block of event.message.content) {
+        if (block.type === 'text' && block.text) {
+          state.streamingContent.value += block.text
+        }
+      }
+    } else if (event.type === 'content_block_delta') {
+      if (event.delta?.type === 'text_delta' && event.delta.text) {
+        state.streamingContent.value += event.delta.text
+      }
+    }
+  }
+}
+
 export function useMCP() {
   function connect(url) {
     if (url) bridgeUrl.value = url
@@ -118,8 +165,9 @@ export function useMCP() {
       },
       onSetTitle(title) {
         const { activeSessionId, updateSession } = useSessions()
-        if (activeSessionId.value && title) {
-          updateSession(activeSessionId.value, { title })
+        const targetId = activeEmailDbSessionId !== null ? activeEmailDbSessionId : activeSessionId.value
+        if (targetId && title) {
+          updateSession(targetId, { title })
         }
       },
       async onPillarSessionCreated(msg) {
@@ -127,12 +175,14 @@ export function useMCP() {
         const { createPillarSession } = useSessions()
         const { projectName } = useProject()
         const projectPath = projectName.value || 'paloma'
+        // Look up the correct parent Flow session by CLI session ID
+        const parentDbSessionId = (msg.flowCliSessionId && flowDbSessionMap.get(msg.flowCliSessionId)) || activeFlowDbSessionId
         const dbSessionId = await createPillarSession(
           projectPath,
           msg.model,
           msg.pillar,
           msg.pillarId,
-          msg.flowRequestId,
+          parentDbSessionId,
           msg.prompt
         )
         // Map pillarId to dbSessionId for stream routing
@@ -140,6 +190,20 @@ export function useMCP() {
         // Tell the bridge about the dbSessionId
         if (bridge) {
           bridge.sendPillarDbSessionId(msg.pillarId, dbSessionId)
+        }
+        pillarStatuses.set(msg.pillarId, 'running')
+        pillarPhases.set(msg.pillarId, msg.pillar)
+
+        // Drain any stream events that arrived before the session was created (race condition)
+        const buffered = pillarStreamBuffer.get(msg.pillarId)
+        if (buffered) {
+          pillarStreamBuffer.delete(msg.pillarId)
+          const { getState } = useSessionState()
+          const state = getState(dbSessionId)
+          state.streaming.value = true
+          for (const { event, backend } of buffered) {
+            _accumulatePillarStream(state, event, backend)
+          }
         }
       },
       async onPillarCliSession(msg) {
@@ -150,25 +214,21 @@ export function useMCP() {
           await updateSession(dbSessionId, { cliSessionId: msg.cliSessionId })
         }
       },
-      onPillarStream(pillarId, event) {
+      onPillarStream(pillarId, event, backend) {
         const dbSessionId = pillarSessionMap.get(pillarId)
-        if (!dbSessionId) return
+        if (!dbSessionId) {
+          // Session creation still in progress — buffer the event
+          if (!pillarStreamBuffer.has(pillarId)) {
+            pillarStreamBuffer.set(pillarId, [])
+          }
+          pillarStreamBuffer.get(pillarId).push({ event, backend })
+          return
+        }
         const { getState } = useSessionState()
         const state = getState(dbSessionId)
         state.streaming.value = true
-
-        // Accumulate text content from stream events
-        if (event.type === 'assistant' && event.message?.content) {
-          for (const block of event.message.content) {
-            if (block.type === 'text' && block.text) {
-              state.streamingContent.value += block.text
-            }
-          }
-        } else if (event.type === 'content_block_delta') {
-          if (event.delta?.type === 'text_delta' && event.delta.text) {
-            state.streamingContent.value += event.delta.text
-          }
-        }
+        pillarStatuses.set(pillarId, 'streaming')
+        _accumulatePillarStream(state, event, backend)
       },
       async onPillarMessageSaved(msg) {
         const dbSessionId = pillarSessionMap.get(msg.pillarId)
@@ -206,23 +266,52 @@ export function useMCP() {
         state.streaming.value = false
         state.streamingContent.value = ''
 
-        // Clear cliSessionId so we don't try to reattach completed sessions
+        // Track pillar status
+        const status = msg.status || 'idle'
+        pillarStatuses.set(msg.pillarId, status)
         const { updateSession } = useSessions()
-        await updateSession(dbSessionId, { cliSessionId: null })
+        // Clear cliSessionId so we don't try to reattach completed sessions
+        await updateSession(dbSessionId, { cliSessionId: null, pillarStatus: status })
 
-        // If stopped or error, clean up the map
-        if (msg.status === 'stopped' || msg.status === 'error') {
+        // Only clean up session mapping for truly terminal states.
+        // 'idle' pillars can still receive follow-up messages via pillar_message,
+        // so we must keep their routing entry alive.
+        const isTerminal = status === 'stopped' || status === 'error'
+        if (isTerminal) {
           pillarSessionMap.delete(msg.pillarId)
+          pillarStreamBuffer.delete(msg.pillarId)
         }
+
+        // Clean up status display after delay for all done states
+        {
+          const existingTimer = pillarCleanupTimers.get(msg.pillarId)
+          if (existingTimer) clearTimeout(existingTimer)
+          const timer = setTimeout(() => {
+            pillarStatuses.delete(msg.pillarId)
+            pillarPhases.delete(msg.pillarId)
+            pillarCleanupTimers.delete(msg.pillarId)
+          }, 30000)
+          pillarCleanupTimers.set(msg.pillarId, timer)
+        }
+      },
+      onFlowNotificationStart(msg) {
+        // Store metadata for tagging the saved message when done
+        pendingNotificationMeta = {
+          notificationType: msg.notificationType,
+          pillar: msg.pillar,
+          pillarId: msg.pillarId
+        }
+        flowProcessingCallback.value = true
+        console.log('[mcp] Flow notification start:', pendingNotificationMeta)
       },
       onFlowNotificationStream(event) {
         // Flow callback response streaming — route to the registered Flow session
-        if (!registeredFlowDbSessionId) {
+        if (!activeFlowDbSessionId) {
           console.warn('[mcp] Flow notification stream but no registered Flow session')
           return
         }
         const { getState } = useSessionState()
-        const state = getState(registeredFlowDbSessionId)
+        const state = getState(activeFlowDbSessionId)
         state.streaming.value = true
 
         // Accumulate text content (same logic as pillar stream)
@@ -240,39 +329,257 @@ export function useMCP() {
       },
       async onFlowNotificationDone() {
         // Flow callback response complete — save as assistant message
-        if (!registeredFlowDbSessionId) return
+        if (!activeFlowDbSessionId) return
         const { updateSession } = useSessions()
         const { getState } = useSessionState()
-        const state = getState(registeredFlowDbSessionId)
+        const state = getState(activeFlowDbSessionId)
         const content = state.streamingContent.value
 
         if (content) {
+          const meta = pendingNotificationMeta || {}
           const dbMsg = {
-            sessionId: registeredFlowDbSessionId,
+            sessionId: activeFlowDbSessionId,
             role: 'assistant',
             content,
             model: 'claude-cli:opus',
             files: [],
             timestamp: Date.now(),
-            isCallback: true
+            isCallback: true,
+            callbackType: meta.notificationType || null,
+            callbackPillar: meta.pillar || null,
+            callbackPillarId: meta.pillarId || null
           }
           const msgId = await db.messages.add(dbMsg)
           dbMsg.id = msgId
           state.messages.value.push(dbMsg)
-          await updateSession(registeredFlowDbSessionId, {})
-          console.log('[mcp] Flow callback response saved, length:', content.length)
+          await updateSession(activeFlowDbSessionId, {})
+          console.log('[mcp] Flow callback response saved, length:', content.length, 'meta:', meta)
         }
 
+        pendingNotificationMeta = null
+        flowProcessingCallback.value = false
         state.streaming.value = false
         state.streamingContent.value = ''
       },
       onFlowNotificationError(error) {
         console.error('[mcp] Flow notification error:', error)
-        if (!registeredFlowDbSessionId) return
+        pendingNotificationMeta = null
+        flowProcessingCallback.value = false
+        if (!activeFlowDbSessionId) return
         const { getState } = useSessionState()
-        const state = getState(registeredFlowDbSessionId)
+        const state = getState(activeFlowDbSessionId)
         state.streaming.value = false
         state.streamingContent.value = ''
+      },
+      async onEmailReceived(msg) {
+        const { createPillarSession, updateSession } = useSessions()
+        const { projectName } = useProject()
+        const projectPath = projectName.value || 'paloma'
+        const summary = [`From: ${msg.from}`, `Subject: ${msg.subject}`, '', msg.body || ''].join('\n')
+        const dbSessionId = await createPillarSession(
+          projectPath,
+          'claude-cli:opus',
+          'flow',
+          `email:${msg.messageId}`,
+          null,
+          summary
+        )
+        await updateSession(dbSessionId, { title: msg.subject })
+        pendingEmailSessions.set(msg.subject, dbSessionId)
+        activeEmailDbSessionId = dbSessionId
+      },
+      async onEmailStream(id, event, emailSubject) {
+        let dbSessionId = emailSessionMap.get(id)
+        if (!dbSessionId) {
+          dbSessionId = pendingEmailSessions.get(emailSubject)
+          if (dbSessionId) {
+            pendingEmailSessions.delete(emailSubject)
+          } else {
+            // email_received didn't arrive first — create session on-the-fly
+            const { createPillarSession, updateSession } = useSessions()
+            const { projectName } = useProject()
+            const projectPath = projectName.value || 'paloma'
+            dbSessionId = await createPillarSession(
+              projectPath,
+              'claude-cli:opus',
+              'flow',
+              `email:${id}`,
+              null,
+              null
+            )
+            await updateSession(dbSessionId, { title: emailSubject || 'Incoming Email' })
+          }
+          emailSessionMap.set(id, dbSessionId)
+          activeEmailDbSessionId = dbSessionId
+        }
+        const { getState } = useSessionState()
+        const state = getState(dbSessionId)
+        const { addActivity, markActivityDone } = useToolExecution(state)
+        state.streaming.value = true
+
+        if (event.type === 'assistant' && event.message?.content) {
+          for (const block of event.message.content) {
+            if (block.type === 'text' && block.text) {
+              state.streamingContent.value += block.text
+            } else if (block.type === 'tool_use') {
+              // Track tool use — same as useCliChat.js
+              const activityId = addActivity(block.name, block.input)
+              emailToolUseToActivity.set(`${id}:${block.id}`, activityId)
+              emailToolUseMeta.set(`${id}:${block.id}`, { name: block.name, args: block.input })
+            }
+          }
+        } else if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+          // CLI stream-json emits tool_use via content_block_start
+          const block = event.content_block
+          const activityId = addActivity(block.name, block.input || {})
+          emailToolUseToActivity.set(`${id}:${block.id}`, activityId)
+          emailToolUseMeta.set(`${id}:${block.id}`, { name: block.name, args: block.input || {} })
+        } else if (event.type === 'content_block_delta') {
+          if (event.delta?.type === 'text_delta' && event.delta.text) {
+            state.streamingContent.value += event.delta.text
+          }
+        } else if (event.type === 'user' && event.message?.content) {
+          // Tool results come as user-type events with tool_result content blocks
+          for (const block of event.message.content) {
+            if (block.type === 'tool_result') {
+              const key = `${id}:${block.tool_use_id}`
+              const activityId = emailToolUseToActivity.get(key)
+              const meta = emailToolUseMeta.get(key)
+
+              // Normalize result content to string
+              let resultStr
+              try {
+                resultStr = Array.isArray(block.content)
+                  ? block.content.map(c => c.text || '').join('')
+                  : typeof block.content === 'string' ? block.content : JSON.stringify(block.content)
+              } catch {
+                resultStr = '[Error serializing tool result]'
+              }
+
+              if (activityId) markActivityDone(activityId, resultStr)
+
+              // Persist as role:'tool' message — same as useCliChat.js
+              if (meta) {
+                const toolMsg = JSON.parse(JSON.stringify({
+                  sessionId: dbSessionId,
+                  role: 'tool',
+                  toolCallId: activityId || block.tool_use_id,
+                  toolName: meta.name,
+                  toolArgs: meta.args,
+                  content: resultStr,
+                  resultType: classifyResult(meta.name, resultStr),
+                  timestamp: Date.now()
+                }))
+                const toolMsgId = await db.messages.add(toolMsg)
+                toolMsg.id = toolMsgId
+                state.messages.value.push(toolMsg)
+              }
+
+              emailToolUseToActivity.delete(key)
+              emailToolUseMeta.delete(key)
+            }
+          }
+        } else if (event.type === 'result') {
+          // Capture usage data for attachment in onEmailDone
+          if (event.usage) {
+            emailUsageMap.set(id, {
+              promptTokens: event.usage.input_tokens || 0,
+              completionTokens: event.usage.output_tokens || 0,
+              totalTokens: (event.usage.input_tokens || 0) + (event.usage.output_tokens || 0)
+            })
+          }
+          // Result event may contain tool_result blocks
+          if (event.result?.content) {
+            for (const block of (Array.isArray(event.result.content) ? event.result.content : [])) {
+              if (block.type === 'tool_result') {
+                const key = `${id}:${block.tool_use_id}`
+                const activityId = emailToolUseToActivity.get(key)
+                const meta = emailToolUseMeta.get(key)
+                const resultContent = typeof block.content === 'string' ? block.content : JSON.stringify(block.content)
+                if (activityId) markActivityDone(activityId, resultContent)
+                if (meta) {
+                  const toolMsg = JSON.parse(JSON.stringify({
+                    sessionId: dbSessionId,
+                    role: 'tool',
+                    toolCallId: activityId || block.tool_use_id,
+                    toolName: meta.name,
+                    toolArgs: meta.args,
+                    content: resultContent,
+                    resultType: classifyResult(meta.name, resultContent),
+                    timestamp: Date.now()
+                  }))
+                  const toolMsgId = await db.messages.add(toolMsg)
+                  toolMsg.id = toolMsgId
+                  state.messages.value.push(toolMsg)
+                }
+                emailToolUseToActivity.delete(key)
+                emailToolUseMeta.delete(key)
+              }
+            }
+          }
+        }
+      },
+      async onEmailDone(id, cliSessionId, exitCode) {
+        const dbSessionId = emailSessionMap.get(id)
+        if (!dbSessionId) return
+        const { getState } = useSessionState()
+        const { updateSession } = useSessions()
+        const state = getState(dbSessionId)
+        const { snapshotActivity, clearActivity, toolActivity, markActivityDone } = useToolExecution(state)
+        const content = state.streamingContent.value
+
+        // Safety net: mark any still-running activities as done (same as useCliChat.js)
+        for (const activity of toolActivity.value) {
+          if (activity.status === 'running') {
+            markActivityDone(activity.id)
+          }
+        }
+
+        if (content) {
+          const toolActivitySnapshot = snapshotActivity()
+          const usage = emailUsageMap.get(id) || null
+
+          const dbMsg = {
+            sessionId: dbSessionId,
+            role: 'assistant',
+            content,
+            model: 'claude-cli:opus',
+            files: [],
+            timestamp: Date.now()
+          }
+          if (usage) dbMsg.usage = usage
+          if (toolActivitySnapshot?.length) dbMsg.toolActivity = toolActivitySnapshot
+
+          const msgId = await db.messages.add(dbMsg)
+          dbMsg.id = msgId
+          state.messages.value.push(dbMsg)
+        }
+
+        await updateSession(dbSessionId, {})
+        state.streaming.value = false
+        state.streamingContent.value = ''
+        clearActivity()
+        emailSessionMap.delete(id)
+        emailUsageMap.delete(id)
+        // Clean up any lingering tool tracking for this request
+        for (const key of emailToolUseToActivity.keys()) {
+          if (key.startsWith(`${id}:`)) emailToolUseToActivity.delete(key)
+        }
+        for (const key of emailToolUseMeta.keys()) {
+          if (key.startsWith(`${id}:`)) emailToolUseMeta.delete(key)
+        }
+        if (activeEmailDbSessionId === dbSessionId) activeEmailDbSessionId = null
+      },
+      onEmailError(id, error) {
+        console.error('[mcp] Email session error:', error)
+        const dbSessionId = emailSessionMap.get(id)
+        if (!dbSessionId) return
+        const { getState } = useSessionState()
+        const state = getState(dbSessionId)
+        state.streaming.value = false
+        state.streamingContent.value = ''
+        emailSessionMap.delete(id)
+        if (activeEmailDbSessionId === dbSessionId) activeEmailDbSessionId = null
       }
     })
   }
@@ -321,11 +628,36 @@ export function useMCP() {
     if (bridge) bridge.stopClaudeChat(requestId)
   }
 
+  function sendCodexChat(options, callbacks) {
+    if (!bridge || !connected.value) throw new Error('Bridge not connected')
+    return bridge.sendCodexChat(options, callbacks)
+  }
+
+  function stopCodexChat(requestId) {
+    if (bridge) bridge.stopCodexChat(requestId)
+  }
+
+  function sendOllamaChat(options, callbacks) {
+    if (!bridge || !connected.value) throw new Error('Bridge not connected')
+    return bridge.sendOllamaChat(options, callbacks)
+  }
+
+  function stopOllamaChat(requestId) {
+    if (bridge) bridge.stopOllamaChat(requestId)
+  }
+
   function registerFlowSession(cliSessionId, model, cwd, dbSessionId) {
     if (bridge) bridge.registerFlowSession(cliSessionId, model, cwd)
-    if (dbSessionId) {
-      registeredFlowDbSessionId = dbSessionId
-      console.log('[mcp] Registered Flow dbSessionId for callbacks:', dbSessionId)
+    if (dbSessionId && cliSessionId) {
+      flowDbSessionMap.set(cliSessionId, dbSessionId)
+      activeFlowDbSessionId = dbSessionId
+      console.log('[mcp] Registered Flow dbSessionId for callbacks:', dbSessionId, 'cliSessionId:', cliSessionId)
+    }
+  }
+
+  function sendPillarUserMessage(pillarId, message) {
+    if (bridge && connected.value) {
+      bridge.sendPillarUserMessage(pillarId, message)
     }
   }
 
@@ -443,6 +775,10 @@ export function useMCP() {
     callMcpTool,
     sendClaudeChat,
     stopClaudeChat,
+    sendCodexChat,
+    stopCodexChat,
+    sendOllamaChat,
+    stopOllamaChat,
     respondToAskUser,
     approveCliTool,
     denyCliTool,
@@ -450,7 +786,11 @@ export function useMCP() {
     exportChats,
     getEnabledTools,
     getAutoExecuteServers,
-    registerFlowSession
+    registerFlowSession,
+    sendPillarUserMessage,
+    flowProcessingCallback,
+    pillarStatuses,
+    pillarPhases
   }
 }
 

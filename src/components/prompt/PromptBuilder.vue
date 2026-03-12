@@ -62,9 +62,25 @@
         @input="onInput"
         @keydown="onKeydown"
         placeholder="Message Paloma... (@ attach files, / commands, Ctrl+Enter send)"
-        class="prompt-textarea w-full bg-bg-primary border border-border rounded-lg px-4 py-3 pr-12 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
+        :class="['prompt-textarea w-full bg-bg-primary border border-border rounded-lg px-4 py-3 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors', voiceSupported ? 'pr-20' : 'pr-12']"
         rows="1"
       />
+      <!-- Mic toggle (only when Web Speech API is available) -->
+      <button
+        v-if="voiceSupported"
+        @click="toggleVoiceMode"
+        class="absolute right-10 bottom-3 p-1.5 rounded-md transition-colors"
+        :class="micButtonClasses"
+        :title="voiceMode ? (isListening ? 'Listening... (Ctrl+M to stop)' : 'Voice mode on (Ctrl+M)') : 'Voice mode (Ctrl+M)'"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
       <!-- Send / Stop button -->
       <button
         v-if="streaming"
@@ -107,7 +123,8 @@
         />
       </div>
       <div class="text-xs text-text-muted">
-        <span v-if="modelsError" class="text-warning" title="Using cached/fallback model list">Models: offline</span>
+        <span v-if="voiceErrorMessage" class="text-warning">{{ voiceErrorMessage }}</span>
+        <span v-else-if="modelsError" class="text-warning" title="Using cached/fallback model list">Models: offline</span>
         <span v-else-if="indexing">Indexing files...</span>
       </div>
     </div>
@@ -125,6 +142,7 @@ import ModelSelector from './ModelSelector.vue'
 import PhaseSelector from './PhaseSelector.vue'
 import { useFileIndex } from '../../composables/useFileIndex.js'
 import { useOpenRouter } from '../../composables/useOpenRouter.js'
+import { useVoiceInput } from '../../composables/useVoiceInput.js'
 import { useProject } from '../../composables/useProject.js'
 import { useMCP } from '../../composables/useMCP.js'
 import db from '../../services/db.js'
@@ -140,6 +158,13 @@ const { search, indexing } = useFileIndex()
 const { models, modelsError } = useOpenRouter()
 const { switchProject, listProjects, projectName: currentProject, projectRoot: currentProjectRoot } = useProject()
 const { callMcpTool, resolveProjectPath, connected: mcpConnected } = useMCP()
+
+const {
+  supported: voiceSupported,
+  voiceMode, isListening, interimTranscript, pendingSend,
+  error: voiceError,
+  toggleVoiceMode, clearError
+} = useVoiceInput()
 
 const input = ref('')
 const attachedFiles = ref([])
@@ -168,10 +193,13 @@ const planMode = ref('list') // 'list' | 'activate' | 'pause' | 'complete' | 'ar
 const planSearchRef = ref(null)
 let planAction = null // tracks what action to take on selection
 
-// Available slash commands — add more here as we build them
+// Available slash commands
 const slashCommands = [
+  { name: 'plan', description: 'List and manage plans' },
   { name: 'project', description: 'Switch project context' },
-  { name: 'plan', description: 'List and manage plans' }
+  { name: 'model', description: 'Switch AI model' },
+  { name: 'clear', description: 'Clear current chat' },
+  { name: 'help', description: 'Show commands and shortcuts' }
 ]
 
 // Track trigger positions for replacement
@@ -181,6 +209,54 @@ let slashStartIndex = -1
 const currentModel = computed(() => props.session?.model || '')
 const currentPhase = computed(() => props.session?.phase || 'research')
 const canSend = computed(() => input.value.trim().length > 0 && !props.streaming)
+
+// Voice: live preview — show buffered pending text + current speech
+watch(interimTranscript, (text) => {
+  if (isListening.value) {
+    const pending = pendingSend.value ? pendingSend.value + ' ' : ''
+    input.value = pending + text
+  }
+})
+
+// Voice: send trigger — emit directly, bypass canSend/streaming check
+// If streaming, hold the text — the streaming watcher below will send it when done
+watch(pendingSend, (text) => {
+  if (!text) return
+  if (props.streaming) return  // buffer until streaming ends — display handled by interimTranscript watcher
+
+  pendingSend.value = null
+  input.value = ''
+  emit('send', { content: text, files: [] })
+})
+
+// When streaming ends, flush any buffered voice text
+watch(() => props.streaming, (isStreaming, wasStreaming) => {
+  if (wasStreaming && !isStreaming && pendingSend.value) {
+    const text = pendingSend.value
+    pendingSend.value = null
+    input.value = ''
+    nextTick(() => emit('send', { content: text, files: [] }))
+  }
+})
+
+const micButtonClasses = computed(() => {
+  if (!voiceMode.value) return 'text-text-muted hover:text-text-primary'
+  if (isListening.value) return 'bg-accent text-white voice-pulse'
+  return 'bg-accent/20 text-accent'
+})
+
+const voiceErrorMessage = computed(() => {
+  switch (voiceError.value) {
+    case 'mic-permission': return 'Microphone access needed \u2014 check browser permissions'
+    case 'network': return 'Voice recognition unavailable \u2014 network issue'
+    case 'no-mic': return 'No microphone detected'
+    default: return ''
+  }
+})
+
+watch(voiceError, (err) => {
+  if (err) setTimeout(() => clearError(), 5000)
+})
 
 // --- Draft persistence ---
 let saveTimeout = null
@@ -631,3 +707,13 @@ function onPhaseChange(phase) {
   emit('transition-phase', { phase, fromPhase: currentPhase.value })
 }
 </script>
+
+<style scoped>
+.voice-pulse {
+  animation: voice-pulse 1.5s ease-in-out infinite;
+}
+@keyframes voice-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(99, 102, 241, 0); }
+}
+</style>

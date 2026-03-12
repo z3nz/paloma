@@ -34,6 +34,7 @@ export function useChanges(sessionState) {
 
   const pendingChanges = sessionState.pendingChanges
   let _sessionId = null
+  let _autoRemoveTimer = null
 
   const hasPendingChanges = computed(() =>
     pendingChanges.value.some(c => c.status === 'pending')
@@ -44,7 +45,9 @@ export function useChanges(sessionState) {
   )
 
   function autoRemoveApplied() {
-    setTimeout(async () => {
+    if (_autoRemoveTimer) clearTimeout(_autoRemoveTimer)
+    _autoRemoveTimer = setTimeout(async () => {
+      _autoRemoveTimer = null
       const remaining = pendingChanges.value.filter(c => c.status !== 'applied')
       if (remaining.length !== pendingChanges.value.length) {
         pendingChanges.value = remaining

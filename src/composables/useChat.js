@@ -81,14 +81,14 @@ async function recoverStreamingDrafts(sessionId) {
     if (!draft?.streamingDraft) return
 
     const { content, toolActivity, model, timestamp } = draft.streamingDraft
-    if (content) {
+    if (content && typeof content === 'string') {
       const assistantMsg = sanitizeForDB({
         sessionId,
         role: 'assistant',
         content,
         model: model || null,
         interrupted: true,
-        toolActivity: toolActivity || [],
+        toolActivity: Array.isArray(toolActivity) ? toolActivity : [],
         files: [],
         timestamp: timestamp || Date.now()
       })
@@ -181,6 +181,13 @@ export function useChat() {
     safeUserMsg.id = userMsgId
     s.messages.value.push(safeUserMsg)
 
+    // CC Flow when Adam messages a pillar session directly
+    const session = await db.sessions.get(sessionId)
+    if (session?.pillarId) {
+      const { sendPillarUserMessage } = useMCP()
+      sendPillarUserMessage(session.pillarId, content)
+    }
+
     // Resolve MCP tools
     const { getEnabledTools, callMcpTool } = useMCP()
     const { isAutoApproved } = usePermissions()
@@ -211,6 +218,7 @@ export function useChat() {
 
     s.streaming.value = true
     s.streamingContent.value = ''
+    s.currentModel = model
     s.abortController = new AbortController()
 
     // Start periodic streaming draft save (crash recovery)
@@ -263,11 +271,12 @@ export function useChat() {
             // We'll update the message after tool execution via onUpdateAssistantActivity.
             return saveAssistantMessage(sessionId, s, content, toolCalls, usage, model)
           },
-          async onSaveTool(callId, toolName, args, content) {
+          async onSaveTool(callId, toolName, args, content, activityId) {
             const toolMsg = sanitizeForDB({
               sessionId,
               role: 'tool',
               toolCallId: callId,
+              activityId: activityId || callId,
               toolName,
               toolArgs: args,
               content,
@@ -343,6 +352,7 @@ export function useChat() {
       s.streamingContent.value = ''
       s.abortController = null
       s.streamInterrupted = false
+      s.currentModel = null
       clearCliRequestId(s)
       // Clear live tool activity — persisted snapshot is now on the assistant message
       clearActivity()
@@ -415,8 +425,10 @@ export function useChat() {
 
     s.streamInterrupted = true
 
-    // Signal abort to both paths
-    stopCli(s)
+    // Signal abort to both paths — capture model before clearing
+    const modelForStop = s.currentModel
+    s.currentModel = null
+    stopCli(s, modelForStop)
     if (s.abortController) {
       s.abortController.abort()
       s.abortController = null

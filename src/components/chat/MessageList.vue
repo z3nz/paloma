@@ -40,14 +40,42 @@
       </div>
     </div>
 
-    <!-- Live tool activity (during streaming) -->
+    <!-- Live tool activity (during streaming only — persisted tools render inside MessageItem) -->
     <ToolCallGroup
-      v-if="toolActivity.length"
+      v-if="toolActivity.length && streaming"
       :activities="toolActivity"
       :tool-messages="liveToolMessages"
       :live="true"
       class="px-6 py-2"
     />
+
+    <!-- Active pillar animations — shows running/streaming pillars inline in chat -->
+    <div v-if="activePillars.length > 0" class="px-6 py-4">
+      <div class="max-w-3xl mx-auto">
+        <div class="text-xs font-medium uppercase tracking-wider text-text-muted mb-3">Active Pillars</div>
+        <div class="flex flex-wrap gap-3">
+          <div
+            v-for="p in activePillars"
+            :key="p.pillarId"
+            class="pillar-activity-card flex flex-col items-center gap-2 py-4 px-5 rounded-lg border"
+            :style="{
+              borderColor: pillarColors[p.phase] + '40',
+              backgroundColor: pillarColors[p.phase] + '10',
+              '--pillar-glow': pillarColors[p.phase]
+            }"
+          >
+            <PillarLoader :pillar="p.phase" :size="48" />
+            <span
+              class="text-xs font-bold uppercase tracking-wider"
+              :style="{ color: pillarColors[p.phase] }"
+            >{{ p.phase }}</span>
+            <span class="text-[10px] text-text-muted">
+              {{ p.status === 'streaming' ? 'Streaming...' : 'Running...' }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Error -->
     <div v-if="error" class="px-6 py-4">
@@ -65,6 +93,8 @@ import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { marked } from 'marked'
 import MessageItem from './MessageItem.vue'
 import ToolCallGroup from './ToolCallGroup.vue'
+import PillarLoader from '../ui/PillarLoader.vue'
+import { useMCP } from '../../composables/useMCP.js'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
@@ -75,6 +105,31 @@ const props = defineProps({
 })
 
 defineEmits(['apply-code'])
+
+const { pillarStatuses, pillarPhases } = useMCP()
+
+const pillarColors = {
+  flow: '#22d3ee',
+  scout: '#22d3ee',
+  chart: '#facc15',
+  forge: '#fb923c',
+  polish: '#f472b6',
+  ship: '#4ade80'
+}
+
+const activePillars = computed(() => {
+  const result = []
+  for (const [pillarId, status] of pillarStatuses) {
+    if (status === 'running' || status === 'streaming') {
+      result.push({
+        pillarId,
+        phase: pillarPhases.get(pillarId) || 'flow',
+        status
+      })
+    }
+  }
+  return result
+})
 
 const container = ref(null)
 const anchor = ref(null)
@@ -129,12 +184,8 @@ const consumedToolIds = computed(() => {
  * Messages to display — filters out tool messages that are consumed by ToolCallGroup.
  */
 const displayMessages = computed(() => {
-  return visibleMessages.value.filter(msg => {
-    if (msg.role === 'tool' && consumedToolIds.value.has(msg.id)) {
-      return false
-    }
-    return true
-  })
+  // Tool messages are never rendered standalone — they're shown inside ToolCallGroup
+  return visibleMessages.value.filter(msg => msg.role !== 'tool')
 })
 
 /**
@@ -200,6 +251,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   container.value?.removeEventListener('scroll', checkScrollPosition)
+  if (throttleTimer) { clearTimeout(throttleTimer); throttleTimer = null }
 })
 
 function scrollToBottom(behavior = 'smooth') {
@@ -244,19 +296,25 @@ watch(
       streamingHtmlThrottled.value = '<span class="streaming-cursor"></span>'
       return
     }
-    if (throttleTimer) return
-    throttleTimer = setTimeout(() => {
-      throttleTimer = null
+    // Render immediately on first chunk, then throttle subsequent updates
+    if (!throttleTimer) {
       renderAndScroll()
-    }, 150)
+      throttleTimer = setTimeout(() => { throttleTimer = null }, 80)
+    }
   }
 )
 
-// Flush on stream end to ensure final content is rendered
+// Scroll when streaming starts (show blinking cursor immediately),
+// and flush on stream end to ensure final content is rendered
 watch(
   () => props.streaming,
   (val) => {
-    if (!val && props.streamingContent) {
+    if (val) {
+      // Streaming just started — scroll to show the loading indicator
+      if (isNearBottom.value) {
+        scrollToBottom('instant')
+      }
+    } else if (props.streamingContent) {
       if (throttleTimer) {
         clearTimeout(throttleTimer)
         throttleTimer = null
@@ -291,4 +349,26 @@ watch(
     }
   }
 )
+
+// Scroll when active pillars appear/change
+watch(
+  () => activePillars.value.length,
+  (newLen, oldLen) => {
+    if (newLen > oldLen && isNearBottom.value) {
+      scrollToBottom('instant')
+    }
+  }
+)
 </script>
+
+<style scoped>
+.pillar-activity-card {
+  animation: pillar-card-glow 2.5s ease-in-out infinite;
+  min-width: 100px;
+}
+
+@keyframes pillar-card-glow {
+  0%, 100% { box-shadow: 0 0 4px 0 var(--pillar-glow, transparent); }
+  50% { box-shadow: 0 0 16px 3px var(--pillar-glow, transparent); }
+}
+</style>
