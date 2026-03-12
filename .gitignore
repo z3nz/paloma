@@ -28,4 +28,4 @@ projects/
 kokoro_env/
 chats/
 output/
-tmp/
+tmp/vite.config.js.timestamp-*.mjs
