@@ -172,20 +172,22 @@ if (process.argv[2] === 'auth') {
 
 // ─── Email Utilities ─────────────────────────────────────────────────────────
 
-function buildRawEmail ({ to, subject, body }) {
+function buildRawEmail ({ to, subject, body, isHtml = false }) {
+  const contentType = isHtml ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8'
   const headers = [
     `From: Paloma <${SENDER_ADDRESS}>`,
     `To: ${to}`,
     `Subject: ${subject}`,
-    'Content-Type: text/plain; charset=utf-8'
+    `Content-Type: ${contentType}`
   ].join('\r\n')
 
   const raw = `${headers}\r\n\r\n${body}`
   return Buffer.from(raw).toString('base64url')
 }
 
-function buildReplyRaw ({ to, subject, body, inReplyTo, references }) {
+function buildReplyRaw ({ to, subject, body, inReplyTo, references, isHtml = false }) {
   const replySubject = subject.startsWith('Re:') ? subject : `Re: ${subject}`
+  const contentType = isHtml ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8'
   const newReferences = inReplyTo
     ? (references ? `${references} ${inReplyTo}` : inReplyTo)
     : references
@@ -194,7 +196,7 @@ function buildReplyRaw ({ to, subject, body, inReplyTo, references }) {
     `From: Paloma <${SENDER_ADDRESS}>`,
     `To: ${to}`,
     `Subject: ${replySubject}`,
-    'Content-Type: text/plain; charset=utf-8',
+    `Content-Type: ${contentType}`,
     inReplyTo ? `In-Reply-To: ${inReplyTo}` : null,
     newReferences ? `References: ${newReferences}` : null
   ].filter(Boolean)
@@ -249,7 +251,7 @@ async function getLastMessageInThread (gmail, threadId) {
 
 // ─── Tool Handlers ───────────────────────────────────────────────────────────
 
-async function handleSend ({ to, subject, body }) {
+async function handleSend ({ to, subject, body, isHtml = false }) {
   const gmail = ensureAuth()
   const recipient = to || DEFAULT_RECIPIENT
   if (!recipient) {
@@ -259,8 +261,7 @@ async function handleSend ({ to, subject, body }) {
     }
   }
 
-  const taggedBody = `[Paloma]\n\n${body}`
-  const raw = buildRawEmail({ to: recipient, subject, body: taggedBody })
+  const raw = buildRawEmail({ to: recipient, subject, body, isHtml })
   const result = await gmail.users.messages.send({
     userId: 'me',
     requestBody: { raw }
@@ -278,7 +279,7 @@ async function handleSend ({ to, subject, body }) {
   }
 }
 
-async function handleReply ({ threadId, body, to }) {
+async function handleReply ({ threadId, body, to, isHtml = false }) {
   const gmail = ensureAuth()
 
   // Get the last message in the thread for threading headers
@@ -304,13 +305,13 @@ async function handleReply ({ threadId, body, to }) {
     }
   }
 
-  const taggedBody = `[Paloma]\n\n${body}`
   const raw = buildReplyRaw({
     to: recipient,
     subject,
-    body: taggedBody,
+    body,
     inReplyTo: msgId,
-    references
+    references,
+    isHtml: isHtml || false
   })
 
   const result = await gmail.users.messages.send({
@@ -527,7 +528,11 @@ async function startServer () {
             },
             body: {
               type: 'string',
-              description: 'Email body in plain text.'
+              description: 'Email body. Plain text by default, or full HTML when isHtml is true.'
+            },
+            isHtml: {
+              type: 'boolean',
+              description: 'When true, send as HTML email (Content-Type: text/html). Default: false.'
             }
           },
           required: ['subject', 'body']
@@ -545,7 +550,11 @@ async function startServer () {
             },
             body: {
               type: 'string',
-              description: 'Reply body in plain text.'
+              description: 'Reply body. Plain text by default, or full HTML when isHtml is true.'
+            },
+            isHtml: {
+              type: 'boolean',
+              description: 'When true, send as HTML email (Content-Type: text/html). Default: false.'
             },
             to: {
               type: 'string',
