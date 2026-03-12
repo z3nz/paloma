@@ -74,7 +74,7 @@ export class PillarManager {
     this.pillars.set(pillarId, session)
 
     // Notify browser to create the session in IndexedDB
-    const modelLabel = resolvedBackend === 'codex' ? `codex:${resolvedModel}` : `claude-cli:${resolvedModel}`
+    const modelLabel = resolvedBackend === 'ollama' ? `ollama:${resolvedModel}` : resolvedBackend === 'codex' ? `codex:${resolvedModel}` : `claude-cli:${resolvedModel}`
     this.broadcast({
       type: 'pillar_session_created',
       pillarId,
@@ -787,9 +787,9 @@ This is informational — Adam is communicating directly with the pillar. Decide
   }
 
   _handleCliEvent(session, event) {
-    const isStream = event.type === 'claude_stream' || event.type === 'codex_stream'
-    const isDone = event.type === 'claude_done' || event.type === 'codex_done'
-    const isError = event.type === 'claude_error' || event.type === 'codex_error'
+    const isStream = event.type === 'claude_stream' || event.type === 'codex_stream' || event.type === 'ollama_stream'
+    const isDone = event.type === 'claude_done' || event.type === 'codex_done' || event.type === 'ollama_done'
+    const isError = event.type === 'claude_error' || event.type === 'codex_error' || event.type === 'ollama_error'
 
     if (isStream) {
       const cliEvent = event.event
@@ -925,6 +925,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
   }
 
   _defaultModel(pillar, backend = 'claude') {
+    if (backend === 'ollama') return 'qwen2.5-coder:32b'
     if (backend === 'codex') return 'gpt-5.1-codex-max'
     // PHASE_MODEL_SUGGESTIONS values are like 'claude-cli:opus' — extract just the model name
     const suggestion = PHASE_MODEL_SUGGESTIONS[pillar] || 'claude-cli:sonnet'

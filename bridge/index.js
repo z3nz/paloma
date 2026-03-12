@@ -7,6 +7,7 @@ import { loadConfig } from './config.js'
 import { McpManager } from './mcp-manager.js'
 import { ClaudeCliManager } from './claude-cli.js'
 import { CodexCliManager } from './codex-cli.js'
+import { OllamaManager } from './ollama-manager.js'
 import { McpProxyServer } from './mcp-proxy-server.js'
 import { PillarManager } from './pillar-manager.js'
 
@@ -16,6 +17,7 @@ const proxyPort = 19192
 const manager = new McpManager()
 const cliManager = new ClaudeCliManager()
 const codexManager = new CodexCliManager()
+const ollamaManager = new OllamaManager()
 let mcpProxy = null
 let pillarManager = null
 
@@ -102,7 +104,7 @@ async function main() {
   codexManager.mcpProxyPort = proxyPort
 
   // Wire PillarManager with multi-backend support
-  const backends = { claude: cliManager, codex: codexManager }
+  const backends = { claude: cliManager, codex: codexManager, ollama: ollamaManager }
   pillarManager = new PillarManager(backends, {
     projectRoot: process.cwd(),
     broadcast
@@ -288,12 +290,38 @@ async function main() {
         } catch (e) {
           ws.send(JSON.stringify({ type: 'codex_error', id: msg.id, error: e.message }))
         }
+      } else if (msg.type === 'ollama_chat') {
+        try {
+          const { requestId, sessionId } = ollamaManager.chat(
+            {
+              prompt: msg.prompt,
+              model: msg.model,
+              sessionId: msg.sessionId,
+              systemPrompt: msg.systemPrompt,
+              cwd: msg.cwd
+            },
+            (event) => {
+              if (ws.readyState !== 1) return
+              ws.send(JSON.stringify({ ...event, id: msg.id }))
+              if (event.type === 'ollama_done' || event.type === 'ollama_error') {
+                cliRequestToWs.delete(requestId)
+              }
+            }
+          )
+          cliRequestToWs.set(requestId, ws)
+          ws.send(JSON.stringify({ type: 'ollama_ack', id: msg.id, requestId, sessionId }))
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
+        }
       } else if (msg.type === 'claude_stop') {
         cliRequestToWs.delete(msg.requestId)
         cliManager.stop(msg.requestId)
       } else if (msg.type === 'codex_stop') {
         cliRequestToWs.delete(msg.requestId)
         codexManager.stop(msg.requestId)
+      } else if (msg.type === 'ollama_stop') {
+        cliRequestToWs.delete(msg.requestId)
+        ollamaManager.stop(msg.requestId)
       } else if (msg.type === 'ask_user_response') {
         const pending = pendingAskUser.get(msg.id)
         if (pending) {
@@ -331,6 +359,7 @@ async function main() {
     if (pillarManager) pillarManager.shutdown()
     cliManager.shutdown()
     codexManager.shutdown()
+    ollamaManager.shutdown()
     if (mcpProxy) await mcpProxy.shutdown()
     await manager.shutdown()
     wss.close()

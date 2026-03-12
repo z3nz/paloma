@@ -8,7 +8,8 @@
     "fs-extra",
     "codex",
     "voice",
-    "memory"
+    "memory",
+    "ollama"
   ],
   "autoExecute": [
     "brave-search",
@@ -55,6 +56,7 @@
     "codex",
     "fs-extra",
     "voice",
-    "memory"
+    "memory",
+    { "server": "ollama", "tools": ["ollama_list_models", "ollama_embed"] }
   ]
 }
