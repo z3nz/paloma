@@ -199,7 +199,23 @@ export class OllamaManager {
       if (collectedToolCalls.length > 0) {
         console.log(`[ollama] ${collectedToolCalls.length} native tool call(s): ${collectedToolCalls.map(tc => tc.function?.name).join(', ')}`)
 
-        const assistantMessage = { role: 'assistant', content: fullAssistantText || '', tool_calls: collectedToolCalls }
+        // WU-2: Strip any JSON tool call text that the model also wrote as content
+        // This prevents double-display (raw JSON + tool result) in the chat
+        let cleanedText = fullAssistantText || ''
+        if (cleanedText.trim()) {
+          const jsonObjects = this._extractJsonObjects(cleanedText)
+          if (jsonObjects.length > 0) {
+            for (const { raw } of jsonObjects) {
+              cleanedText = cleanedText.replace(raw, '')
+            }
+            // Also strip leftover markdown code fence markers
+            cleanedText = cleanedText.replace(/```(?:json)?\s*/g, '').replace(/\s*```/g, '')
+            cleanedText = cleanedText.trim()
+            console.log('[ollama] Stripped JSON tool call text from assistant message')
+          }
+        }
+
+        const assistantMessage = { role: 'assistant', content: cleanedText, tool_calls: collectedToolCalls }
 
         this.requests.delete(requestId)
         onEvent({
@@ -220,7 +236,15 @@ export class OllamaManager {
         if (parsedCalls.length > 0) {
           console.log(`[ollama] ${parsedCalls.length} text-parsed tool call(s): ${parsedCalls.map(tc => tc.function?.name).join(', ')}`)
 
-          const assistantMessage = { role: 'assistant', content: fullAssistantText, tool_calls: parsedCalls }
+          // Strip the JSON tool call text from the assistant message
+          let cleanedFallbackText = fullAssistantText
+          const fallbackJsonObjects = this._extractJsonObjects(fullAssistantText)
+          for (const { raw } of fallbackJsonObjects) {
+            cleanedFallbackText = cleanedFallbackText.replace(raw, '')
+          }
+          cleanedFallbackText = cleanedFallbackText.replace(/```(?:json)?\s*/g, '').replace(/\s*```/g, '').trim()
+
+          const assistantMessage = { role: 'assistant', content: cleanedFallbackText, tool_calls: parsedCalls }
 
           this.requests.delete(requestId)
           onEvent({
@@ -279,51 +303,115 @@ export class OllamaManager {
   }
 
   /**
-   * Parse tool calls that the model wrote as text instead of using native API.
-   * Matches JSON objects containing "name" and "arguments" fields where the
-   * name matches a known tool.
+   * Extract complete JSON objects from text using balanced-brace counting.
+   * Returns array of { parsed, raw } where parsed is the JS object and raw is the original substring.
+   * Handles nested braces, strings with escaped characters, and markdown code fences.
    */
-  _parseToolCallsFromText(text, tools) {
-    const toolNames = new Set(tools.map(t => t.function?.name).filter(Boolean))
-    const calls = []
+  _extractJsonObjects(text) {
+    // Strip markdown code fence markers before scanning
+    const cleaned = text.replace(/```(?:json)?\s*/g, '').replace(/\s*```/g, '')
+    const results = []
+    let i = 0
 
-    // Try to find JSON objects in the text
-    // Pattern 1: {"name": "...", "arguments": {...}}
-    // Pattern 2: {"function_name": "...", "function_arg": {...}}
-    const jsonPattern = /\{[^{}]*"(?:name|function_name)"\s*:\s*"([^"]+)"[^{}]*(?:"(?:arguments|function_arg|parameters)"\s*:\s*(\{[^}]*\}))?[^{}]*\}/g
-    let match
+    while (i < cleaned.length) {
+      if (cleaned[i] === '{') {
+        let depth = 0
+        let inString = false
+        let escaped = false
+        let start = i
 
-    while ((match = jsonPattern.exec(text)) !== null) {
-      try {
-        const fullMatch = match[0]
-        const parsed = JSON.parse(fullMatch)
-        const name = parsed.name || parsed.function_name || ''
-        const args = parsed.arguments || parsed.function_arg || parsed.parameters || {}
+        for (let j = i; j < cleaned.length; j++) {
+          const ch = cleaned[j]
 
-        if (name && toolNames.has(name)) {
-          calls.push({ function: { name, arguments: args } })
+          if (escaped) {
+            escaped = false
+            continue
+          }
+
+          if (ch === '\\' && inString) {
+            escaped = true
+            continue
+          }
+
+          if (ch === '"' && !escaped) {
+            inString = !inString
+            continue
+          }
+
+          if (inString) continue
+
+          if (ch === '{') depth++
+          else if (ch === '}') {
+            depth--
+            if (depth === 0) {
+              const raw = cleaned.slice(start, j + 1)
+              try {
+                const parsed = JSON.parse(raw)
+                results.push({ parsed, raw })
+              } catch {
+                // Not valid JSON despite balanced braces
+              }
+              i = j + 1
+              break
+            }
+          }
+
+          // Safety: if we've scanned too far without closing, bail
+          if (j === cleaned.length - 1) {
+            i = j + 1
+          }
         }
-      } catch {
-        // Not valid JSON, skip
+
+        // If depth never reached 0, move past this opening brace
+        if (depth !== 0) i = start + 1
+      } else {
+        i++
       }
     }
 
-    // Also try parsing the entire text as a single JSON tool call
-    if (calls.length === 0) {
-      try {
-        const trimmed = text.trim()
-        // Strip markdown code fences if present
-        const stripped = trimmed.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim()
-        const parsed = JSON.parse(stripped)
-        const name = parsed.name || parsed.function_name || ''
-        const args = parsed.arguments || parsed.function_arg || parsed.parameters || {}
+    return results
+  }
 
-        if (name && toolNames.has(name)) {
-          calls.push({ function: { name, arguments: args } })
-        }
-      } catch {
-        // Not JSON, that's fine
+  /**
+   * Parse tool calls that the model wrote as text instead of using native API.
+   * Uses balanced-brace JSON extraction to handle nested arguments correctly.
+   * Normalizes tool names (strips mcp__paloma__ prefix) and logs all attempts.
+   */
+  _parseToolCallsFromText(text, tools) {
+    console.log('[ollama] Attempting text-based tool call detection...')
+    const toolNames = new Set(tools.map(t => t.function?.name).filter(Boolean))
+    const calls = []
+
+    const jsonObjects = this._extractJsonObjects(text)
+
+    for (const { parsed, raw } of jsonObjects) {
+      const preview = raw.length > 200 ? raw.slice(0, 200) + '...' : raw
+      console.log(`[ollama] Found JSON candidate: ${preview}`)
+
+      const rawName = parsed.name || parsed.function_name || ''
+      if (!rawName) {
+        console.log('[ollama] JSON candidate rejected: no name or function_name field')
+        continue
       }
+
+      const args = parsed.arguments || parsed.function_arg || parsed.parameters || {}
+
+      // Try exact match first, then try stripping mcp__paloma__ prefix
+      let resolvedName = rawName
+      if (!toolNames.has(resolvedName) && resolvedName.startsWith('mcp__paloma__')) {
+        resolvedName = resolvedName.replace(/^mcp__paloma__/, '')
+      }
+
+      if (toolNames.has(resolvedName)) {
+        console.log(`[ollama] Parsed tool call: name=${resolvedName}`)
+        calls.push({ function: { name: resolvedName, arguments: args } })
+      } else {
+        console.log(`[ollama] Tool name not in known tools: ${rawName}`)
+      }
+    }
+
+    if (calls.length === 0) {
+      console.log(`[ollama] No tool calls detected in text (${jsonObjects.length} JSON candidate(s) examined)`)
     }
 
     return calls
