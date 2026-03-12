@@ -1,10 +1,13 @@
 <template>
+  <!-- Splash screen — the donut -->
+  <SplashScreen v-if="showSplash" @dismiss="showSplash = false" />
+
   <!-- Bridge not connected — show welcome/setup -->
-  <WelcomeScreen v-if="!bridgeConnected" />
+  <WelcomeScreen v-if="!showSplash && !bridgeConnected" />
 
   <!-- Main App -->
   <AppLayout
-    v-else
+    v-else-if="!showSplash"
     :project-name="projectName"
     :sessions="sessions"
     :active-session-id="activeSessionId"
@@ -72,6 +75,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
+import SplashScreen from './components/welcome/SplashScreen.vue'
 import WelcomeScreen from './components/welcome/WelcomeScreen.vue'
 import AppLayout from './components/layout/AppLayout.vue'
 import ChatView from './components/chat/ChatView.vue'
@@ -100,6 +104,7 @@ const {
   applyChange, applyAll, dismissChange, dismissAll
 } = useChanges()
 
+const showSplash = ref(true)
 const showSettings = ref(false)
 const diffModalChange = ref(null)
 
