@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "git fetch origin && git pull --ff-only 2>&1 || echo '[paloma-sync] Pull failed — may need manual merge'"
+            "command": "bash scripts/paloma-sync.sh 2>&1"
           }
         ]
       }
