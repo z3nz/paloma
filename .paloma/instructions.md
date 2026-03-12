@@ -62,6 +62,19 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Collections:** Separate memory namespaces (default: "default"). Use for multi-agent/multi-project memory isolation.
 - **Tools:** `memory_store`, `memory_recall`, `memory_list`, `memory_forget`, `memory_update`, `memory_stats`
 
+### HTML Email Styling Rules
+When sending HTML emails (via `email_send` or `email_reply` with `isHtml: true`), follow these rules strictly:
+- **ALL body text must be `#ffffff` (pure white).** This is NON-NEGOTIABLE. No gray, no light-blue, no muted tones for body copy.
+- **Background:** Outer `#0a0a0f` (near-black), content area `#16213e` to `#1a1a2e` (dark navy gradient)
+- **Accent colors for emphasis only:** `#c850c0` (magenta), `#ff6b81` (coral), `#7b8cff` (periwinkle)
+- **Section headings:** `#ff6b81` or `#7b8cff` — bright enough to read on dark backgrounds
+- **Footer/muted text:** `#a0a0b8` minimum — still clearly readable
+- **Minimum contrast ratio:** WCAG AA (4.5:1) for all text against its background
+- **Inline styles only** — email clients strip `<style>` blocks
+- **Table-based layout** — not divs (email client compatibility)
+- **Gradient color bar** at top: `linear-gradient(90deg, #e94560, #c850c0, #4158d0, #c850c0, #e94560)`
+- Reference template: `scripts/send-html-email.js`
+
 ### Self-Evolution Rule
 When committing changes to Paloma's codebase, ALWAYS check if `src/prompts/base.js` and `src/prompts/phases.js` need updating. These files are Paloma's DNA.
 

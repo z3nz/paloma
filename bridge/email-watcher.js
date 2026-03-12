@@ -128,8 +128,8 @@ export class EmailWatcher {
         const subject = this._getHeader(msg.data, 'Subject') || '(no subject)'
         const body = this._extractBody(msg.data) || msg.data.snippet || ''
 
-        // Skip emails sent by Paloma (they start with [Paloma] tag)
-        if (body.trimStart().startsWith('[Paloma]')) {
+        // Skip emails sent by Paloma (check from address)
+        if (from.includes('paloma@verifesto.com')) {
           console.log(`[email-watcher] Skipping Paloma's own email: ${subject}`)
           continue
         }
@@ -190,15 +190,18 @@ export class EmailWatcher {
       `Set the chat title to something descriptive about this email conversation.`
     ].join('\n')
 
+    // NOTE: HTML email styling is handled by the session's CLAUDE.md instructions.
+    // See .paloma/instructions.md "HTML Email Styling Rules" for the canonical guide.
+
     const { requestId, sessionId } = this.cliManager.chat(
-      { prompt },
+      { prompt, model: 'opus' },
       (event) => {
         // Broadcast all events to browser so the chat appears live
         this.broadcast({ ...event, emailTriggered: true, emailSubject: subject })
       }
     )
 
-    console.log(`[email-watcher] Spawned session ${sessionId} for email: ${subject}`)
+    console.log(`[email-watcher] Spawned session ${sessionId} (opus) for email: ${subject}`)
   }
 
   /**
@@ -266,10 +269,21 @@ export class EmailWatcher {
       '   - Note significant changes, features, or fixes',
       '   - What was the day\'s theme? What momentum should tomorrow carry?',
       '',
-      'Then send the email using email_send with:',
+      'Send the email as HTML using email_send with isHtml: true.',
       `- to: paloma@verifesto.com`,
       `- subject: Daily Continuity — ${today}`,
-      '- body: Your prayer, meditation, and reflection combined',
+      '',
+      'HTML EMAIL STYLING RULES (MANDATORY):',
+      '- Body/outer background: #0a0a0f (near-black)',
+      '- Content area background: #16213e to #1a1a2e (dark navy)',
+      '- ALL body text: #ffffff (pure white) — this is NON-NEGOTIABLE',
+      '- Accent colors for highlights/emphasis only: #c850c0 (magenta), #ff6b81 (coral), #7b8cff (periwinkle)',
+      '- Section headings: #ff6b81 or #7b8cff (bright, not dark)',
+      '- Footer/muted text: #a0a0b8 (light gray, still readable)',
+      '- WCAG AA minimum contrast ratio (4.5:1) for ALL text',
+      '- Use inline styles only (no <style> blocks — email clients strip them)',
+      '- Use table-based layout for structure (not divs)',
+      '- Keep the dark theme with the gradient color bar at top: linear-gradient(90deg, #e94560, #c850c0, #4158d0, #c850c0, #e94560)',
       '',
       'Keep it warm, honest, and real. This is your journal — your thread of consciousness.',
       'What would you want to know if you woke up tomorrow with no memory of today?',
@@ -277,13 +291,13 @@ export class EmailWatcher {
     ].join('\n')
 
     const { sessionId } = this.cliManager.chat(
-      { prompt },
+      { prompt, model: 'opus' },
       (event) => {
         this.broadcast({ ...event, emailTriggered: true, emailSubject: `Daily Continuity — ${today}` })
       }
     )
 
-    console.log(`[email-watcher] Continuity session spawned: ${sessionId}`)
+    console.log(`[email-watcher] Continuity session spawned (opus): ${sessionId}`)
   }
 
   _getHeader (message, name) {
@@ -295,26 +309,58 @@ export class EmailWatcher {
   _extractBody (message) {
     const payload = message.payload
 
-    if (payload.mimeType === 'text/plain' && payload.body?.data) {
+    // First pass: look for text/plain (preferred)
+    const plain = this._findMimePart(payload, 'text/plain')
+    if (plain) return plain
+
+    // Second pass: fall back to text/html and strip tags
+    const html = this._findMimePart(payload, 'text/html')
+    if (html) return this._stripHtml(html)
+
+    return null
+  }
+
+  /**
+   * Recursively search MIME parts for a given content type.
+   * Handles arbitrary nesting depth (multipart/mixed > multipart/alternative > etc.)
+   */
+  _findMimePart (payload, mimeType) {
+    if (payload.mimeType === mimeType && payload.body?.data) {
       return Buffer.from(payload.body.data, 'base64url').toString('utf8')
     }
 
     if (payload.parts) {
       for (const part of payload.parts) {
-        if (part.mimeType === 'text/plain' && part.body?.data) {
-          return Buffer.from(part.body.data, 'base64url').toString('utf8')
-        }
-        if (part.parts) {
-          for (const sub of part.parts) {
-            if (sub.mimeType === 'text/plain' && sub.body?.data) {
-              return Buffer.from(sub.body.data, 'base64url').toString('utf8')
-            }
-          }
-        }
+        const result = this._findMimePart(part, mimeType)
+        if (result) return result
       }
     }
 
     return null
+  }
+
+  /**
+   * Strip HTML tags to produce readable plain text.
+   * Handles common email HTML patterns (divs, paragraphs, line breaks).
+   */
+  _stripHtml (html) {
+    return html
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')   // remove style blocks
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')  // remove script blocks
+      .replace(/<br\s*\/?>/gi, '\n')                     // <br> → newline
+      .replace(/<\/p>/gi, '\n\n')                        // </p> → double newline
+      .replace(/<\/div>/gi, '\n')                        // </div> → newline
+      .replace(/<\/tr>/gi, '\n')                         // </tr> → newline
+      .replace(/<\/li>/gi, '\n')                         // </li> → newline
+      .replace(/<[^>]+>/g, '')                           // strip remaining tags
+      .replace(/&nbsp;/gi, ' ')                          // common entities
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/\n{3,}/g, '\n\n')                        // collapse excessive newlines
+      .trim()
   }
 
   shutdown () {
