@@ -96,14 +96,16 @@
             </div>
             <div class="flex items-center gap-2 mt-0.5">
               <!-- Pillar status indicator -->
-              <span v-if="getPillarStatus(child) === 'streaming'"
-                class="pillar-status-spinner shrink-0"
-                :style="{ borderTopColor: phaseColorValue(child.phase) }"
+              <PillarLoader v-if="getPillarStatus(child) === 'streaming'"
+                :pillar="child.phase"
+                :size="16"
+                class="shrink-0"
                 title="Streaming..."
               />
-              <span v-else-if="getPillarStatus(child) === 'running'"
-                class="w-2 h-2 rounded-full animate-pulse shrink-0"
-                :style="{ backgroundColor: phaseColorValue(child.phase) }"
+              <PillarLoader v-else-if="getPillarStatus(child) === 'running'"
+                :pillar="child.phase"
+                :size="16"
+                class="shrink-0"
                 title="Running..."
               />
               <span v-else-if="getPillarStatus(child) === 'error'"
@@ -151,6 +153,7 @@
 import { reactive } from 'vue'
 import { useMCP } from '../../composables/useMCP.js'
 import { useSessionState } from '../../composables/useSessionState.js'
+import PillarLoader from '../ui/PillarLoader.vue'
 
 const props = defineProps({
   sessionTree: { type: Array, default: () => [] },
