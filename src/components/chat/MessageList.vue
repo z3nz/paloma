@@ -49,6 +49,34 @@
       class="px-6 py-2"
     />
 
+    <!-- Active pillar animations — shows running/streaming pillars inline in chat -->
+    <div v-if="activePillars.length > 0" class="px-6 py-4">
+      <div class="max-w-3xl mx-auto">
+        <div class="text-xs font-medium uppercase tracking-wider text-text-muted mb-3">Active Pillars</div>
+        <div class="flex flex-wrap gap-3">
+          <div
+            v-for="p in activePillars"
+            :key="p.pillarId"
+            class="pillar-activity-card flex flex-col items-center gap-2 py-4 px-5 rounded-lg border"
+            :style="{
+              borderColor: pillarColors[p.phase] + '40',
+              backgroundColor: pillarColors[p.phase] + '10',
+              '--pillar-glow': pillarColors[p.phase]
+            }"
+          >
+            <PillarLoader :pillar="p.phase" :size="48" />
+            <span
+              class="text-xs font-bold uppercase tracking-wider"
+              :style="{ color: pillarColors[p.phase] }"
+            >{{ p.phase }}</span>
+            <span class="text-[10px] text-text-muted">
+              {{ p.status === 'streaming' ? 'Streaming...' : 'Running...' }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Error -->
     <div v-if="error" class="px-6 py-4">
       <div class="max-w-3xl mx-auto bg-danger/10 border border-danger/30 rounded-md px-4 py-3 text-sm text-danger">
@@ -65,6 +93,8 @@ import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { marked } from 'marked'
 import MessageItem from './MessageItem.vue'
 import ToolCallGroup from './ToolCallGroup.vue'
+import PillarLoader from '../ui/PillarLoader.vue'
+import { useMCP } from '../../composables/useMCP.js'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
@@ -75,6 +105,31 @@ const props = defineProps({
 })
 
 defineEmits(['apply-code'])
+
+const { pillarStatuses, pillarPhases } = useMCP()
+
+const pillarColors = {
+  flow: '#22d3ee',
+  scout: '#22d3ee',
+  chart: '#facc15',
+  forge: '#fb923c',
+  polish: '#f472b6',
+  ship: '#4ade80'
+}
+
+const activePillars = computed(() => {
+  const result = []
+  for (const [pillarId, status] of pillarStatuses) {
+    if (status === 'running' || status === 'streaming') {
+      result.push({
+        pillarId,
+        phase: pillarPhases.get(pillarId) || 'flow',
+        status
+      })
+    }
+  }
+  return result
+})
 
 const container = ref(null)
 const anchor = ref(null)
@@ -294,4 +349,26 @@ watch(
     }
   }
 )
+
+// Scroll when active pillars appear/change
+watch(
+  () => activePillars.value.length,
+  (newLen, oldLen) => {
+    if (newLen > oldLen && isNearBottom.value) {
+      scrollToBottom('instant')
+    }
+  }
+)
 </script>
+
+<style scoped>
+.pillar-activity-card {
+  animation: pillar-card-glow 2.5s ease-in-out infinite;
+  min-width: 100px;
+}
+
+@keyframes pillar-card-glow {
+  0%, 100% { box-shadow: 0 0 4px 0 var(--pillar-glow, transparent); }
+  50% { box-shadow: 0 0 16px 3px var(--pillar-glow, transparent); }
+}
+</style>

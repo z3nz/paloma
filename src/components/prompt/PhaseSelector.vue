@@ -10,15 +10,15 @@
         : 'text-text-muted hover:text-text-secondary hover:bg-bg-hover'"
       :title="phase.tooltip"
     >
-      <component :is="phase.icon" :size="13" />
+      <PillarLoader :pillar="phase.id" :size="14" :active="modelValue === phase.id" />
       {{ phase.label }}
     </button>
   </div>
 </template>
 
 <script setup>
-import { Waves, Search, Map, Hammer, Sparkles, Rocket } from 'lucide-vue-next'
 import { PHASE_MODEL_SUGGESTIONS } from '../../prompts/phases.js'
+import PillarLoader from '../ui/PillarLoader.vue'
 
 defineProps({
   modelValue: { type: String, default: 'flow' }
@@ -33,11 +33,11 @@ function modelHint(phaseId) {
 }
 
 const phases = [
-  { id: 'flow', label: 'Flow', icon: Waves, tooltip: 'The Orchestrator — Head Mind' + modelHint('flow'), activeClass: 'bg-blue-500/20 text-blue-400' },
-  { id: 'scout', label: 'Scout', icon: Search, tooltip: 'Curious Inquiry Without Assumption' + modelHint('scout'), activeClass: 'bg-cyan-500/20 text-cyan-400' },
-  { id: 'chart', label: 'Chart', icon: Map, tooltip: 'Strategic Foresight Through Collaboration' + modelHint('chart'), activeClass: 'bg-yellow-500/20 text-yellow-400' },
-  { id: 'forge', label: 'Forge', icon: Hammer, tooltip: 'Powerful Craftsmanship With Transparency' + modelHint('forge'), activeClass: 'bg-orange-500/20 text-orange-400' },
-  { id: 'polish', label: 'Polish', icon: Sparkles, tooltip: 'Rigorous Excellence Without Compromise' + modelHint('polish'), activeClass: 'bg-pink-500/20 text-pink-400' },
-  { id: 'ship', label: 'Ship', icon: Rocket, tooltip: 'Complete Documentation As Legacy' + modelHint('ship'), activeClass: 'bg-green-500/20 text-green-400' }
+  { id: 'flow', label: 'Flow', tooltip: 'The Orchestrator — Head Mind' + modelHint('flow'), activeClass: 'bg-blue-500/20 text-blue-400' },
+  { id: 'scout', label: 'Scout', tooltip: 'Curious Inquiry Without Assumption' + modelHint('scout'), activeClass: 'bg-cyan-500/20 text-cyan-400' },
+  { id: 'chart', label: 'Chart', tooltip: 'Strategic Foresight Through Collaboration' + modelHint('chart'), activeClass: 'bg-yellow-500/20 text-yellow-400' },
+  { id: 'forge', label: 'Forge', tooltip: 'Powerful Craftsmanship With Transparency' + modelHint('forge'), activeClass: 'bg-orange-500/20 text-orange-400' },
+  { id: 'polish', label: 'Polish', tooltip: 'Rigorous Excellence Without Compromise' + modelHint('polish'), activeClass: 'bg-pink-500/20 text-pink-400' },
+  { id: 'ship', label: 'Ship', tooltip: 'Complete Documentation As Legacy' + modelHint('ship'), activeClass: 'bg-green-500/20 text-green-400' }
 ]
 </script>

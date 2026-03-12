@@ -37,20 +37,20 @@
       />
     </template>
 
-    <!-- Forge: Hammer Strike with Sparks -->
+    <!-- Forge: Hammer Strike with Sparks — head at bottom strikes anvil -->
     <template v-else-if="normalizedPillar === 'forge'">
       <!-- Anvil base -->
       <line x1="5" y1="19" x2="19" y2="19" :stroke="colors.forge" stroke-width="1.5" stroke-linecap="round" />
-      <!-- Hammer -->
+      <!-- Hammer (handle on top, heavy head at bottom — head strikes the anvil) -->
       <g class="forge-hammer">
-        <rect x="9" y="4" width="6" height="5" rx="1" :fill="colors.forge" />
-        <line x1="12" y1="9" x2="12" y2="16" :stroke="colors.forge" stroke-width="1.5" stroke-linecap="round" />
+        <line x1="12" y1="3" x2="12" y2="12" :stroke="colors.forge" stroke-width="1.5" stroke-linecap="round" />
+        <rect x="9" y="12" width="6" height="4" rx="1" :fill="colors.forge" />
       </g>
-      <!-- Sparks -->
-      <circle cx="7" cy="17" r="1" :fill="colors.forge" class="forge-spark forge-spark--1" />
-      <circle cx="17" cy="17" r="1" :fill="colors.forge" class="forge-spark forge-spark--2" />
-      <circle cx="5" cy="15" r="0.7" :fill="colors.forge" class="forge-spark forge-spark--3" />
-      <circle cx="19" cy="15" r="0.7" :fill="colors.forge" class="forge-spark forge-spark--4" />
+      <!-- Sparks (fly from impact zone near anvil) -->
+      <circle cx="7" cy="18" r="1" :fill="colors.forge" class="forge-spark forge-spark--1" />
+      <circle cx="17" cy="18" r="1" :fill="colors.forge" class="forge-spark forge-spark--2" />
+      <circle cx="5" cy="16" r="0.7" :fill="colors.forge" class="forge-spark forge-spark--3" />
+      <circle cx="19" cy="16" r="0.7" :fill="colors.forge" class="forge-spark forge-spark--4" />
     </template>
 
     <!-- Polish: Sparkle Burst — gem with radiating sparkle lines -->
@@ -168,17 +168,20 @@ const colors = {
 
 /* ============================================
    Forge — Hammer Strike with Sparks
+   Pivot at top of handle, head swings down to anvil
    ============================================ */
 .pillar-loader--active .forge-hammer {
-  animation: forge-strike 1.2s ease-in-out infinite;
-  transform-origin: 12px 4px;
+  animation: forge-strike 1.2s linear infinite;
+  transform-origin: 12px 3px;
 }
 
 @keyframes forge-strike {
-  0%, 100% { transform: translateY(-3px) rotate(-8deg); }
-  40% { transform: translateY(2px) rotate(0deg); }
-  50% { transform: translateY(2px) rotate(0deg); }
-  60% { transform: translateY(-1px) rotate(-4deg); }
+  0% { transform: rotate(-25deg); }
+  50% { transform: rotate(-20deg); }
+  68% { transform: rotate(3deg) translateY(2px); }
+  76% { transform: rotate(3deg) translateY(2px); }
+  86% { transform: rotate(-12deg); }
+  100% { transform: rotate(-25deg); }
 }
 
 .pillar-loader--active .forge-spark {
@@ -187,10 +190,10 @@ const colors = {
   transform-box: fill-box;
   transform-origin: center;
 }
-.pillar-loader--active .forge-spark--1 { animation-delay: 0.4s; }
-.pillar-loader--active .forge-spark--2 { animation-delay: 0.42s; }
-.pillar-loader--active .forge-spark--3 { animation-delay: 0.45s; }
-.pillar-loader--active .forge-spark--4 { animation-delay: 0.47s; }
+.pillar-loader--active .forge-spark--1 { animation-delay: 0.80s; }
+.pillar-loader--active .forge-spark--2 { animation-delay: 0.82s; }
+.pillar-loader--active .forge-spark--3 { animation-delay: 0.84s; }
+.pillar-loader--active .forge-spark--4 { animation-delay: 0.86s; }
 
 @keyframes forge-spark {
   0% { opacity: 0; transform: translate(0, 0) scale(0.5); }

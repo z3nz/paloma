@@ -28,11 +28,13 @@
               <path d="M8 5l10 7-10 7z"/>
             </svg>
           </button>
-          <!-- Phase badge for orphaned pillar sessions at top-level -->
-          <span v-if="parent.pillarId"
-            class="inline-flex items-center px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded"
-            :class="pillarBadgeColor(parent.phase)"
-          >{{ phaseIcon(parent.phase) }}</span>
+          <!-- Phase icon for orphaned pillar sessions at top-level -->
+          <PillarLoader v-if="parent.pillarId"
+            :pillar="parent.phase"
+            :size="14"
+            :active="false"
+            class="shrink-0"
+          />
           <span class="truncate">{{ parent.title }}</span>
         </div>
         <div class="flex items-center gap-2 mt-1">
@@ -88,27 +90,17 @@
         >
           <div class="px-3 py-1.5">
             <div class="text-xs truncate flex items-center gap-1.5">
-              <span
-                class="inline-flex items-center px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded shrink-0"
-                :class="pillarBadgeColor(child.phase)"
-              >{{ phaseIcon(child.phase) }}</span>
+              <PillarLoader
+                :pillar="child.phase"
+                :size="16"
+                :active="getPillarStatus(child) === 'streaming' || getPillarStatus(child) === 'running'"
+                class="shrink-0"
+              />
               <span class="truncate">{{ childTitle(child) }}</span>
             </div>
             <div class="flex items-center gap-2 mt-0.5">
-              <!-- Pillar status indicator -->
-              <PillarLoader v-if="getPillarStatus(child) === 'streaming'"
-                :pillar="child.phase"
-                :size="16"
-                class="shrink-0"
-                title="Streaming..."
-              />
-              <PillarLoader v-else-if="getPillarStatus(child) === 'running'"
-                :pillar="child.phase"
-                :size="16"
-                class="shrink-0"
-                title="Running..."
-              />
-              <span v-else-if="getPillarStatus(child) === 'error'"
+              <!-- Error/stopped indicators (animation state shown by icon above) -->
+              <span v-if="getPillarStatus(child) === 'error'"
                 class="text-danger shrink-0" title="Error"
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -124,10 +116,6 @@
                   <rect x="4" y="4" width="16" height="16" rx="2"/>
                 </svg>
               </span>
-              <span v-else
-                class="w-1.5 h-1.5 rounded-full bg-text-muted/50 shrink-0"
-                title="Idle"
-              />
               <span class="text-[10px] text-text-muted truncate">{{ formatModel(child.model) }}</span>
               <span class="text-[10px] text-text-muted ml-auto shrink-0">{{ formatTime(child.updatedAt) }}</span>
             </div>

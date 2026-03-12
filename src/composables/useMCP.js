@@ -29,6 +29,8 @@ const flowProcessingCallback = ref(false)
 
 // pillarId → 'running' | 'streaming' | 'idle' | 'error' | 'stopped'
 const pillarStatuses = reactive(new Map())
+// pillarId → phase name ('scout', 'chart', 'forge', 'polish', 'ship')
+const pillarPhases = reactive(new Map())
 // Track cleanup timers to prevent unbounded accumulation
 const pillarCleanupTimers = new Map()
 
@@ -159,6 +161,7 @@ export function useMCP() {
           bridge.sendPillarDbSessionId(msg.pillarId, dbSessionId)
         }
         pillarStatuses.set(msg.pillarId, 'running')
+        pillarPhases.set(msg.pillarId, msg.pillar)
       },
       onPillarStream(pillarId, event, backend) {
         const dbSessionId = pillarSessionMap.get(pillarId)
@@ -241,6 +244,7 @@ export function useMCP() {
           if (existingTimer) clearTimeout(existingTimer)
           const timer = setTimeout(() => {
             pillarStatuses.delete(msg.pillarId)
+            pillarPhases.delete(msg.pillarId)
             pillarCleanupTimers.delete(msg.pillarId)
           }, 30000)
           pillarCleanupTimers.set(msg.pillarId, timer)
@@ -719,7 +723,8 @@ export function useMCP() {
     registerFlowSession,
     sendPillarUserMessage,
     flowProcessingCallback,
-    pillarStatuses
+    pillarStatuses,
+    pillarPhases
   }
 }
 
