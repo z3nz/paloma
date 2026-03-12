@@ -4,11 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "start": "bash scripts/setup-mcp.sh && concurrently -k -n vite,bridge -c cyan,magenta \"vite\" \"node bridge/index.js\"",
+    "start": "bash scripts/setup-mcp.sh && concurrently -k -n vite,bridge -c cyan,magenta \"vite\" \"node bridge/run.js\"",
     "setup": "bash scripts/setup-mcp.sh",
     "postinstall": "bash scripts/setup-mcp.sh",
     "dev": "vite",
-    "bridge": "node bridge/index.js",
+    "bridge": "node bridge/run.js",
+    "bridge:direct": "node bridge/index.js",
     "build": "vite build",
     "preview": "vite preview"
   },

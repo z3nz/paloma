@@ -9,7 +9,6 @@
     "codex",
     "voice",
     "memory",
-    "ollama",
     "gmail"
   ],
   "autoExecute": [
@@ -34,7 +33,8 @@
         "git_status",
         "git_set_working_dir",
         "git_show",
-        "git_commit"
+        "git_commit",
+        "git_pull"
       ]
     },
     {
@@ -59,7 +59,6 @@
     "fs-extra",
     "voice",
     "memory",
-    { "server": "ollama", "tools": ["ollama_list_models", "ollama_embed"] },
     {
       "server": "gmail",
       "tools": [

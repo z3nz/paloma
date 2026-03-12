@@ -24,6 +24,10 @@ export function createMcpBridge() {
   let onFlowNotificationStream = null
   let onFlowNotificationDone = null
   let onFlowNotificationError = null
+  let onEmailReceived = null
+  let onEmailStream = null
+  let onEmailDone = null
+  let onEmailError = null
 
   function getState() {
     if (!ws) return 'disconnected'
@@ -47,6 +51,10 @@ export function createMcpBridge() {
     onFlowNotificationStream = callbacks.onFlowNotificationStream || null
     onFlowNotificationDone = callbacks.onFlowNotificationDone || null
     onFlowNotificationError = callbacks.onFlowNotificationError || null
+    onEmailReceived = callbacks.onEmailReceived || null
+    onEmailStream = callbacks.onEmailStream || null
+    onEmailDone = callbacks.onEmailDone || null
+    onEmailError = callbacks.onEmailError || null
     url = bridgeUrl
     intentionalClose = false
     _connect()
@@ -102,25 +110,37 @@ export function createMcpBridge() {
           p.resolve({ requestId: msg.requestId, sessionId: msg.sessionId })
         }
       } else if (msg.type === 'claude_stream' && msg.id) {
-        const listener = streamListeners.get(msg.id)
-        if (listener) {
-          listener.onStream?.(msg.event)
+        if (msg.emailTriggered) {
+          onEmailStream?.(msg.id, msg.event, msg.emailSubject)
         } else {
-          console.warn(`[cli] stream event with no listener: id=${msg.id}`)
+          const listener = streamListeners.get(msg.id)
+          if (listener) {
+            listener.onStream?.(msg.event)
+          } else {
+            console.warn(`[cli] stream event with no listener: id=${msg.id}`)
+          }
         }
       } else if (msg.type === 'claude_done' && msg.id) {
-        console.log(`[cli] done: exitCode=${msg.exitCode}`)
-        const listener = streamListeners.get(msg.id)
-        if (listener) {
-          streamListeners.delete(msg.id)
-          listener.onDone?.(msg.sessionId, msg.exitCode)
+        if (msg.emailTriggered) {
+          onEmailDone?.(msg.id, msg.sessionId, msg.exitCode)
+        } else {
+          console.log(`[cli] done: exitCode=${msg.exitCode}`)
+          const listener = streamListeners.get(msg.id)
+          if (listener) {
+            streamListeners.delete(msg.id)
+            listener.onDone?.(msg.sessionId, msg.exitCode)
+          }
         }
       } else if (msg.type === 'claude_error' && msg.id) {
-        console.error(`[cli] error:`, msg.error)
-        const listener = streamListeners.get(msg.id)
-        if (listener) {
-          streamListeners.delete(msg.id)
-          listener.onError?.(msg.error)
+        if (msg.emailTriggered) {
+          onEmailError?.(msg.id, msg.error)
+        } else {
+          console.error(`[cli] error:`, msg.error)
+          const listener = streamListeners.get(msg.id)
+          if (listener) {
+            streamListeners.delete(msg.id)
+            listener.onError?.(msg.error)
+          }
         }
       } else if (msg.type === 'codex_ack' && msg.id) {
         const p = pending.get(msg.id)
@@ -153,6 +173,8 @@ export function createMcpBridge() {
           pending.delete(msg.id)
           p.resolve(msg.path)
         }
+      } else if (msg.type === 'email_received') {
+        onEmailReceived?.(msg)
       } else if (msg.type === 'cli_tool_activity') {
         onCliToolActivity?.(msg.toolName, msg.args, msg.status)
       } else if (msg.type === 'cli_tool_confirmation') {

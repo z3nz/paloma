@@ -11,6 +11,7 @@ import { OllamaManager } from './ollama-manager.js'
 import { McpProxyServer } from './mcp-proxy-server.js'
 import { PillarManager } from './pillar-manager.js'
 import { EmailWatcher } from './email-watcher.js'
+import { printBanner, stepOk, stepFail, stepInfo, printSummary, printShutdown } from './startup.js'
 
 const port = parseInt(process.argv.find((_, i, a) => a[i - 1] === '--port') || '19191', 10)
 const proxyPort = 19192
@@ -52,11 +53,17 @@ staleRequestInterval = setInterval(() => {
 }, 60000)
 
 async function main() {
+  const startTime = Date.now()
+  printBanner()
+
+  stepInfo('Loading MCP servers...')
   const servers = await loadConfig()
-  await manager.startAll(servers)
+  const { serverCount, toolCount, failedCount } = await manager.startAll(servers, (name, status, tools, error) => {
+    if (status === 'ok') stepOk(name, `${tools} tool${tools !== 1 ? 's' : ''}`)
+    else stepFail(name, error || 'failed')
+  })
 
   const wss = new WebSocketServer({ port })
-  console.log(`MCP Bridge listening on ws://localhost:${port}`)
 
   function broadcast(msg) {
     const data = JSON.stringify(msg)
@@ -116,6 +123,16 @@ async function main() {
   // Start email watcher — polls Gmail, spawns new session per email
   emailWatcher = new EmailWatcher(cliManager, { broadcast })
   emailWatcher.start()
+
+  printSummary({
+    serverCount,
+    toolCount,
+    failedCount,
+    wsPort: port,
+    proxyPort,
+    emailWatcher: emailWatcher.running,
+    startTime
+  })
 
   // Heartbeat: detect dead connections (30s interval, 10s timeout)
   const HEARTBEAT_INTERVAL = 30000
@@ -359,8 +376,9 @@ async function main() {
   })
 
   // Graceful shutdown
-  const shutdown = async () => {
-    console.log('\nShutting down...')
+  const RESTART_CODE = 75
+  const shutdown = async (exitCode = 0) => {
+    printShutdown()
     if (staleRequestInterval) clearInterval(staleRequestInterval)
     if (emailWatcher) emailWatcher.shutdown()
     if (pillarManager) pillarManager.shutdown()
@@ -370,10 +388,14 @@ async function main() {
     if (mcpProxy) await mcpProxy.shutdown()
     await manager.shutdown()
     wss.close()
-    process.exit(0)
+    process.exit(exitCode)
   }
-  process.on('SIGINT', shutdown)
-  process.on('SIGTERM', shutdown)
+  process.on('SIGINT', () => shutdown(0))
+  process.on('SIGTERM', () => shutdown(0))
+
+  // Expose restart to MCP proxy — graceful shutdown + exit code 75
+  // (bridge/run.js wrapper catches code 75 and respawns)
+  mcpProxy.restartBridge = () => shutdown(RESTART_CODE)
 }
 
 main().catch((e) => {

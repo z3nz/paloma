@@ -13,6 +13,10 @@ const flowDbSessionMap = new Map()
 let activeFlowDbSessionId = null
 // Track pending notification metadata between start and done events
 let pendingNotificationMeta = null
+// Email session routing
+const emailSessionMap = new Map() // requestId → dbSessionId
+const pendingEmailSessions = new Map() // emailSubject → dbSessionId
+let activeEmailDbSessionId = null
 
 // Reactive: whether Flow is currently processing a callback notification
 const flowProcessingCallback = ref(false)
@@ -122,8 +126,9 @@ export function useMCP() {
       },
       onSetTitle(title) {
         const { activeSessionId, updateSession } = useSessions()
-        if (activeSessionId.value && title) {
-          updateSession(activeSessionId.value, { title })
+        const targetId = activeEmailDbSessionId !== null ? activeEmailDbSessionId : activeSessionId.value
+        if (targetId && title) {
+          updateSession(targetId, { title })
         }
       },
       async onPillarSessionCreated(msg) {
@@ -311,6 +316,99 @@ export function useMCP() {
         const state = getState(activeFlowDbSessionId)
         state.streaming.value = false
         state.streamingContent.value = ''
+      },
+      async onEmailReceived(msg) {
+        const { createPillarSession, updateSession } = useSessions()
+        const { projectName } = useProject()
+        const projectPath = projectName.value || 'paloma'
+        const summary = [`From: ${msg.from}`, `Subject: ${msg.subject}`, '', msg.snippet || ''].join('\n')
+        const dbSessionId = await createPillarSession(
+          projectPath,
+          'claude-cli:sonnet',
+          'flow',
+          `email:${msg.messageId}`,
+          null,
+          summary
+        )
+        await updateSession(dbSessionId, { title: msg.subject })
+        pendingEmailSessions.set(msg.subject, dbSessionId)
+        activeEmailDbSessionId = dbSessionId
+      },
+      async onEmailStream(id, event, emailSubject) {
+        let dbSessionId = emailSessionMap.get(id)
+        if (!dbSessionId) {
+          dbSessionId = pendingEmailSessions.get(emailSubject)
+          if (dbSessionId) {
+            pendingEmailSessions.delete(emailSubject)
+          } else {
+            // email_received didn't arrive first — create session on-the-fly
+            const { createPillarSession, updateSession } = useSessions()
+            const { projectName } = useProject()
+            const projectPath = projectName.value || 'paloma'
+            dbSessionId = await createPillarSession(
+              projectPath,
+              'claude-cli:sonnet',
+              'flow',
+              `email:${id}`,
+              null,
+              null
+            )
+            await updateSession(dbSessionId, { title: emailSubject || 'Incoming Email' })
+          }
+          emailSessionMap.set(id, dbSessionId)
+          activeEmailDbSessionId = dbSessionId
+        }
+        const { getState } = useSessionState()
+        const state = getState(dbSessionId)
+        state.streaming.value = true
+        if (event.type === 'assistant' && event.message?.content) {
+          for (const block of event.message.content) {
+            if (block.type === 'text' && block.text) {
+              state.streamingContent.value += block.text
+            }
+          }
+        } else if (event.type === 'content_block_delta') {
+          if (event.delta?.type === 'text_delta' && event.delta.text) {
+            state.streamingContent.value += event.delta.text
+          }
+        }
+      },
+      async onEmailDone(id, cliSessionId, exitCode) {
+        const dbSessionId = emailSessionMap.get(id)
+        if (!dbSessionId) return
+        const { getState } = useSessionState()
+        const { updateSession } = useSessions()
+        const state = getState(dbSessionId)
+        const content = state.streamingContent.value
+        if (content) {
+          const dbMsg = {
+            sessionId: dbSessionId,
+            role: 'assistant',
+            content,
+            model: 'claude-cli:sonnet',
+            files: [],
+            timestamp: Date.now()
+          }
+          const msgId = await db.messages.add(dbMsg)
+          dbMsg.id = msgId
+          state.messages.value.push(dbMsg)
+        }
+        await updateSession(dbSessionId, {})
+        state.streaming.value = false
+        state.streamingContent.value = ''
+        emailSessionMap.delete(id)
+        if (activeEmailDbSessionId === dbSessionId) activeEmailDbSessionId = null
+      },
+      onEmailError(id, error) {
+        console.error('[mcp] Email session error:', error)
+        const dbSessionId = emailSessionMap.get(id)
+        if (!dbSessionId) return
+        const { getState } = useSessionState()
+        const state = getState(dbSessionId)
+        state.streaming.value = false
+        state.streamingContent.value = ''
+        emailSessionMap.delete(id)
+        if (activeEmailDbSessionId === dbSessionId) activeEmailDbSessionId = null
       }
     })
   }
