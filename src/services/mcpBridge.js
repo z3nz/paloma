@@ -15,6 +15,7 @@ export function createMcpBridge() {
   let onAskUser = null
   let onSetTitle = null
   let onPillarSessionCreated = null
+  let onPillarCliSession = null
   let onPillarStream = null
   let onPillarMessageSaved = null
   let onPillarDone = null
@@ -37,6 +38,7 @@ export function createMcpBridge() {
     onAskUser = callbacks.onAskUser || null
     onSetTitle = callbacks.onSetTitle || null
     onPillarSessionCreated = callbacks.onPillarSessionCreated || null
+    onPillarCliSession = callbacks.onPillarCliSession || null
     onPillarStream = callbacks.onPillarStream || null
     onPillarMessageSaved = callbacks.onPillarMessageSaved || null
     onPillarDone = callbacks.onPillarDone || null
@@ -130,8 +132,16 @@ export function createMcpBridge() {
         onAskUser?.(msg.id, msg.question, msg.options)
       } else if (msg.type === 'set_chat_title') {
         onSetTitle?.(msg.title)
+      } else if (msg.type === 'pillar_list_result' && msg.id) {
+        const p = pending.get(msg.id)
+        if (p) {
+          pending.delete(msg.id)
+          p.resolve(msg.pillars)
+        }
       } else if (msg.type === 'pillar_session_created') {
         onPillarSessionCreated?.(msg)
+      } else if (msg.type === 'pillar_cli_session') {
+        onPillarCliSession?.(msg)
       } else if (msg.type === 'pillar_stream') {
         onPillarStream?.(msg.pillarId, msg.event)
       } else if (msg.type === 'pillar_message_saved') {
@@ -287,7 +297,18 @@ export function createMcpBridge() {
     _send({ type: 'register_flow_session', cliSessionId, model, cwd })
   }
 
-  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, getState }
+  function listPillars() {
+    const id = crypto.randomUUID()
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject })
+      _send({ type: 'pillar_list', id }).catch((e) => {
+        pending.delete(id)
+        reject(e)
+      })
+    })
+  }
+
+  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, getState }
 }
 
 // Enable HMR boundary — errors here don't cascade to full reload

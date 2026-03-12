@@ -199,6 +199,10 @@ async function main() {
           })
           ws.send(JSON.stringify({ type: 'flow_session_registered', id: msg.id }))
         }
+      } else if (msg.type === 'pillar_list') {
+        // Frontend asking for active pillars (e.g., after reconnect to rebuild session map)
+        const result = pillarManager ? pillarManager.list() : { pillars: [] }
+        ws.send(JSON.stringify({ type: 'pillar_list_result', id: msg.id, pillars: result.pillars }))
       } else if (msg.type === 'pillar_db_session_id') {
         // Frontend created the IndexedDB session — store the ID on the pillar
         if (pillarManager) {

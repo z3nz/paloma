@@ -87,9 +87,17 @@ export function useMCP() {
     }
 
     bridge.connect(bridgeUrl.value, {
-      onStateChange(state) {
+      async onStateChange(state) {
         connectionState.value = state
         connected.value = state === 'connected'
+        // On reconnect, rebuild pillarSessionMap from IndexedDB + active backend pillars
+        if (state === 'connected') {
+          try {
+            await _reconcilePillarSessions()
+          } catch (e) {
+            console.warn('[pillar] Failed to reconcile pillar sessions on reconnect:', e)
+          }
+        }
       },
       onToolsUpdate(serverData) {
         servers.value = serverData
@@ -132,6 +140,14 @@ export function useMCP() {
         // Tell the bridge about the dbSessionId
         if (bridge) {
           bridge.sendPillarDbSessionId(msg.pillarId, dbSessionId)
+        }
+      },
+      async onPillarCliSession(msg) {
+        // Backend is telling us the cliSessionId — persist to IndexedDB for resume-after-restart
+        const dbSessionId = pillarSessionMap.get(msg.pillarId)
+        if (dbSessionId) {
+          const { updateSession } = useSessions()
+          await updateSession(dbSessionId, { cliSessionId: msg.cliSessionId })
         }
       },
       onPillarStream(pillarId, event) {
@@ -182,13 +198,17 @@ export function useMCP() {
         const { updateSession } = useSessions()
         await updateSession(dbSessionId, {})
       },
-      onPillarDone(msg) {
+      async onPillarDone(msg) {
         const dbSessionId = pillarSessionMap.get(msg.pillarId)
         if (!dbSessionId) return
         const { getState } = useSessionState()
         const state = getState(dbSessionId)
         state.streaming.value = false
         state.streamingContent.value = ''
+
+        // Clear cliSessionId so we don't try to reattach completed sessions
+        const { updateSession } = useSessions()
+        await updateSession(dbSessionId, { cliSessionId: null })
 
         // If stopped or error, clean up the map
         if (msg.status === 'stopped' || msg.status === 'error') {
@@ -333,6 +353,28 @@ export function useMCP() {
     if (!pendingCliToolConfirmation.value || !bridge) return
     bridge.respondToToolConfirmation(pendingCliToolConfirmation.value.id, false, undefined, reason)
     _advanceConfirmationQueue()
+  }
+
+  /**
+   * Rebuild pillarSessionMap after WebSocket reconnect.
+   * Asks the bridge which pillars are still running, then cross-references
+   * against IndexedDB sessions to restore the in-memory routing map.
+   */
+  async function _reconcilePillarSessions() {
+    if (!bridge) return
+    const activePillars = await bridge.listPillars()
+    if (!activePillars || activePillars.length === 0) return
+
+    const activePillarIds = new Set(activePillars.map(p => p.pillarId))
+    const allSessions = await db.sessions.toArray()
+
+    for (const session of allSessions) {
+      if (session.pillarId && activePillarIds.has(session.pillarId) && !pillarSessionMap.has(session.pillarId)) {
+        pillarSessionMap.set(session.pillarId, session.id)
+        bridge.sendPillarDbSessionId(session.pillarId, session.id)
+        console.log(`[pillar] Reconnected pillar ${session.pillarId.slice(0, 8)} → db session ${session.id}`)
+      }
+    }
   }
 
   async function resolveProjectPath(name) {

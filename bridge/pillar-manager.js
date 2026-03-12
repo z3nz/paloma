@@ -78,6 +78,13 @@ export class PillarManager {
     // Start the CLI process
     this._startCliTurn(session, fullPrompt, systemPrompt)
 
+    // Broadcast cliSessionId so frontend can persist it for resume-after-restart
+    this.broadcast({
+      type: 'pillar_cli_session',
+      pillarId,
+      cliSessionId: session.cliSessionId
+    })
+
     // Set timeout
     session.timeoutTimer = setTimeout(() => {
       this._timeout(pillarId)
