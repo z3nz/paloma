@@ -12,17 +12,27 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Bridge:** Node.js WebSocket server (`bridge/`) on port 19191
 - **MCP Proxy:** SSE transport (`bridge/mcp-proxy-server.js`) on port 19192
 - **Custom MCP Servers:** `mcp-servers/` (version-controlled)
-- **AI Backends:** Claude CLI and Codex CLI as subprocess-managed sessions
+- **AI Backends:** Claude CLI, Codex CLI, and Ollama as subprocess/API-managed sessions
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
+| `bridge/index.js` | Bridge entry point, WebSocket server |
+| `bridge/run.js` | Bridge runner with restart/graceful-shutdown support |
+| `bridge/startup.js` | Bridge startup lifecycle orchestration |
 | `bridge/claude-cli.js` | Claude CLI subprocess manager |
 | `bridge/codex-cli.js` | Codex CLI subprocess manager |
+| `bridge/ollama-manager.js` | Ollama HTTP API session manager |
 | `bridge/pillar-manager.js` | Pillar session lifecycle — spawning, messaging, callbacks |
-| `bridge/mcp-proxy-server.js` | MCP tool routing to browser UI |
-| `bridge/index.js` | Bridge entry point, WebSocket server |
+| `bridge/mcp-manager.js` | MCP server lifecycle management |
+| `bridge/mcp-proxy-server.js` | SSE proxy exposing MCP tools to AI sessions |
+| `bridge/email-watcher.js` | Gmail polling + daily continuity journal |
+| `bridge/config.js` | Shared configuration |
+| `mcp-servers/voice.js` | JARVIS voice (Kokoro TTS) |
+| `mcp-servers/memory.js` | Persistent semantic memory with vector embeddings |
+| `mcp-servers/gmail.js` | Gmail MCP server |
+| `mcp-servers/ollama.js` | Ollama MCP server |
 | `src/prompts/base.js` | Paloma's DNA — shared foundation for all pillars |
 | `src/prompts/phases.js` | Per-pillar identity and behavior |
 | `CLAUDE.md` | Claude CLI project instructions |
