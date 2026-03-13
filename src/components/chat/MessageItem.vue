@@ -13,7 +13,7 @@
 
       <!-- Role label (only if there's content) -->
       <div v-if="message.content" class="flex items-center gap-2 mb-2">
-        <span class="text-xs font-medium uppercase tracking-wider text-purple-400">Paloma</span>
+        <span class="text-md font-regular uppercase tracking-wider text-blue-400">P A L O M A</span>
       </div>
 
       <!-- Content (if any) -->
@@ -178,6 +178,13 @@ function decodeEntities(html) {
 // Store code block metadata for event delegation
 const codeBlocks = ref([])
 
+function styleToolTraceHtml(html) {
+  return html.replace(
+    /<(mcp_[a-z0-9_]+)([^>]*)>([\s\S]*?)<\/\1>/gi,
+    (match) => `<div class="message-tool-trace">${match}</div>`
+  )
+}
+
 const renderedHtml = computed(() => {
   if (props.message.role !== 'assistant') return ''
   if (!props.message.content) return ''
@@ -191,7 +198,7 @@ const renderedHtml = computed(() => {
   const blocks = []
   const html = marked.parse(props.message.content, { breaks: true })
 
-  const result = html.replace(
+  const result = styleToolTraceHtml(html).replace(
     /<pre><code(?: class="language-([^"]+)")?>([\s\S]*?)<\/code><\/pre>/g,
     (match, infoString, code) => {
       let lang = infoString || ''

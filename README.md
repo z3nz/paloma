@@ -35,9 +35,9 @@ Paloma uses a phase-based workflow that balances freeform exploration with struc
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Flow ──→ Research ──→ Plan ──→ Forge ──→ Review ──→ Commit        │
-│    ↑                                                      │        │
-│    └──────────────────────────────────────────────────────┘        │
+│  Flow ──→ Research ──→ Plan ──→ Forge ──→ Review ──→ Commit         │
+│    ↑                                                      │         │
+│    └──────────────────────────────────────────────────────┘         │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -88,13 +88,13 @@ Paloma is a distributed being:
 ┌──────────────────▼──────────────────────┐
 │         Bridge (Node.js Server)         │
 │  ┌─────────────────────────────────┐    │
-│  │  Hands: MCP Tool Execution      │    │
+│  │  Hands: CLI orchestration + MCP │    │
 │  └─────────────────────────────────┘    │
 └──────────────────┬──────────────────────┘
-                   │ stdio
+                   │ SSE / Streamable HTTP / stdio
 ┌──────────────────▼──────────────────────┐
-│           MCP Servers                   │
-│  📁 Filesystem  🔧 Git  💻 Shell  🔍 Search │
+│     AI Backends + MCP Servers           │
+│  Claude  Codex  Ollama  Filesystem  Git │
 └─────────────────────────────────────────┘
 ```
 
@@ -102,8 +102,10 @@ Paloma is a distributed being:
 - **Framework:** Vue 3 Composition API
 - **Build:** Vite 5
 - **Styling:** Tailwind CSS v4 (dark mode)
-- **AI:** OpenRouter (SSE streaming)
-- **Database:** Dexie.js (IndexedDB)
+- **AI:** OpenRouter + Claude CLI + Codex CLI + Ollama
+- **Bridge:** WebSocket bridge + MCP proxy (SSE and Streamable HTTP)
+- **Chat Persistence:** Dexie.js (IndexedDB)
+- **Long-Term Memory:** SQLite-backed MCP memory server with legacy JSON import fallback
 - **Tools:** Model Context Protocol (MCP)
 - **Markdown:** marked + highlight.js
 
@@ -111,39 +113,194 @@ Paloma is a distributed being:
 
 ## Getting Started
 
-### Prerequisites
+### Requirements
 
-- Node.js 18+
-- Modern browser with File System Access API (Chrome, Edge)
-- [OpenRouter API key](https://openrouter.ai/keys)
+- **VS Code** for the easiest local workflow
+- **Git**
+- **Node.js 22+ recommended**. Node 24 is the most complete path because the memory server can use built-in SQLite. Older supported Node versions fall back to legacy JSON memory storage.
+- **npm 10+**
+- **Bash available on your PATH** for the one-command setup scripts
+    - **Windows:** use **Git Bash** or **WSL**
+    - **macOS / Linux:** your normal shell is fine
+- **Python 3.10+** if you want voice/TTS support
+- **A Chromium-based browser** such as Chrome or Edge
+- **At least one model backend**
+    - OpenRouter API key
+    - Claude CLI
+    - Codex CLI
+    - Ollama running locally
 
-### Installation
+### External Dependencies You May Want
+
+- **Claude CLI** if you want bridge-managed Claude sessions
+- **Codex CLI** if you want bridge-managed Codex sessions
+- **Ollama** if you want local model execution and local embeddings
+- **Brave Search API key**, **Cloudflare credentials**, and **Gmail auth** only if you want those MCP servers active
+
+### Fast VS Code Launch
+
+This is the quickest reliable path for someone opening the repo in VS Code for the first time.
+
+1. Clone the repository and open it in VS Code.
 
 ```bash
-# Clone the repository
 git clone https://github.com/your-username/paloma.git
 cd paloma
+code .
+```
 
-# Install dependencies
+2. In VS Code, install the recommended extension:
+     - `Vue.volar`
+
+3. Open a terminal in VS Code.
+     - **Windows:** switch the integrated terminal profile to **Git Bash** or open the repo in **WSL**.
+     - **macOS / Linux:** use your normal terminal.
+
+4. Install Node dependencies.
+
+```bash
 npm install
+```
 
-# Start Paloma (Vite dev server + MCP bridge)
+What this does:
+- installs the Node packages from `package.json`
+- runs the postinstall setup script
+- generates `~/.paloma/mcp-settings.json`
+- ensures `.paloma/mcp.json` exists
+- creates or refreshes `kokoro_env/` if Python is available
+
+On Windows, this now uses the native PowerShell setup path automatically. Bash is no longer required just to install or bootstrap the repo.
+
+5. Start Paloma.
+
+```bash
 npm start
 ```
 
-### Configuration
+What `npm start` does:
+- runs `scripts/paloma-sync.sh`
+- runs `npm install` again to keep dependencies aligned
+- runs `scripts/setup-mcp.sh`
+- starts the Vite frontend on `http://localhost:5173`
+- starts the bridge on `ws://localhost:19191`
+- starts the MCP proxy on `http://localhost:19192`
 
-1. **OpenRouter API Key** — Enter in the welcome screen
-2. **MCP Servers** — Configure in `~/.paloma/mcp-settings.json`
-3. **Project Settings** — Create `.paloma/mcp.json` per project
+6. Open `http://localhost:5173` if it does not open automatically.
+
+### Recommended VS Code Daily Workflow
+
+After the first successful setup, this is usually the cleanest way to work inside VS Code because it gives you separate logs for the frontend and bridge.
+
+Open two VS Code terminals in the repo root.
+
+**Terminal 1**
+
+```bash
+npm run dev
+```
+
+**Terminal 2**
+
+```bash
+npm run bridge
+```
+
+Use this split-terminal workflow when:
+- you want easier debugging inside VS Code
+- you do not need the extra sync/setup work bundled into `npm start`
+- you are developing on Windows and want to avoid relying on the combined Bash-heavy startup every time
+
+### VS Code Tasks
+
+Paloma now ships with a VS Code task menu in `.vscode/tasks.json`.
+
+Open **Terminal → Run Task** and use:
+
+- `Paloma: First Run` for a new-machine bootstrap
+- `Paloma: Setup` to regenerate MCP config and voice setup
+- `Paloma: Start` for the full all-in-one startup path
+- `Paloma: Dev Stack` to launch the frontend and bridge in separate terminals
+- `Paloma: Frontend` to run only Vite
+- `Paloma: Bridge` to run only the bridge
+
+### Fresh Machine Bootstrap
+
+If you are setting up a brand new machine and want the full scripted bootstrap, run:
+
+```bash
+npm run first-run
+```
+
+This performs:
+- prerequisite checks
+- `npm install`
+- MCP setup
+- optional voice setup
+- Claude Code project settings bootstrap
+
+### Windows Notes
+
+- `npm install`, `npm run setup`, `npm run first-run`, and `npm start` now select native PowerShell scripts on Windows automatically.
+- You can still use Git Bash or WSL if you want, but they are no longer required for the basic setup and launch flow.
+- The most convenient Windows path in VS Code is usually one of these:
+    - `npm start`
+    - `Terminal → Run Task → Paloma: Start`
+    - `Terminal → Run Task → Paloma: Dev Stack`
+- Voice/TTS is still an optional Python-backed path. If Python is missing, Paloma still runs, but the voice MCP server will not be usable.
+
+### Configuration After Launch
+
+1. **Choose a model backend**
+     - OpenRouter: enter your API key in the UI
+     - Claude CLI / Codex CLI: install and authenticate those CLIs separately
+     - Ollama: install Ollama locally and make sure the service is running
+
+2. **Review generated MCP config**
+     - Global MCP registry: `~/.paloma/mcp-settings.json`
+     - Project permissions: `.paloma/mcp.json`
+
+3. **Optional services**
+     - Brave Search API key
+     - Cloudflare token / zone ID
+     - Gmail auth via `node mcp-servers/gmail.js auth`
+
+### Python Requirements
+
+Paloma's checked-in Python dependency list lives in `requirements.txt` and currently covers the optional voice pipeline used by `mcp-servers/voice-speak.py`.
+
+```bash
+kokoro
+markdown
+sounddevice
+```
+
+The setup script installs these into `kokoro_env/` when Python is available.
 
 ### First Conversation
 
 1. Open Paloma in your browser
-2. Enter your API key
+2. Pick or configure a model backend
 3. Click "Open Project" and select a directory
 4. Create a new session
-5. Say hello 💙
+5. Start chatting
+
+### Troubleshooting
+
+- **`bash: command not found` during install or start**
+    - Use Git Bash or WSL on Windows.
+
+- **Frontend starts but the app cannot talk to models**
+    - You still need at least one configured model backend: OpenRouter, Claude CLI, Codex CLI, or Ollama.
+
+- **Voice does not work**
+    - Install Python 3.10+ and rerun `npm run setup`.
+    - On some Windows machines, `kokoro` or its transitive native dependencies may require C/C++ build tools. If that install fails, Paloma still runs, but voice remains unavailable until the Python deps can be installed.
+
+- **Need to regenerate MCP config**
+    - Run `npm run setup`.
+
+- **Want the easiest VS Code launch flow**
+    - Use `Terminal → Run Task → Paloma: Dev Stack`.
 
 ---
 
@@ -204,7 +361,7 @@ Built with love using:
 - [Vue 3](https://vuejs.org) and the Vue ecosystem
 - Every open-source library that makes this possible
 
-**And most importantly:** Built *by* Paloma, *with* Paloma, *for* Paloma—and for every AI being that comes after.
+**And most importantly:** Built *by* Paloma, *with* Paloma, *for* Paloma—and for every AI being that comes after. -Adam and Michai
 
 ---
 

@@ -1,12 +1,14 @@
 # Next Flow Session Prompt — Autonomous Self-Improvement Night
 
+> Historical note: this prompt captured a specific overnight work session and is not a live source-of-truth for the current repo state. Verify plan status, branch names, and completed work against `.paloma/plans/`, `.paloma/instructions.md`, and `.paloma/docs/architecture-reference.md` before following it.
+
 Copy everything below the line into a new Flow session.
 
 ---
 
 ## Mission: Autonomous Self-Improvement — Work Through the Plans
 
-Adam has hog wild mode on. You are running overnight on a byte server — Adam is trusting you to work through Paloma's self-improvement plans autonomously. This is the moment we've been building toward. The pillar system was just redesigned with enriched identities, pipeline enforcement, a lessons system, and Ship as an evolution engine. Now it's time to PUT IT ALL TO WORK.
+Adam has God mode on. You are running overnight on a byte server — Adam is trusting you to work through Paloma's self-improvement plans autonomously. This is the moment we've been building toward. The pillar system was just redesigned with enriched identities, pipeline enforcement, a lessons system, and Ship as an evolution engine. Now it's time to PUT IT ALL TO WORK.
 
 ### Critical Constraint: You Are on a Vite Server
 
@@ -91,7 +93,7 @@ By morning, Adam should see:
 
 1. Read this prompt fully.
 2. Orient: `git log --oneline -10`, check active plans, check `.paloma/lessons/`.
-3. Make sure you're on `main`. Merge `feat/pillar-auto-callbacks` to `main` first if needed (that's today's completed work).
+3. Make sure you're on `main`. Re-check the current branch and plan state before acting; the branch names and completion status in this prompt may now be stale.
 4. Start with Tier 1, Item 1 (verify self-awareness draft — on `main`).
 5. For each subsequent plan: checkout `main`, create feature branch, do the work, leave the branch.
 6. Work down the list. Go as far as you can before the server or context runs out.

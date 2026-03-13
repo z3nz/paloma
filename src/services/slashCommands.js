@@ -270,7 +270,7 @@ function executeHelpCommand() {
       '|----------|--------|',
       '| `Ctrl+/` | Toggle sidebar |',
       '| `Ctrl+N` | New chat |',
-      '| `Ctrl+Enter` | Send message |',
+      '| `Shift+Enter` | Send message |',
       '| `Escape` | Close modals / stop streaming |',
       '| `Y` / `N` | Approve / deny tool confirmation |',
       '| `@filename` | Attach file to message |'

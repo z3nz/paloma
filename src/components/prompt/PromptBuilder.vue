@@ -61,7 +61,7 @@
         v-model="input"
         @input="onInput"
         @keydown="onKeydown"
-        placeholder="Message Paloma... (@ attach files, / commands, Ctrl+Enter send)"
+        placeholder="Message Paloma... (@ attach files, / commands, Shift+Enter send)"
         :class="['prompt-textarea w-full bg-bg-primary border border-border rounded-lg px-4 py-3 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors', voiceSupported ? 'pr-20' : 'pr-12']"
         rows="1"
       />
@@ -69,7 +69,7 @@
       <button
         v-if="voiceSupported"
         @click="toggleVoiceMode"
-        class="absolute right-10 bottom-3 p-1.5 rounded-md transition-colors"
+        class="absolute right-10 top-1/2 -translate-y-1/2 p-1.5 rounded-md transition-colors"
         :class="micButtonClasses"
         :title="voiceMode ? (isListening ? 'Listening... (Ctrl+M to stop)' : 'Voice mode on (Ctrl+M)') : 'Voice mode (Ctrl+M)'"
       >
@@ -85,7 +85,7 @@
       <button
         v-if="streaming"
         @click="$emit('stop')"
-        class="absolute right-3 bottom-3 p-1.5 bg-danger/20 text-danger rounded-md hover:bg-danger/30 transition-colors"
+        class="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 bg-danger/20 text-danger rounded-md hover:bg-danger/30 transition-colors"
         title="Stop"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -96,11 +96,11 @@
         v-else
         @click="send"
         :disabled="!canSend"
-        class="absolute right-3 bottom-3 p-1.5 rounded-md transition-colors"
+        class="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-md transition-colors"
         :class="canSend
           ? 'bg-accent text-white hover:bg-accent-hover'
           : 'bg-bg-tertiary text-text-muted cursor-not-allowed'"
-        title="Send (Ctrl+Enter)"
+        title="Send (Shift+Enter)"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="22" y1="2" x2="11" y2="13"/>
@@ -127,6 +127,11 @@
         <span v-else-if="modelsError" class="text-warning" title="Using cached/fallback model list">Models: offline</span>
         <span v-else-if="indexing">Indexing files...</span>
       </div>
+    </div>
+
+    <div class="mt-2 flex items-center justify-between gap-3 text-[11px] text-text-muted">
+      <span>Model picker: this chat only.</span>
+      <span>Settings modal: default for new chats.</span>
     </div>
   </div>
 </template>
@@ -324,13 +329,25 @@ onBeforeUnmount(() => {
 // Auto-grow textarea
 watch(input, () => {
   nextTick(() => {
-    const el = textareaRef.value
-    if (el) {
-      el.style.height = 'auto'
-      el.style.height = Math.min(el.scrollHeight, 192) + 'px'
-    }
+    adjustTextareaHeight()
   })
 })
+
+function adjustTextareaHeight() {
+  const el = textareaRef.value
+  if (!el) return
+
+  el.style.height = 'auto'
+  el.style.height = Math.min(el.scrollHeight, 192) + 'px'
+
+  const computedStyle = window.getComputedStyle(el)
+  const lineHeight = parseFloat(computedStyle.lineHeight) || 20
+  const paddingTop = parseFloat(computedStyle.paddingTop) || 0
+  const paddingBottom = parseFloat(computedStyle.paddingBottom) || 0
+  const singleLineHeight = lineHeight + paddingTop + paddingBottom + 1
+
+  el.style.overflowY = el.scrollHeight > singleLineHeight ? 'auto' : 'hidden'
+}
 
 function onInput() {
   const el = textareaRef.value
@@ -583,15 +600,15 @@ function onKeydown(e) {
 
   // Safety net: if any dropdown is open but its handler didn't catch Enter,
   // prevent Enter from inserting a newline or doing anything unexpected
-  if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
+  if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
     if (showPlanSearch.value || showProjectSearch.value || showSlashMenu.value || showFileSearch.value) {
       e.preventDefault()
       return
     }
   }
 
-  // Ctrl+Enter to send
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+  // Shift+Enter to send
+  if (e.key === 'Enter' && e.shiftKey) {
     e.preventDefault()
     send()
   }
@@ -691,11 +708,8 @@ async function send() {
   if (sessionId) saveDraftNow(sessionId)
 
   nextTick(() => {
-    const el = textareaRef.value
-    if (el) {
-      el.style.height = 'auto'
-      el.focus()
-    }
+    adjustTextareaHeight()
+    textareaRef.value?.focus()
   })
 }
 

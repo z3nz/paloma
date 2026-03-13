@@ -3,7 +3,7 @@
     <div v-if="visible" class="splash-overlay">
       <canvas ref="canvas" class="splash-canvas" />
       <div class="splash-content">
-        <h1 class="splash-title">Paloma</h1>
+        <img src="/Paloma-logo.png" alt="Paloma" class="splash-logo" />
         <button class="splash-button" @click="dismiss">
           Enter
         </button>
@@ -42,26 +42,26 @@ onMounted(() => {
   resize()
   window.addEventListener('resize', resize)
 
-  // Color palette — warm gradient from Paloma's purple accent
+  // Color palette — pale blue-lilac gradient with less saturation than the original purple.
   const palette = [
-    [30, 30, 40],      // darkest
-    [40, 35, 55],
-    [55, 40, 70],
-    [70, 48, 90],
-    [90, 58, 115],
-    [110, 72, 140],
-    [124, 92, 160],    // near accent
-    [124, 92, 191],    // accent #7c5cbf
-    [145, 113, 209],   // accent-hover #9171d1
-    [170, 140, 220],
-    [200, 175, 235],
-    [230, 215, 250],   // brightest
+    [24, 28, 38],
+    [32, 39, 54],
+    [42, 54, 74],
+    [56, 73, 98],
+    [73, 95, 124],
+    [92, 118, 151],
+    [115, 142, 178],
+    [140, 166, 201],
+    [168, 191, 221],
+    [196, 215, 237],
+    [220, 233, 246],
+    [239, 246, 252],
   ]
 
   function frame() {
     const W = cvs.width
     const H = cvs.height
-    const resolution = 2 // pixel size for performance + retro feel
+    const resolution = 1.33 // pixel size for performance + retro feel
 
     // Clear with background
     ctx.fillStyle = '#0d1117'
@@ -78,9 +78,9 @@ onMounted(() => {
     const lumBuffer = new Int8Array(size).fill(-1)
 
     const R1 = 1.0  // tube radius
-    const R2 = 2.0  // torus radius
-    const K2 = 5.0  // distance
-    const K1 = Math.min(W, H) * 0.4 / resolution // scale factor
+    const R2 = 3.0  // torus radius
+    const K2 = 6.0  // distance
+    const K1 = Math.min(W, H) * 0.58 / resolution // slightly larger on screen
 
     // Sample the torus surface
     for (let theta = 0; theta < 6.28; theta += 0.03) {
@@ -130,8 +130,8 @@ onMounted(() => {
       }
     }
 
-    A += 0.04
-    B += 0.02
+    A += 0.005
+    B += 0.0045
 
     animationId = requestAnimationFrame(frame)
   }
@@ -174,35 +174,38 @@ onMounted(() => {
   pointer-events: none;
 }
 
-.splash-title {
-  font-size: 3rem;
-  font-weight: 300;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  color: rgba(230, 237, 243, 0.9);
-  text-shadow: 0 0 40px rgba(124, 92, 191, 0.5), 0 0 80px rgba(124, 92, 191, 0.2);
+.splash-logo {
+  width: min(36rem, 60vw);
+  height: auto;
+  display: flex;
+  align-items: center;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 40px rgba(150, 190, 220, 0.16));
 }
 
 .splash-button {
   pointer-events: all;
   padding: 0.75rem 2.5rem;
-  background: transparent;
-  border: 1px solid rgba(124, 92, 191, 0.5);
-  color: rgba(230, 237, 243, 0.8);
+  background: rgba(20, 28, 40, 0.38);
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+  border: 1px solid rgba(196, 215, 237, 0.22);
+  color: rgba(230, 237, 243, 0.88);
   font-size: 0.875rem;
   font-weight: 400;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  border-radius: 4px;
+  border-radius: 9999px;
   cursor: pointer;
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.22);
   transition: all 0.3s ease;
 }
 
 .splash-button:hover {
-  background: rgba(124, 92, 191, 0.15);
-  border-color: rgba(124, 92, 191, 0.8);
+  background: rgba(34, 46, 63, 0.72);
+  border-color: rgba(220, 233, 246, 0.94);
   color: #e6edf3;
-  box-shadow: 0 0 20px rgba(124, 92, 191, 0.3);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.28), 0 0 24px rgba(170, 210, 235, 0.12);
 }
 
 /* Fade out transition */

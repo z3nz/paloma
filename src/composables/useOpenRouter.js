@@ -1,37 +1,32 @@
 import { ref, watch } from 'vue'
-import { fetchModels as fetchModelsApi, validateApiKey as validateApi } from '../services/openrouter.js'
+import { fetchModels as fetchModelsApi, fetchProviders as fetchProvidersApi, validateApiKey as validateApi } from '../services/openrouter.js'
 import { CLI_MODELS, isCliModel } from '../services/claudeStream.js'
+import { POPULAR_OPENROUTER_MODEL_IDS, getModelDisplayName } from '../services/modelCatalog.js'
 
 const _saved = import.meta.hot ? window.__PALOMA_OPENROUTER__ : undefined
 
 const models = ref(_saved?.models ?? [])
+const providers = ref(_saved?.providers ?? [])
 const loadingModels = ref(_saved?.loadingModels ?? false)
+const loadingProviders = ref(_saved?.loadingProviders ?? false)
 const modelsError = ref(_saved?.modelsError ?? null)
+const providersError = ref(_saved?.providersError ?? null)
 
 if (import.meta.hot) {
   const save = () => {
     window.__PALOMA_OPENROUTER__ = {
       models: models.value,
+        providers: providers.value,
       loadingModels: loadingModels.value,
-      modelsError: modelsError.value
+        loadingProviders: loadingProviders.value,
+        modelsError: modelsError.value,
+        providersError: providersError.value
     }
   }
   save()
-  watch([models, loadingModels, modelsError], save, { flush: 'sync' })
+  watch([models, providers, loadingModels, loadingProviders, modelsError, providersError], save, { flush: 'sync' })
   import.meta.hot.accept()
 }
-
-// Curated popular models shown at top
-const POPULAR_MODEL_IDS = [
-  'anthropic/claude-sonnet-4',
-  'anthropic/claude-opus-4',
-  'openai/gpt-4o',
-  'openai/o1',
-  'google/gemini-2.0-flash-001',
-  'google/gemini-2.5-pro-preview',
-  'deepseek/deepseek-chat',
-  'meta-llama/llama-3.3-70b-instruct'
-]
 
 export function useOpenRouter() {
   async function loadModels(apiKey) {
@@ -65,12 +60,44 @@ export function useOpenRouter() {
     }
   }
 
+  async function loadProviders(apiKey) {
+    if (!apiKey) return
+    loadingProviders.value = true
+    providersError.value = null
+
+    try {
+      const all = await fetchProvidersApi(apiKey)
+      providers.value = all
+      try {
+        localStorage.setItem('paloma:providerCache', JSON.stringify(all))
+      } catch { /* quota exceeded — ignore */ }
+    } catch (e) {
+      providersError.value = e.message
+      if (providers.value.length === 0) {
+        try {
+          const cached = JSON.parse(localStorage.getItem('paloma:providerCache'))
+          if (cached?.length) {
+            providers.value = cached
+            console.log('[OpenRouter] Using cached provider list (%d providers)', cached.length)
+          }
+        } catch { /* corrupt cache — ignore */ }
+      }
+    } finally {
+      loadingProviders.value = false
+    }
+  }
+
+  async function loadCatalog(apiKey) {
+    if (!apiKey) return
+    await Promise.all([loadModels(apiKey), loadProviders(apiKey)])
+  }
+
   async function validateApiKey(apiKey) {
     return await validateApi(apiKey)
   }
 
   function getPopularModels() {
-    return POPULAR_MODEL_IDS
+    return POPULAR_OPENROUTER_MODEL_IDS
       .map(id => models.value.find(m => m.id === id))
       .filter(Boolean)
   }
@@ -80,8 +107,7 @@ export function useOpenRouter() {
       const cli = CLI_MODELS.find(m => m.id === id)
       return cli?.name || id.split(':').pop() + ' (CLI)'
     }
-    const model = models.value.find(m => m.id === id)
-    return model?.name || id.split('/').pop()
+    return getModelDisplayName(id, models.value)
   }
 
   function getModelInfo(id) {
@@ -93,9 +119,14 @@ export function useOpenRouter() {
 
   return {
     models,
+    providers,
     loadingModels,
+    loadingProviders,
     modelsError,
+    providersError,
     loadModels,
+    loadProviders,
+    loadCatalog,
     validateApiKey,
     getPopularModels,
     getModelName,

@@ -10,9 +10,9 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 
 - **Frontend:** Vue 3 + Vite + Tailwind CSS (`src/`)
 - **Bridge:** Node.js WebSocket server (`bridge/`) on port 19191
-- **MCP Proxy:** SSE transport (`bridge/mcp-proxy-server.js`) on port 19192
+- **MCP Proxy:** SSE + Streamable HTTP transport (`bridge/mcp-proxy-server.js`) on port 19192
 - **Custom MCP Servers:** `mcp-servers/` (version-controlled)
-- **AI Backends:** Claude CLI and Codex CLI as subprocess-managed sessions
+- **AI Backends:** Claude CLI, Codex CLI, and Ollama sessions managed through the bridge
 
 ## Key Files
 

@@ -1,0 +1,6 @@
+# Optional Python dependencies for Paloma's voice/TTS tooling.
+# Installed by scripts/setup-mcp.sh into kokoro_env/ when Python is available.
+
+kokoro
+markdown
+sounddevice

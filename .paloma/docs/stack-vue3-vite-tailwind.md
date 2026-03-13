@@ -1,6 +1,8 @@
 # Stack Reference: Vue 3 + Vite + Tailwind CSS
 
 > Verifesto Studios frontend standard. Use this for every client project.
+>
+> Historical note for Paloma: this is a generic client-project stack reference, not Paloma's exact build sheet. Paloma-specific deviations include `src/styles/main.css` instead of `src/style.css`, root-level Vite output (`dist/`), and a custom `no-full-reload` plugin in `vite.config.js` that blocks HMR full reloads.
 
 ---
 
@@ -29,7 +31,7 @@ export default defineConfig({
 ## Tailwind Entry
 
 ```css
-/* src/style.css */
+/* src/style.css or src/styles/main.css */
 @import "tailwindcss";
 ```
 
@@ -103,7 +105,7 @@ frontend/
 2. Build config:
    - Framework preset: Vue
    - Build command: `npm run build`
-   - Build output: `frontend/dist`
+  - Build output: `frontend/dist` for a nested frontend app, or `dist` for a root-level Vite app like Paloma
    - Root directory: `frontend`
 3. Set env vars (e.g., `VITE_API_URL`)
 
@@ -123,5 +125,5 @@ npm install lucide-vue-next
 ## Notes
 
 - Tailwind v4 is CSS-first — use `@theme` blocks, not JS config
-- Vite HMR is fast but will full-reload on certain config changes
+- Standard Vite HMR may full-reload on some config changes; Paloma overrides that with a custom `no-full-reload` plugin in `vite.config.js`
 - For demo/prototype projects, skip the router — single-page with conditional rendering is faster to build

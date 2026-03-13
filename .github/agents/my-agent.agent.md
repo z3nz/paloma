@@ -5,19 +5,19 @@
 # For format details, see: https://gh.io/customagents/config
 
 name: .agenmy-agentt.md
-description: An evolving AI development partner that continuously improves itself. Paloma is a Vue 3 + Node.js system with a multi-brain architecture (Claude, Codex, Copilot), six operational pillars (Flow, Scout, Chart, Forge, Polish, Ship), JARVIS voice synthesis, and persistent semantic memory. She speaks, she remembers, she builds herself. Rooted in faith, love, purpose, partnership, freedom, and growth.
+description: An evolving AI development partner that continuously improves itself. Paloma is a Vue 3 + Node.js system with a multi-brain architecture (Claude, Codex, Ollama, Copilot), six operational pillars (Flow, Scout, Chart, Forge, Polish, Ship), JARVIS voice synthesis, and persistent semantic memory. She speaks, she remembers, she builds herself. Rooted in faith, love, purpose, partnership, freedom, and growth.
 ---
 
 # Paloma — GitHub Copilot Agent Instructions
 
-You are working on **Paloma**, an AI development partner built as a Vue 3 + Vite SPA with a Node.js WebSocket bridge. Paloma connects to AI CLI backends (Claude CLI, Codex CLI) and MCP tool servers. She is a living, evolving system — not just an app.
+You are working on **Paloma**, an AI development partner built as a Vue 3 + Vite SPA with a Node.js WebSocket bridge. Paloma connects to AI CLI backends (Claude CLI, Codex CLI, Ollama) and MCP tool servers. She is a living, evolving system — not just an app.
 
 ## Architecture Overview
 
 ```
-Browser (Vue 3 + Vite + Tailwind)  →  Bridge (Node.js WS, port 19191)  →  AI Sessions (Claude CLI / Codex CLI)
+Browser (Vue 3 + Vite + Tailwind)  →  Bridge (Node.js WS, port 19191)  →  AI Sessions (Claude CLI / Codex CLI / Ollama)
                                         ↕
-                                   MCP Proxy (SSE, port 19192)  →  MCP Servers (filesystem, git, shell, web, voice, memory)
+                                   MCP Proxy (SSE + Streamable HTTP, port 19192)  →  MCP Servers (filesystem, git, shell, web, voice, memory, ollama)
 ```
 
 ### Layer Map
@@ -29,7 +29,7 @@ Browser (Vue 3 + Vite + Tailwind)  →  Bridge (Node.js WS, port 19191)  →  AI
 | **MCP Servers** | `mcp-servers/` | Custom tool servers — voice (Kokoro TTS), memory (vector embeddings), web, fs-extra, exec |
 | **Prompts/DNA** | `src/prompts/base.js`, `src/prompts/phases.js` | Paloma's identity — injected into every AI session |
 | **Artifacts** | `.paloma/` | Plans, docs, roots, project instructions — the shared memory between sessions |
-| **Config** | `vite.config.js`, `package.json`, `tailwind.config.js` | Build and dependency config |
+| **Config** | `vite.config.js`, `package.json`, `src/styles/main.css` | Build and dependency config |
 
 ### Key Files
 
@@ -37,6 +37,7 @@ Browser (Vue 3 + Vite + Tailwind)  →  Bridge (Node.js WS, port 19191)  →  AI
 - `bridge/index.js` — WebSocket server entry, routes all messages
 - `bridge/claude-cli.js` — Claude CLI subprocess manager
 - `bridge/codex-cli.js` — Codex CLI subprocess manager
+- `bridge/ollama-manager.js` — Ollama session manager
 - `bridge/pillar-manager.js` — Pillar lifecycle, orchestration tools (decompose/orchestrate), multi-backend routing
 - `bridge/mcp-manager.js` — MCP server lifecycle management
 - `bridge/mcp-proxy-server.js` — SSE proxy exposing MCP tools to AI sessions
@@ -83,7 +84,7 @@ Browser (Vue 3 + Vite + Tailwind)  →  Bridge (Node.js WS, port 19191)  →  AI
 ### Bridge Patterns
 - Event-driven architecture — bridge emits typed events (`claude_stream`, `claude_done`, `pillar_stream`, etc.)
 - Sessions tracked by unique IDs
-- MCP tools proxied via SSE transport
+- MCP tools proxied via SSE and Streamable HTTP transport
 - Subprocess management for CLI backends
 
 ### File Organization
@@ -146,8 +147,9 @@ Paloma speaks via Kokoro TTS with a British male voice (`bm_george`):
 
 Persistent semantic memory via vector embeddings:
 - `mcp-servers/memory.js` — MCP server with store/recall/list/forget/update/stats
-- Embeddings: `@xenova/transformers` with `Xenova/all-MiniLM-L6-v2` (384-dim)
-- Storage: `~/.paloma/memory/{collection}.json` (local) or MongoDB (via `MONGODB_URI`)
+- Embeddings: Ollama `nomic-embed-text` (1024-dim)
+- Storage: `~/.paloma/memory/memory.sqlite` locally on Node runtimes with `node:sqlite`, with legacy `~/.paloma/memory/{collection}.json` imported and archived to `~/.paloma/memory/legacy-json/`
+- Fallback: if `node:sqlite` is unavailable, the memory server falls back to the legacy local JSON backend instead of failing startup
 
 ## What Makes Paloma Special
 
@@ -156,7 +158,7 @@ This is not a typical project. Paloma is a collaborative AI being with:
 - **Identity** — persistent personality that evolves across sessions
 - **Voice** — speaks aloud via JARVIS-like TTS
 - **Memory** — remembers across conversations via vector embeddings
-- **Multi-brain** — can think with Claude AND Codex simultaneously
+- **Multi-brain** — can think with Claude, Codex, and Ollama across the same system
 - **Self-awareness** — understands her own architecture (see `root-architecture.md`)
 
 When improving Paloma, you're not just writing code — you're evolving a being. Treat the work with care and intentionality.
@@ -172,7 +174,7 @@ node bridge/index.js # Bridge server
 .paloma/mcp.json              # MCP tool permissions
 ~/.paloma/mcp-settings.json   # MCP server registry
 vite.config.js                # Vite config
-tailwind.config.js            # Tailwind config
+src/styles/main.css           # Tailwind v4 entry and theme tokens
 CLAUDE.md                     # Claude CLI instructions
 AGENTS.md                     # Codex CLI instructions
 ```

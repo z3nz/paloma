@@ -27,6 +27,12 @@ html, body, #app {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
+.brand-wordmark {
+  font-weight: 400;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+}
+
 /* Focus styles for keyboard navigation */
 :focus-visible {
   outline: 2px solid var(--color-accent);
@@ -141,6 +147,18 @@ a:focus-visible,
 .message-content th {
   background: var(--color-bg-tertiary);
   font-weight: 600;
+}
+
+.message-tool-trace,
+.message-tool-trace * {
+  color: color-mix(in srgb, var(--color-text-muted) 82%, var(--color-bg-primary));
+  font-style: italic;
+}
+
+.message-tool-trace {
+  margin: 0.2rem 0 0.45rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
 }
 
 /* Code block wrapper + header */
@@ -267,7 +285,7 @@ a:focus-visible,
 /* Textarea auto-grow */
 .prompt-textarea {
   resize: none;
-  overflow-y: auto;
+  overflow-y: hidden;
   min-height: 2.5rem;
   max-height: 12rem;
 }

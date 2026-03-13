@@ -287,9 +287,16 @@ function closeOpenFences(text) {
 const streamingHtmlThrottled = ref('<span class="streaming-cursor"></span>')
 let throttleTimer = null
 
+function styleToolTraceHtml(html) {
+  return html.replace(
+    /<(mcp_[a-z0-9_]+)([^>]*)>([\s\S]*?)<\/\1>/gi,
+    (match) => `<div class="message-tool-trace">${match}</div>`
+  )
+}
+
 function renderAndScroll() {
   const safeContent = closeOpenFences(props.streamingContent)
-  streamingHtmlThrottled.value = marked.parse(safeContent, { breaks: true }) + '<span class="streaming-cursor"></span>'
+  streamingHtmlThrottled.value = styleToolTraceHtml(marked.parse(safeContent, { breaks: true })) + '<span class="streaming-cursor"></span>'
   if (isNearBottom.value) {
     scrollToBottom('instant')
   }

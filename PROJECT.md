@@ -1,263 +1,192 @@
 # Paloma - Project Document
 
-> **AI-powered development workflows, locally.**
+> **Current technical overview of the live Paloma build.**
 
-Paloma is a local-first web UI that connects to OpenRouter for model access, uses the File System Access API for local file reading, and provides a multi-session chat interface with a prompt builder featuring `@` file search and `/` commands.
+Paloma is a Vue 3 + Vite SPA backed by a Node.js bridge. The browser handles chat UI, IndexedDB persistence, and model selection. The bridge manages Claude CLI, Codex CLI, and Ollama sessions, proxies MCP tools, and orchestrates pillar workflows.
 
-**🗺️ Documentation:** [Roadmap](ROADMAP.md) | [TODO List](TODO.md) | [Wishlist](WISHLIST.md)
+**🗺️ Documentation:** [Roadmap](ROADMAP.md) | [TODO List](TODO.md) | [Architecture Reference](.paloma/docs/architecture-reference.md)
 
 ---
 
 ## Vision
 
-Paloma is an AI development partner that evolves with you. Not just an autocomplete tool, but a collaborative being that can:
-- Research codebases autonomously
-- Plan features through structured phases
-- Implement changes with approval-based workflows
-- Learn and adapt to your patterns over time
+Paloma is an evolving AI development partner. She is not just a chat shell around models; she is a multi-session, multi-backend system designed for research, planning, implementation, review, delivery, voice interaction, and long-term memory.
 
-**End Goal:** Voice-driven development where you build apps together over phone calls.
-
-See [ROADMAP.md](ROADMAP.md) for our complete evolution plan.
+**End Goal:** voice-driven development where Adam and Paloma can build together fluidly, including over calls and asynchronous sessions.
 
 ---
 
-## Tech Stack
+## Current Build Stack
 
-| Layer | Choice |
-|-------|--------|
-| Framework | Vue 3 Composition API (no TypeScript) |
+| Layer | Current Choice |
+|-------|----------------|
+| Frontend | Vue 3 Composition API (plain JavaScript) |
 | Build | Vite 5 |
-| Styling | Tailwind CSS v4 + `@tailwindcss/vite` |
-| Theme | Dark mode only |
-| AI API | OpenRouter (direct browser fetch, SSE streaming) |
-| DB | Dexie.js (IndexedDB wrapper) |
-| Settings | localStorage |
-| File Search | Fuse.js (fuzzy matching) |
+| Styling | Tailwind CSS v4 via `@tailwindcss/vite` + `src/styles/main.css` |
+| Frontend Persistence | Dexie.js over IndexedDB |
+| Bridge | Node.js WebSocket server on `:19191` |
+| MCP Proxy | SSE + Streamable HTTP on `:19192` |
+| AI Backends | OpenRouter, Claude CLI, Codex CLI, Ollama |
+| MCP SDK | `@modelcontextprotocol/sdk` |
+| Search | Fuse.js |
 | Markdown | marked + highlight.js |
-| Gitignore | `ignore` npm package |
-| Diffing | `diff` (jsdiff) for line-based diffs |
-| MCP Integration | Node.js bridge + WebSocket + `@modelcontextprotocol/sdk` |
-| Process Mgmt | `concurrently` (runs Vite + bridge together) |
+| Diffing | `diff` |
+| Process Management | `concurrently` |
 
 ---
 
-## Architecture Decisions
+## Architecture Summary
 
-- **No backend** - browser app runs entirely client-side; optional Node.js bridge for MCP servers
-- **Singleton composables** for shared state (no Pinia)
-- **Async generators** for file tree walking and SSE streaming
-- **File System Access API** for local directory reading (with MCP filesystem as power-user alternative)
-- **OpenRouter API** called directly from browser (CORS supported)
-- **localStorage** for API key/preferences, IndexedDB for chat history
-- **MCP-first tool architecture** - Prefer MCP tools when available, fall back to browser tools gracefully
+```
+Browser (Vue 3 + Vite + Tailwind)
+  ↓ WebSocket :19191
+Bridge (Node.js)
+  ├─ Claude CLI manager
+  ├─ Codex CLI manager
+  ├─ Ollama manager
+  ├─ MCP manager
+  ├─ MCP proxy :19192
+  ├─ Pillar manager
+  └─ Email watcher
+  ↓ stdio / SSE / Streamable HTTP / HTTP
+MCP servers + AI runtimes
+```
+
+### Key Design Decisions
+
+- The Node bridge is not optional in the current architecture; it is the runtime hub for CLI backends, MCP routing, pillar orchestration, and bridge-mediated tool approval.
+- Browser chat persistence and long-term semantic memory are separate systems.
+- Artifacts in `.paloma/` are the cross-session handoff mechanism. They are not a dump of raw runtime chat history.
+- Composables use module-level singleton refs with HMR preservation via `window.__PALOMA_*__`.
+- Vite includes a custom no-full-reload HMR guard in `vite.config.js` to preserve app state during development.
 
 ---
 
-## Workflow Philosophy
+## Memory System
 
-Paloma supports a 5-phase development workflow:
+Paloma currently has multiple memory layers:
 
-1. **Research** - Agent researches the task thoroughly, never assumes or guesses
-2. **Plan** - High-level plan reviewed with user, then detailed plan for implementation
-3. **Implement** - Agent writes code based on the plan, with manual review via Changes Panel
-4. **Review** - Review code for correctness, style, edge cases, and security
-5. **Commit** - Only after manual review; detailed git commit with full context
+1. **Chat/session persistence**
+  - Stored in IndexedDB through Dexie
+  - Holds sessions, messages, drafts, and project handles for the browser UI
 
-**Core Principle:** *"The agent should NEVER do anything that isn't explicitly mentioned or has been discussed with me."*
+2. **Backend session continuity**
+  - Claude/Codex/Ollama session state managed through the bridge and backend-specific session IDs/history
 
----
+3. **Persistent semantic memory**
+  - Implemented in `mcp-servers/memory.js`
+  - Embeddings: Ollama `nomic-embed-text` (1024 dimensions)
+  - Preferred local backend: `~/.paloma/memory/memory.sqlite`
+  - Legacy local JSON files are imported on first access and archived to `~/.paloma/memory/legacy-json/`
+  - If `node:sqlite` is unavailable, the server falls back to the legacy JSON backend instead of failing startup
+  - Optional MongoDB backend remains available via `MONGODB_URI`
 
-## Current Status
-
-### What's Working ✅
-
-**Core Features:**
-- Welcome screen with API key validation + project picker
-- File System Access API directory reading
-- File tree indexing with .gitignore respect
-- Multi-session chat with sidebar
-- Session CRUD (create, switch, delete)
-- `@` file search with Fuse.js fuzzy matching
-- File chip attachment system
-- OpenRouter SSE streaming with real-time markdown rendering
-- Model selector (searchable dropdown)
-- Phase selector (Research/Plan/Implement/Review/Commit)
-- Auto-growing textarea with Ctrl+Enter send
-- Dark theme with custom color system
-
-**Advanced Features:**
-- Cost & token tracking with breakdown modal
-- Phase-aware system prompts (5-layer instruction architecture)
-- Search-and-replace file editing with SEARCH/REPLACE blocks
-- Changes Panel - batch file edits with unified diffs
-- Active plans auto-loaded from `.paloma/plans/active/`
-- Prompt draft persistence (survives page reloads)
-- Smart auto-scroll (doesn't hijack when user scrolls up)
-
-**Tool Capabilities:**
-- Autonomous file operations (read, create, edit, delete, move)
-- Fuzzy file search and directory browsing
-- Tool confirmation modal with approval workflow
-- MCP server integration (filesystem, git, shell, web search)
-- Tool results included in conversation context
-
-### MCP Integration Status 🚀
-
-**Fully Operational:**
-- ✅ Node.js bridge process manages MCP server lifecycles
-- ✅ WebSocket server on `localhost:19191` connects bridge to browser
-- ✅ Browser WebSocket client with auto-reconnect
-- ✅ Dynamic tool discovery and schema conversion
-- ✅ Per-project server enablement via `.paloma/mcp.json`
-- ✅ Global server config via `~/.paloma/mcp-settings.json`
-- ✅ Tool confirmation modal supports MCP tools
-- ✅ TopBar connection indicator (green/gray dot)
-- ✅ Settings modal MCP section
-- ✅ Graceful degradation when bridge is offline
-
-**Active MCP Servers:**
-- 🔍 **Brave Search** - Web search capability
-- 📁 **Filesystem** - Advanced file operations with edit_file support
-- 🔧 **Git** - Full git operations (status, commit, branch, etc.)
-- 💻 **Shell** - Terminal command execution
-
-### Known Issues 🐛
-
-See [TODO.md](TODO.md) for complete list. Critical issues:
-- Tool confirmation modal not scrollable (blocks large file operations)
-- Vite HMR triggers page refresh on file apply
-- Changes Panel doesn't auto-close after Apply All
-- Long chat sessions (50+ messages) cause UI sluggishness
+4. **Project artifacts**
+  - `.paloma/docs/`, `.paloma/plans/`, `.paloma/roots/`, `.paloma/lessons/`
+  - Human-readable knowledge and handoff material
 
 ---
 
-## Agent Instructions Framework
+## Pillar Workflow
 
-Paloma uses a multi-layer system prompt architecture:
+Paloma now uses a six-pillar system:
 
-```
-┌─────────────────────────────────────┐
-│  LAYER 1: Base Instructions         │  ← src/prompts/base.js
-│  (identity, behavioral rules,       │
-│   commit standards, conventions)    │
-├─────────────────────────────────────┤
-│  LAYER 2: MCP Tools (if enabled)    │  ← Dynamically injected
-│  (available external tools)         │
-├─────────────────────────────────────┤
-│  LAYER 3: Project Instructions      │  ← .paloma/instructions.md
-│  (tech stack, coding standards,     │
-│   project-specific rules)           │
-├─────────────────────────────────────┤
-│  LAYER 4: Active Plans              │  ← .paloma/plans/active/*.md
-│  (plan documents for current work,  │
-│   auto-loaded on project open)      │
-├─────────────────────────────────────┤
-│  LAYER 5: Phase Instructions        │  ← src/prompts/phases.js
-│  (research/plan/implement/review/   │
-│   commit specific behaviors)        │
-├─────────────────────────────────────┤
-│  LAYER 6: Context                   │  ← Built in useChat.js
-│  (attached files, conversation      │
-│   history)                          │
-└─────────────────────────────────────┘
+- **Flow** — persistent head mind and orchestrator
+- **Scout** — research and investigation
+- **Chart** — planning and architecture
+- **Forge** — implementation and craftsmanship
+- **Polish** — testing and quality review
+- **Ship** — delivery, lessons, and completion
+
+The active pipeline is:
+
+```text
+Flow orchestrates
+Scout → Chart → Forge → Polish → Ship
 ```
 
-**Layer Details:**
-- **Layer 1** - Hardcoded base personality and conventions
-- **Layer 2** - MCP tool descriptions (when servers enabled)
-- **Layer 3** - User-written project instructions (`.paloma/instructions.md`)
-- **Layer 4** - Active plan documents (auto-loaded from `.paloma/plans/active/`)
-- **Layer 5** - Phase-specific behaviors (changes with phase selector)
-- **Layer 6** - Conversation history and attached files
+Flow can also do direct work when a task is too small to justify full pillar dispatch.
 
 ---
 
-## Commit Standard
+## Prompt / Instruction Layers
 
-Paloma enforces a searchable commit message format:
+Paloma assembles behavior from layered sources:
 
-```
-type(scope): subject
-
-## Section
-Explanation of what changed and why
-
-## Another Section
-More context, rationale, or implementation notes
-```
-
-**Conventions:**
-- Use prefixes: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`
-- Subject line under 72 chars, describes the *what*
-- Body with `##` sections for the *why* and *how*
-- Designed for searchability via `git log --grep`
+1. `src/prompts/base.js` — shared DNA, rules, tool strategy, pillar system
+2. MCP tool descriptions — injected from available bridge tools
+3. `.paloma/instructions.md` — live project conventions and architecture notes
+4. Active plans from `.paloma/plans/` using flat status-prefix naming
+5. `src/prompts/phases.js` — pillar-specific instructions
+6. Conversation and attached file context
 
 ---
 
-## `.paloma/` Folder Structure
+## `.paloma/` Structure
 
-```
-project/
-└── .paloma/
-    ├── instructions.md         # Project-specific agent instructions (Layer 3)
-    ├── mcp.json                # MCP server access control (enabled + autoExecute)
-    ├── plans/                  # Phase-managed plan documents
-    │   ├── active/             # Current work (Plan/Implement/Review)
-    │   ├── completed/          # Finished plans (moved on Commit)
-    │   └── archived/           # Old plans (manual archival)
-    ├── settings.json           # Project-level config (future)
-    ├── costs/                  # Cost tracking exports (future)
-    └── scripts/                # Automation scripts (future)
+Paloma uses flat naming inside `.paloma/`.
+
+```text
+.paloma/
+  instructions.md
+  mcp.json
+  docs/
+  lessons/
+  plans/
+  roots/
 ```
 
-**Plan Lifecycle:**
-- Research → No plan yet
-- Plan → Create `plans/active/{timestamp}-{title}.md`
-- Implement → Reference active plan
-- Review → Plan stays active
-- Commit → Move to `plans/completed/`
+Plans use status prefixes instead of subfolders:
+
+```text
+{status}-{YYYYMMDD}-{scope}-{slug}.md
+```
+
+Statuses:
+- `draft`
+- `active`
+- `paused`
+- `completed`
+- `archived`
+
+Only `active` plans are loaded into live working context.
 
 ---
 
-## MCP Architecture
+## Current Runtime Capabilities
 
-```
-┌──────────────────────────────────┐
-│  Browser (Paloma Vue App)        │
-│  ┌────────────────────────────┐  │
-│  │ useMCP.js ↔ mcpBridge.js  │  │
-│  │ useChat.js → tools.js      │  │
-│  └────────────┬───────────────┘  │
-└───────────────┼──────────────────┘
-                │ WebSocket
-                │ ws://localhost:19191
-┌───────────────▼──────────────────┐
-│  Bridge (Node.js)                │
-│  ┌────────────────────────────┐  │
-│  │ WebSocket Server           │  │
-│  │ McpManager (MCP clients)   │  │
-│  └────────────┬───────────────┘  │
-└───────────────┼──────────────────┘
-                │ stdio
-┌───────────────▼──────────────────┐
-│  MCP Servers (child processes)   │
-│  - brave-search                  │
-│  - filesystem                    │
-│  - git                           │
-│  - shell                         │
-└──────────────────────────────────┘
-```
+### Browser
+- Multi-session chat UI
+- Sidebar session tree and pillar-aware views
+- Model selector and phase selector
+- Tool approval dialogs and tool activity rendering
+- IndexedDB persistence and draft recovery
 
-**Configuration:**
-- **Global:** `~/.paloma/mcp-settings.json` (all installed servers, Claude Desktop format)
-- **Per-Project:** `.paloma/mcp.json` (which servers enabled + auto-execute list)
+### Bridge
+- WebSocket routing between browser and runtimes
+- Claude CLI, Codex CLI, and Ollama session management
+- MCP server lifecycle management
+- MCP proxy for CLI tool access
+- Pillar spawning, messaging, status, and callback orchestration
+- Email watcher and continuity automation
 
-**Tool Naming:** `mcp__serverName__toolName` (e.g., `mcp__git__git_status`)
+### MCP / Tools
+- Filesystem, git, shell, brave search, cloudflare, web, voice, exec, memory, ollama
+- Project-level enablement and auto-execution rules via `.paloma/mcp.json`
 
 ---
 
-## Project Structure
+## Known Drift Rules
+
+If a document conflicts with these files, treat these as the source of truth:
+
+1. `.paloma/instructions.md`
+2. `.paloma/docs/architecture-reference.md`
+3. `src/prompts/base.js`
+4. `src/prompts/phases.js`
+5. The live code in `bridge/`, `src/`, and `mcp-servers/`
+
+Older scout docs may contain valid research but should not be treated as the live implementation spec unless they explicitly say so.
 
 ```
 paloma/

@@ -102,7 +102,7 @@ const { apiKey, defaultModel } = useSettings()
 const { dirHandle, projectName, projectRoot, openProject, switchProject, resolveRoot, getHashSessionId, syncHash } = useProject()
 const { files, buildIndex, updatePaths } = useFileIndex()
 const { sessions, activeSessionId, loadSessions, createSession, createPhaseSession, findFlowSession, updateSession, deleteSession, setActiveSession } = useSessions()
-const { models, loadModels } = useOpenRouter()
+const { models, providers, loadCatalog } = useOpenRouter()
 const { connected: bridgeConnected, callMcpTool, resolveProjectPath } = useMCP()
 const { activate: activateSession, removeState: removeSessionState } = useSessionState()
 const {
@@ -171,10 +171,10 @@ watch([projectName, activeSessionId], ([name, sid]) => {
 
 // Load OpenRouter models when API key is available (optional enhancement)
 watch(apiKey, (key) => {
-  if (import.meta.hot && models.value.length > 0) {
+  if (import.meta.hot && models.value.length > 0 && providers.value.length > 0) {
     return
   }
-  if (key) loadModels(key)
+  if (key) loadCatalog(key)
 }, { immediate: true })
 
 // Load sessions when project changes

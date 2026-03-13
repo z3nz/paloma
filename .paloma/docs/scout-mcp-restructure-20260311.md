@@ -1,5 +1,7 @@
 # Scout Findings: MCP Server Restructure
 
+> Historical note: this document predates the current in-repo memory deployment and later SQLite migration. References to `~/paloma-memory/`, empty external memory repos, or bridge memory routing should be treated as superseded investigation, not current source-of-truth. For the live implementation, see `.paloma/instructions.md`, `.paloma/docs/architecture-reference.md`, and `mcp-servers/memory.js`.
+
 **Date:** 2026-03-11  
 **Scout session:** MCP infrastructure investigation  
 **Feeds:** active-20260311-paloma-mcp-restructure.md

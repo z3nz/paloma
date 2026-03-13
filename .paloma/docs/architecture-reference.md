@@ -2,7 +2,7 @@
 
 > **Read this when you need to reason about bridge internals, session management, MCP routing, or data flows.** This is an on-demand reference, NOT auto-loaded into prompts. For the abstract mental model, see `root-architecture.md`. For quick orientation, see MEMORY.md.
 >
-> Last updated: 2026-03-12
+> Last updated: 2026-03-13 by Michai Morin
 
 ---
 
@@ -10,30 +10,30 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  Browser (Vue 3 + Vite + Tailwind v4)        port 5173      │
+│  Browser (Vue 3 + Vite + Tailwind v4)        port 5173       │
 │  Chat UI, tool confirmation dialogs, session sidebar         │
 │  IndexedDB (Dexie) for session/message persistence           │
 │  Per-session reactive state with HMR preservation            │
 └──────────────────────┬───────────────────────────────────────┘
                        │ WebSocket (port 19191)
 ┌──────────────────────▼───────────────────────────────────────┐
-│  Bridge (Node.js)                                             │
+│  Bridge (Node.js)                                            │
 │  WebSocket server — message routing hub (15+ message types)  │
 │  MCP Proxy — SSE + Streamable HTTP server (port 19192)       │
 │  PillarManager — spawns/tracks pillar CLI sessions           │
 │  ClaudeCliManager, CodexCliManager, OllamaManager            │
-│  EmailWatcher — Gmail polling + daily continuity journal      │
+│  EmailWatcher — Gmail polling + daily continuity journal     │
 │  Heartbeat (30s), auto-reject stale requests (5 min)         │
 │  Graceful shutdown, PID file, SIGUSR1 restart (exit code 75) │
 └──────────┬───────────────────────┬───────────────────────────┘
-           │ subprocess             │ SSE/HTTP :19192
-┌──────────▼─────────┐   ┌────────▼───────────────────────────┐
-│  AI CLI Processes   │   │  MCP Proxy Server                   │
-│  claude (stream-json│   │  Exposes ALL MCP tools to CLI       │
-│  codex (JSONL)      │   │  + pillar_* orchestration tools     │
-│  ollama (HTTP API)  │   │  + set_chat_title, ask_user         │
-└────────────────────┘   │  + restart_bridge                   │
-                          │  Browser-gated tool confirmation     │
+           │ subprocess            │ SSE/HTTP :19192
+┌──────────▼──────────┐   ┌────────▼───────────────────────────┐
+│  AI CLI Processes   │   │  MCP Proxy Server                  │
+│  claude (stream-json│   │  Exposes ALL MCP tools to CLI      │
+│  codex (JSONL)      │   │  + pillar_* orchestration tools    │
+│  ollama (HTTP API)  │   │  + set_chat_title, ask_user        │
+└─────────────────────┘   │  + restart_bridge                  │
+                          │  Browser-gated tool confirmation   │
                           └────────────────────────────────────┘
 ```
 
@@ -278,7 +278,7 @@ Classifies tool results for UI rendering: `code`, `diff`, `file_list`, `director
 | Server | Tools | Purpose |
 |--------|-------|---------|
 | `voice.js` | `speak` | TTS via Kokoro (Python), `bm_george` voice |
-| `memory.js` | 6 tools | Semantic memory with Ollama embeddings (1024-dim) |
+| `memory.js` | 6 tools | Semantic memory with Ollama embeddings (1024-dim), SQLite local storage, legacy JSON import/archive fallback |
 | `gmail.js` | 6 tools | OAuth2 Gmail — send, reply, wait, read, list, check |
 | `web.js` | 2 tools | `web_fetch`, `web_download` |
 | `fs-extra.js` | 2 tools | `delete`, `copy` (fills gaps in standard FS server) |

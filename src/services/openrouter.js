@@ -24,6 +24,17 @@ export async function fetchModels(apiKey) {
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
+export async function fetchProviders(apiKey) {
+  const response = await fetch(`${BASE_URL}/providers`, {
+    headers: { 'Authorization': `Bearer ${apiKey}` }
+  })
+  if (!response.ok) throw new Error('Failed to fetch providers')
+  const data = await response.json()
+  return (data.data || [])
+    .filter(provider => provider.slug && provider.name)
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
 export async function* streamChat(apiKey, model, messages, options = {}) {
   const body = {
     model,

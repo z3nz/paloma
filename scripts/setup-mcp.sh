@@ -10,6 +10,7 @@ CONFIG_DIR="$HOME/.paloma"
 SETTINGS_FILE="$CONFIG_DIR/mcp-settings.json"
 VENV_DIR="$PALOMA_DIR/kokoro_env"
 NODE_MODULES="$PALOMA_DIR/node_modules"
+VOICE_REQUIREMENTS_FILE="$PALOMA_DIR/requirements.txt"
 
 echo "==> Paloma MCP Setup"
 echo "    Project: $PALOMA_DIR"
@@ -37,7 +38,7 @@ for cmd in python3.12 python3.11 python3.10 python3; do
   fi
 done
 
-VOICE_PACKAGES="kokoro sounddevice markdown spacy"
+VOICE_PACKAGES="kokoro sounddevice markdown"
 
 if [ -z "$PYTHON_CMD" ]; then
   echo "    [SKIP] No Python 3 found — voice server will not work"
@@ -68,7 +69,11 @@ else
 
   if [ "$NEED_INSTALL" = true ]; then
     echo "==> Installing voice dependencies..."
-    "$VENV_DIR/bin/pip" install --quiet $VOICE_PACKAGES
+    if [ -f "$VOICE_REQUIREMENTS_FILE" ]; then
+      "$VENV_DIR/bin/pip" install --quiet -r "$VOICE_REQUIREMENTS_FILE"
+    else
+      "$VENV_DIR/bin/pip" install --quiet $VOICE_PACKAGES
+    fi
     echo "    Done."
   else
     echo "==> Python venv OK at $VENV_DIR"

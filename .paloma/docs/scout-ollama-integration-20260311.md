@@ -1,4 +1,7 @@
 # Scout: Ollama Local Model Integration
+
+> Historical note: this document is pre-implementation research. Much of it remains useful background, but sections describing Ollama as a proposed backend, proposed tool surface, or pending memory embedding upgrade are no longer current-state docs. For the shipped implementation, see `.paloma/instructions.md`, `.paloma/docs/architecture-reference.md`, `bridge/ollama-manager.js`, `mcp-servers/ollama.js`, and `mcp-servers/memory.js`.
+
 **Date:** 2026-03-11  
 **Hardware target:** MacBook Pro M5, 128GB RAM, 8TB storage  
 **Scope:** Full research for integrating Ollama as a local model backend for Paloma

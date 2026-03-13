@@ -3,7 +3,7 @@
     <div class="w-full max-w-md px-8">
       <!-- Logo -->
       <div class="text-center mb-10">
-        <h1 class="text-3xl font-bold text-accent mb-2">Paloma</h1>
+        <h1 class="brand-wordmark text-3xl text-text-primary mb-2">P A L O M A</h1>
         <p class="text-text-secondary text-sm">AI-powered development workflows, locally.</p>
       </div>
 

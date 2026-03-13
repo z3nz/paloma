@@ -145,7 +145,7 @@ else
   info "Global settings already exist — skipping"
 fi
 
-# Project-level settings — full MCP permissions (hog wild mode)
+# Project-level settings — full MCP permissions (God mode)
 mkdir -p "$CLAUDE_PROJECT_DIR"
 if [ ! -f "$CLAUDE_PROJECT_DIR/settings.json" ]; then
   cat > "$CLAUDE_PROJECT_DIR/settings.json" <<'ENDJSON'

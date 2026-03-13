@@ -1,5 +1,7 @@
 # Scout: Memory System Research — Comprehensive Synthesis
 
+> Historical note: this document is pre-implementation research, not the current memory architecture. Paloma's shipped memory system now uses `mcp-servers/memory.js` with Ollama `nomic-embed-text` embeddings, SQLite-first local storage at `~/.paloma/memory/memory.sqlite`, legacy JSON import/archive, and JSON fallback when `node:sqlite` is unavailable. For the live implementation, see `.paloma/instructions.md` and `.paloma/docs/architecture-reference.md`.
+
 > **Scope:** paloma  
 > **Date:** 2026-02-25  
 > **Pillar:** Scout  

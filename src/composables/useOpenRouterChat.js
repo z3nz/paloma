@@ -88,7 +88,7 @@ export async function runOpenRouterLoop({
             result = JSON.stringify({ error: e.message })
           }
         } else if (isAutoApproved(toolName, mcpConfig)) {
-          // Hog Wild or session-approved — auto-execute write tools too
+          // God Mode or session-approved — auto-execute write tools too
           try {
             result = await executeTool(toolName, args, dirHandle, searchFn)
           } catch (e) {

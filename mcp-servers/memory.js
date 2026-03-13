@@ -16,7 +16,7 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema
 } from '@modelcontextprotocol/sdk/types.js'
-import { readFile, writeFile, mkdir } from 'fs/promises'
+import { readFile, writeFile, mkdir, rename } from 'fs/promises'
 import { resolve, join } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
@@ -24,10 +24,21 @@ import { randomUUID } from 'crypto'
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 const MEMORY_DIR = resolve(homedir(), '.paloma', 'memory')
+const SQLITE_PATH = join(MEMORY_DIR, 'memory.sqlite')
+const LEGACY_ARCHIVE_DIR = join(MEMORY_DIR, 'legacy-json')
 const MONGODB_URI = process.env.MONGODB_URI || null
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://localhost:11434'
 const EMBEDDING_MODEL = 'nomic-embed-text'
 const EMBEDDING_DIM = 1024
+
+let sqliteModulePromise = null
+
+async function loadSqliteModule () {
+  if (!sqliteModulePromise) {
+    sqliteModulePromise = import('node:sqlite').catch(() => null)
+  }
+  return sqliteModulePromise
+}
 
 // ─── Embedding Engine (Ollama) ───────────────────────────────────────────────
 
@@ -96,11 +107,17 @@ function keywordScore (query, content) {
 
 // ─── Storage Interface ───────────────────────────────────────────────────────
 
-class LocalStore {
+class LegacyJsonStore {
   constructor (collection = 'default') {
     this.collection = collection
     this.filePath = join(MEMORY_DIR, `${collection}.json`)
     this.data = null
+    this.existsOnDisk = null
+  }
+
+  async exists () {
+    await this.load()
+    return this.existsOnDisk
   }
 
   async load () {
@@ -109,7 +126,10 @@ class LocalStore {
     try {
       const raw = await readFile(this.filePath, 'utf-8')
       this.data = JSON.parse(raw)
-    } catch {
+      this.existsOnDisk = true
+    } catch (err) {
+      if (err?.code !== 'ENOENT') throw err
+      this.existsOnDisk = false
       this.data = {
         memories: [],
         metadata: {
@@ -124,6 +144,7 @@ class LocalStore {
 
   async save () {
     await writeFile(this.filePath, JSON.stringify(this.data, null, 2), 'utf-8')
+    this.existsOnDisk = true
   }
 
   async store (memory) {
@@ -231,6 +252,342 @@ class LocalStore {
         ? memories.reduce((a, b) => new Date(a.created) > new Date(b.created) ? a : b).created
         : null
     }
+  }
+
+  async archive () {
+    if (!this.existsOnDisk) return null
+    await mkdir(LEGACY_ARCHIVE_DIR, { recursive: true })
+    const archivedPath = join(LEGACY_ARCHIVE_DIR, `${this.collection}-${Date.now()}.json`)
+    await rename(this.filePath, archivedPath)
+    this.existsOnDisk = false
+    return archivedPath
+  }
+}
+
+class SQLiteStore {
+  constructor (collection = 'default') {
+    this.collection = collection
+    this.db = null
+    this.initialized = false
+  }
+
+  async init () {
+    if (this.initialized) return
+    const sqlite = await loadSqliteModule()
+    if (!sqlite?.DatabaseSync) {
+      throw new Error('node:sqlite is unavailable')
+    }
+
+    await mkdir(MEMORY_DIR, { recursive: true })
+
+    this.db = new sqlite.DatabaseSync(SQLITE_PATH)
+    this.db.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA synchronous = NORMAL;
+      CREATE TABLE IF NOT EXISTS memories (
+        id TEXT PRIMARY KEY,
+        collection TEXT NOT NULL,
+        content TEXT NOT NULL,
+        embedding TEXT,
+        tags TEXT NOT NULL DEFAULT '[]',
+        context TEXT,
+        source TEXT,
+        created TEXT NOT NULL,
+        updated TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_memories_collection_created
+        ON memories (collection, created DESC);
+    `)
+
+    this.initialized = true
+  }
+
+  _encode (memory) {
+    return {
+      id: memory.id,
+      collection: this.collection,
+      content: memory.content,
+      embedding: memory.embedding ? JSON.stringify(memory.embedding) : null,
+      tags: JSON.stringify(memory.tags || []),
+      context: memory.context || null,
+      source: memory.source || null,
+      created: memory.created,
+      updated: memory.updated
+    }
+  }
+
+  _decode (row) {
+    if (!row) return null
+    return {
+      id: row.id,
+      content: row.content,
+      embedding: row.embedding ? JSON.parse(row.embedding) : null,
+      tags: row.tags ? JSON.parse(row.tags) : [],
+      context: row.context,
+      source: row.source,
+      created: row.created,
+      updated: row.updated
+    }
+  }
+
+  async count () {
+    await this.init()
+    const row = this.db.prepare('SELECT COUNT(*) AS total FROM memories WHERE collection = ?').get(this.collection)
+    return row?.total || 0
+  }
+
+  async importLegacyIfNeeded (legacyStore) {
+    await this.init()
+    const existingCount = await this.count()
+    if (existingCount > 0) return false
+
+    const hadLegacyFile = await legacyStore.exists()
+    if (!hadLegacyFile) return false
+
+    const memories = legacyStore.data?.memories || []
+    const insert = this.db.prepare(`
+      INSERT INTO memories (id, collection, content, embedding, tags, context, source, created, updated)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    this.db.exec('BEGIN')
+    try {
+      for (const memory of memories) {
+        const encoded = this._encode(memory)
+        insert.run(
+          encoded.id,
+          encoded.collection,
+          encoded.content,
+          encoded.embedding,
+          encoded.tags,
+          encoded.context,
+          encoded.source,
+          encoded.created,
+          encoded.updated
+        )
+      }
+      this.db.exec('COMMIT')
+    } catch (err) {
+      this.db.exec('ROLLBACK')
+      throw err
+    }
+
+    await legacyStore.archive()
+    return memories.length > 0
+  }
+
+  async store (memory) {
+    await this.init()
+    const encoded = this._encode(memory)
+    this.db.prepare(`
+      INSERT INTO memories (id, collection, content, embedding, tags, context, source, created, updated)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      encoded.id,
+      encoded.collection,
+      encoded.content,
+      encoded.embedding,
+      encoded.tags,
+      encoded.context,
+      encoded.source,
+      encoded.created,
+      encoded.updated
+    )
+    return memory.id
+  }
+
+  async search (queryEmbedding, query, { limit = 5, tags = null, threshold = 0.3 } = {}) {
+    await this.init()
+    const rows = this.db.prepare(`
+      SELECT id, content, embedding, tags, context, source, created, updated
+      FROM memories
+      WHERE collection = ?
+      ORDER BY created DESC
+    `).all(this.collection)
+
+    let candidates = rows.map(row => this._decode(row))
+    if (tags && tags.length > 0) {
+      candidates = candidates.filter(memory =>
+        memory.tags && tags.some(tag => memory.tags.includes(tag))
+      )
+    }
+
+    const scored = candidates.map(memory => {
+      const similarity = queryEmbedding
+        ? cosineSimilarity(queryEmbedding, memory.embedding)
+        : keywordScore(query, memory.content + ' ' + (memory.context || '') + ' ' + (memory.tags || []).join(' '))
+      return { ...memory, similarity }
+    })
+
+    return scored
+      .filter(memory => memory.similarity >= threshold)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit)
+      .map(({ embedding, ...rest }) => rest)
+  }
+
+  async list ({ limit = 20, tags = null, offset = 0 } = {}) {
+    await this.init()
+    let results = this.db.prepare(`
+      SELECT id, content, embedding, tags, context, source, created, updated
+      FROM memories
+      WHERE collection = ?
+      ORDER BY created DESC
+    `).all(this.collection).map(row => this._decode(row))
+
+    if (tags && tags.length > 0) {
+      results = results.filter(memory =>
+        memory.tags && tags.some(tag => memory.tags.includes(tag))
+      )
+    }
+
+    return results
+      .slice(offset, offset + limit)
+      .map(({ embedding, ...rest }) => rest)
+  }
+
+  async get (id) {
+    await this.init()
+    const row = this.db.prepare(`
+      SELECT id, content, embedding, tags, context, source, created, updated
+      FROM memories
+      WHERE collection = ? AND id = ?
+    `).get(this.collection, id)
+    if (!row) return null
+    const { embedding, ...rest } = this._decode(row)
+    return rest
+  }
+
+  async update (id, updates) {
+    await this.init()
+    const current = this.db.prepare(`
+      SELECT id, content, embedding, tags, context, source, created, updated
+      FROM memories
+      WHERE collection = ? AND id = ?
+    `).get(this.collection, id)
+    if (!current) return null
+
+    const decoded = this._decode(current)
+    const next = {
+      ...decoded,
+      ...updates,
+      updated: new Date().toISOString()
+    }
+    const encoded = this._encode(next)
+
+    this.db.prepare(`
+      UPDATE memories
+      SET content = ?, embedding = ?, tags = ?, context = ?, source = ?, updated = ?
+      WHERE collection = ? AND id = ?
+    `).run(
+      encoded.content,
+      encoded.embedding,
+      encoded.tags,
+      encoded.context,
+      encoded.source,
+      encoded.updated,
+      this.collection,
+      id
+    )
+
+    const { embedding, ...rest } = next
+    return rest
+  }
+
+  async forget (id) {
+    await this.init()
+    const result = this.db.prepare('DELETE FROM memories WHERE collection = ? AND id = ?').run(this.collection, id)
+    return result.changes > 0
+  }
+
+  async stats () {
+    await this.init()
+    const memories = this.db.prepare(`
+      SELECT id, content, embedding, tags, context, source, created, updated
+      FROM memories
+      WHERE collection = ?
+      ORDER BY created DESC
+    `).all(this.collection).map(row => this._decode(row))
+
+    const tagCounts = {}
+    for (const memory of memories) {
+      for (const tag of (memory.tags || [])) {
+        tagCounts[tag] = (tagCounts[tag] || 0) + 1
+      }
+    }
+
+    return {
+      total: memories.length,
+      collection: this.collection,
+      backend: 'sqlite',
+      embeddingsEnabled: embeddingReady,
+      model: EMBEDDING_MODEL,
+      dimensions: EMBEDDING_DIM,
+      tags: tagCounts,
+      oldest: memories.length > 0 ? memories[memories.length - 1].created : null,
+      newest: memories.length > 0 ? memories[0].created : null,
+      path: SQLITE_PATH
+    }
+  }
+}
+
+class LocalStore {
+  constructor (collection = 'default') {
+    this.collection = collection
+    this.sqliteStore = new SQLiteStore(collection)
+    this.legacyStore = new LegacyJsonStore(collection)
+    this.backendPromise = null
+  }
+
+  async backend () {
+    if (!this.backendPromise) {
+      this.backendPromise = this._initBackend()
+    }
+    return this.backendPromise
+  }
+
+  async _initBackend () {
+    const sqlite = await loadSqliteModule()
+    if (!sqlite?.DatabaseSync) {
+      return this.legacyStore
+    }
+
+    try {
+      await this.sqliteStore.init()
+      await this.sqliteStore.importLegacyIfNeeded(this.legacyStore)
+      return this.sqliteStore
+    } catch (err) {
+      console.error('[memory] SQLite init/import failed, falling back to legacy JSON:', err.message)
+      return this.legacyStore
+    }
+  }
+
+  async store (memory) {
+    return await (await this.backend()).store(memory)
+  }
+
+  async search (queryEmbedding, query, options) {
+    return await (await this.backend()).search(queryEmbedding, query, options)
+  }
+
+  async list (options) {
+    return await (await this.backend()).list(options)
+  }
+
+  async get (id) {
+    return await (await this.backend()).get(id)
+  }
+
+  async update (id, updates) {
+    return await (await this.backend()).update(id, updates)
+  }
+
+  async forget (id) {
+    return await (await this.backend()).forget(id)
+  }
+
+  async stats () {
+    return await (await this.backend()).stats()
   }
 }
 
@@ -657,8 +1014,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // ─── Start ───────────────────────────────────────────────────────────────────
 
 async function main () {
+  const sqlite = await loadSqliteModule()
+  const localStorageLabel = sqlite?.DatabaseSync
+    ? `SQLite (${SQLITE_PATH})`
+    : `Local JSON (${MEMORY_DIR})`
+
   console.error('[memory] Starting Memory MCP Server...')
-  console.error('[memory] Storage:', MONGODB_URI ? 'MongoDB' : `Local (${MEMORY_DIR})`)
+  console.error('[memory] Storage:', MONGODB_URI ? 'MongoDB' : localStorageLabel)
   // Check Ollama availability in background — server is usable immediately with keyword fallback
   initEmbeddings()
 

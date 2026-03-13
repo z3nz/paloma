@@ -1,5 +1,6 @@
 import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
+import { buildCliSpawn } from './cli-command.js'
 
 export class CodexCliManager {
   constructor() {
@@ -41,10 +42,12 @@ export class CodexCliManager {
       console.log(`[codex] New session, model=${model || 'default'}`)
     }
 
-    const proc = spawn('codex', args, {
+    const spawnTarget = buildCliSpawn('codex', args)
+    const proc = spawn(spawnTarget.command, spawnTarget.args, {
       cwd: cwd || process.cwd(),
       env: { ...process.env },
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true
     })
 
     let threadId = sessionId || null

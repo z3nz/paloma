@@ -1,7 +1,7 @@
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center" @click.self="$emit('close')">
     <div class="absolute inset-0 bg-black/60" @click="$emit('close')"></div>
-    <div class="relative bg-bg-secondary border border-border rounded-lg w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] flex flex-col">
+    <div class="relative bg-bg-secondary border border-border rounded-lg w-full max-w-2xl mx-4 shadow-2xl max-h-[90vh] flex flex-col">
       <!-- Header -->
       <div class="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
         <h2 class="text-lg font-semibold text-text-primary">Settings</h2>
@@ -180,21 +180,68 @@
         <!-- Default Model -->
         <div>
           <label class="block text-sm text-text-secondary mb-1.5">Default Model</label>
-          <select
-            v-model="localModel"
-            class="w-full bg-bg-primary border border-border rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent"
-          >
-            <optgroup label="Paloma (CLI)">
-              <option v-for="m in cliModels" :key="m.id" :value="m.id">
-                {{ m.name }}
-              </option>
-            </optgroup>
-            <optgroup v-if="apiKey" label="OpenRouter">
-              <option v-for="m in popularModels" :key="m" :value="m">
-                {{ m.split('/').pop() }}
-              </option>
-            </optgroup>
-          </select>
+          <p class="text-xs text-text-muted mb-2">
+            This sets the starting model for new chats. Use the model picker beside the message box to change only the current chat.
+          </p>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs text-text-muted uppercase tracking-wide mb-1.5">Paloma / Local Backends</label>
+              <select
+                :value="selectedCliModel"
+                @change="selectCliModel($event.target.value)"
+                class="w-full bg-bg-primary border border-border rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent"
+              >
+                <option v-for="m in cliModels" :key="m.id" :value="m.id">
+                  {{ m.name }}
+                </option>
+              </select>
+            </div>
+
+            <div v-if="savedOpenRouterKey" class="space-y-2">
+              <div class="flex items-center justify-between gap-3">
+                <label class="block text-xs text-text-muted uppercase tracking-wide">OpenRouter</label>
+                <span class="text-xs text-text-muted">
+                  {{ loadingCatalog ? 'Loading catalog...' : providerOptions.length ? `${providerOptions.length} providers` : 'No providers loaded' }}
+                </span>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <select
+                  v-model="selectedProviderSlug"
+                  class="bg-bg-primary border border-border rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent"
+                >
+                  <option value="">Select provider</option>
+                  <option v-for="provider in providerOptions" :key="provider.slug" :value="provider.slug">
+                    {{ provider.name }} ({{ provider.modelCount }})
+                  </option>
+                </select>
+                <select
+                  :value="selectedOpenRouterModel"
+                  @change="selectOpenRouterModel($event.target.value)"
+                  :disabled="!selectedProviderSlug || selectedProviderModels.length === 0"
+                  class="bg-bg-primary border border-border rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">Select model</option>
+                  <option v-for="model in selectedProviderModels" :key="model.id" :value="model.id">
+                    {{ model.name }}
+                  </option>
+                </select>
+              </div>
+              <p class="text-xs text-text-muted">
+                This uses the same OpenRouter catalog as the chat picker, but saving here only changes the default for future chats.
+              </p>
+              <p v-if="catalogError" class="text-xs text-warning">
+                {{ catalogError }}
+              </p>
+            </div>
+
+            <div v-else-if="localKey && localKey !== apiKey" class="text-xs text-text-muted">
+              Save your OpenRouter key to load providers and models.
+            </div>
+
+            <div class="text-xs text-text-muted">
+              Default for new chats: {{ selectedModelLabel }}
+            </div>
+          </div>
         </div>
 
         <!-- Project info -->
@@ -246,12 +293,14 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useSettings } from '../../composables/useSettings.js'
 import { useMCP } from '../../composables/useMCP.js'
 import { usePermissions } from '../../composables/usePermissions.js'
 import { useProject } from '../../composables/useProject.js'
-import { CLI_MODELS } from '../../services/claudeStream.js'
+import { useOpenRouter } from '../../composables/useOpenRouter.js'
+import { CLI_MODELS, isCliModel } from '../../services/claudeStream.js'
+import { getModelDisplayName, getOpenRouterModelsForProvider, getOpenRouterProviderOptions, getOpenRouterProviderSlug } from '../../services/modelCatalog.js'
 
 const props = defineProps({
   projectName: { type: String, default: '' }
@@ -262,6 +311,7 @@ const { apiKey, defaultModel } = useSettings()
 const { connected: mcpConnected, connectionState: mcpConnectionState, servers: mcpServerList, bridgeUrl, autoConnect: mcpAutoConnect, connect: mcpConnect, disconnect: mcpDisconnect, callMcpTool } = useMCP()
 const { sessionApprovals, approveForSession, revokeSession, approveToolForSession, revokeToolSession, clearSession, getToolPermTier } = usePermissions()
 const { projectRoot, mcpConfig } = useProject()
+const { models: openRouterModels, providers: openRouterProviders, loadingModels, loadingProviders, modelsError, providersError, loadCatalog } = useOpenRouter()
 
 const hasProject = computed(() => !!projectRoot.value && !!mcpConfig.value)
 const sessionCount = computed(() => sessionApprovals.value.size)
@@ -480,19 +530,35 @@ const localModel = ref(defaultModel.value)
 const showKey = ref(false)
 const localBridgeUrl = ref(bridgeUrl.value)
 const localAutoConnect = ref(mcpAutoConnect.value)
+const selectedProviderSlug = ref(isCliModel(localModel.value) ? '' : getOpenRouterProviderSlug(localModel.value))
+const selectedOpenRouterModel = ref(isCliModel(localModel.value) ? '' : localModel.value)
 
 const cliModels = CLI_MODELS
+const fallbackCliModel = CLI_MODELS.find(model => !model.direct && !model.codex && !model.ollama)?.id || 'claude-cli:sonnet'
+const savedOpenRouterKey = computed(() => !!apiKey.value)
+const loadingCatalog = computed(() => loadingModels.value || loadingProviders.value)
+const providerOptions = computed(() => getOpenRouterProviderOptions(openRouterModels.value, openRouterProviders.value))
+const selectedProviderModels = computed(() => getOpenRouterModelsForProvider(openRouterModels.value, selectedProviderSlug.value))
+const selectedCliModel = computed(() => isCliModel(localModel.value) ? localModel.value : fallbackCliModel)
+const selectedModelLabel = computed(() => getModelDisplayName(localModel.value, openRouterModels.value))
+const catalogError = computed(() => modelsError.value || providersError.value || '')
 
-const popularModels = [
-  'anthropic/claude-sonnet-4',
-  'anthropic/claude-opus-4',
-  'openai/gpt-4o',
-  'openai/o1',
-  'google/gemini-2.0-flash-001',
-  'google/gemini-2.5-pro-preview',
-  'deepseek/deepseek-chat',
-  'meta-llama/llama-3.3-70b-instruct'
-]
+watch(() => localModel.value, (modelId) => {
+  if (isCliModel(modelId)) {
+    selectedProviderSlug.value = ''
+    selectedOpenRouterModel.value = ''
+    return
+  }
+  selectedProviderSlug.value = getOpenRouterProviderSlug(modelId)
+  selectedOpenRouterModel.value = modelId
+}, { immediate: true })
+
+watch(selectedProviderSlug, (providerSlug, previousSlug) => {
+  if (!providerSlug || providerSlug === previousSlug) return
+  if (getOpenRouterProviderSlug(selectedOpenRouterModel.value) !== providerSlug) {
+    selectedOpenRouterModel.value = ''
+  }
+})
 
 function toggleMcpConnection() {
   if (mcpConnected.value) {
@@ -502,11 +568,34 @@ function toggleMcpConnection() {
   }
 }
 
-function save() {
-  apiKey.value = localKey.value
-  defaultModel.value = localModel.value
+function selectCliModel(modelId) {
+  localModel.value = modelId
+}
+
+function selectOpenRouterModel(modelId) {
+  selectedOpenRouterModel.value = modelId
+  if (modelId) {
+    localModel.value = modelId
+  }
+}
+
+async function save() {
+  const trimmedKey = localKey.value.trim()
+  const resolvedModel = !trimmedKey && !isCliModel(localModel.value) ? fallbackCliModel : localModel.value
+
+  apiKey.value = trimmedKey
+  defaultModel.value = resolvedModel
   bridgeUrl.value = localBridgeUrl.value
   mcpAutoConnect.value = localAutoConnect.value
+
+  if (trimmedKey) {
+    await loadCatalog(trimmedKey)
+  }
+
   emit('close')
+}
+
+if (savedOpenRouterKey.value && (openRouterModels.value.length === 0 || openRouterProviders.value.length === 0)) {
+  loadCatalog(apiKey.value)
 }
 </script>

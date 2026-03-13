@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import { writeFileSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
+import { buildCliSpawn } from './cli-command.js'
 
 export class ClaudeCliManager {
   constructor() {
@@ -47,10 +48,12 @@ export class ClaudeCliManager {
       console.log(`[cli] MCP config written to ${mcpConfigPath}`)
     }
 
-    const proc = spawn('claude', args, {
+    const spawnTarget = buildCliSpawn('claude', args)
+    const proc = spawn(spawnTarget.command, spawnTarget.args, {
       cwd: cwd || process.cwd(),
       env: { ...process.env },
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true
     })
 
     this.processes.set(requestId, { process: proc, sessionId, mcpConfigPath })

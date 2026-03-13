@@ -1,9 +1,13 @@
 <template>
   <div class="h-12 bg-bg-secondary border-b border-border flex items-center justify-between px-4">
-    <div class="flex items-center gap-2">
-      <span class="text-accent font-semibold text-sm tracking-wide">PALOMA</span>
-      <span v-if="projectName" class="text-text-muted text-sm">/</span>
-      <span v-if="projectName" class="text-text-secondary text-sm">{{ projectName }}</span>
+    <div class="flex items-center">
+      <button
+        @click="showPalomaInfoModal = true"
+        class="rounded-md p-1 -ml-1 hover:bg-bg-hover transition-colors"
+        title="About Paloma"
+      >
+        <img src="/Paloma-logo.png" alt="Paloma" class="h-7 w-auto object-contain" />
+      </button>
     </div>
 
     <!-- Center: cost & token display -->
@@ -28,10 +32,10 @@
         :class="hogWild
           ? 'bg-warning/20 text-warning hover:bg-warning/30'
           : 'text-text-muted hover:text-text-secondary hover:bg-bg-hover'"
-        :title="hogWild ? 'Hog Wild: ALL tools auto-approved. Click to disable.' : 'Enable Hog Wild mode (auto-approve all tools)'"
+        :title="hogWild ? 'God Mode: ALL tools auto-approved. Click to disable.' : 'Enable God mode (auto-approve all tools)'"
       >
-        <span v-if="hogWild">HOG WILD</span>
-        <span v-else>Hog Wild</span>
+        <span v-if="hogWild">GOD Mode</span>
+        <span v-else>God Mode</span>
       </button>
 
       <!-- MCP indicator -->
@@ -109,9 +113,9 @@
         class="text-text-secondary hover:text-text-primary p-1.5 rounded hover:bg-bg-hover transition-colors"
         title="Settings"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
       </button>
     </div>
@@ -123,11 +127,17 @@
     :project-path="projectName"
     @close="showUsageModal = false"
   />
+
+  <PalomaInfoModal
+    v-if="showPalomaInfoModal"
+    @close="showPalomaInfoModal = false"
+  />
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import UsageModal from './UsageModal.vue'
+import PalomaInfoModal from './PalomaInfoModal.vue'
 import { useCostTracking } from '../../composables/useCostTracking.js'
 import { useMCP } from '../../composables/useMCP.js'
 import { useProject } from '../../composables/useProject.js'
@@ -143,6 +153,7 @@ const { projectName: currentProjectName, projectRoot, switchProject, listProject
 const { hogWild, toggleHogWild } = usePermissions()
 
 const showUsageModal = ref(false)
+const showPalomaInfoModal = ref(false)
 const showProjectDropdown = ref(false)
 const availableProjects = ref([])
 const loadingProjects = ref(false)

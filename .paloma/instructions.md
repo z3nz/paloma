@@ -14,19 +14,20 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Deep reference:** `.paloma/docs/architecture-reference.md` — every file, data flow, schema, and pattern documented
 
 ### Multi-Backend Architecture
-- PillarManager accepts a `backends` map: `{ claude: ClaudeCliManager, codex: CodexCliManager }`
+- PillarManager accepts a `backends` map: `{ claude: ClaudeCliManager, codex: CodexCliManager, ollama: OllamaManager }`
 - Each pillar session has a `backend` field — selected via `pillar_spawn({ backend: 'codex' })`
 - Flow always runs on Claude (needs MCP tool loop for pillar orchestration)
 - Claude emits `claude_stream`/`claude_done`/`claude_error`; Codex emits `codex_stream`/`codex_done`/`codex_error`
 - Both event types handled in `_handleCliEvent` with backend-specific text extraction
 - Browser receives `backend` field in `pillar_stream` events for format-aware rendering
 - Codex also available as MCP tool (`codex`/`codex-reply`) for Claude pillars to call
+- Ollama is also available as a first-class backend and MCP server (`bridge/ollama-manager.js`, `mcp-servers/ollama.js`)
 - `AGENTS.md` = Codex's project instruction file (equivalent of `CLAUDE.md`)
 - ChatGPT login restricts Codex to GPT-5.1-Codex family. API key auth needed for o3/o4-mini.
 
 ### Key Patterns
 - Composables use module-level singleton refs with HMR state preservation via `window.__PALOMA_*__`
-- Three model paths: OpenRouter (browser-side tool loop), Claude CLI (subprocess via bridge), Codex CLI (subprocess via bridge)
+- Four model paths: OpenRouter (browser-side tool loop), Claude CLI (subprocess via bridge), Codex CLI (subprocess via bridge), Ollama (bridge-managed HTTP sessions)
 - MCP tools proxied through bridge — both paths show ToolConfirmation.vue dialog in browser
 - Permission system: session-level (in-memory Set) + project-level (.paloma/mcp.json autoExecute)
 
@@ -36,7 +37,7 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - Phase transitions inject birth context messages with warmth and purpose
 - Artifacts in `.paloma/` (plans, docs, roots) are the handoff mechanism between sessions
 - Pillar behavior is defined in DNA files: `src/prompts/base.js` (shared) and `src/prompts/phases.js` (per-pillar)
-- Pillars can run on either Claude or Codex backend — selected at spawn time
+- Pillars can run on Claude, Codex, or Ollama backends — selected at spawn time
 
 ### Recursive Orchestration Tools
 - `pillar_decompose` — Add/update structured work units (WU-N) in plan documents
@@ -60,10 +61,12 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 
 ### Memory System (Persistent Semantic Memory)
 - **MCP Server:** `mcp-servers/memory.js` — 6 tools for store/recall/list/forget/update/stats
-- **Embeddings:** `@xenova/transformers` with `Xenova/all-MiniLM-L6-v2` (384-dim vectors)
-- **Local Storage:** `~/.paloma/memory/{collection}.json` (default backend, zero-config)
+- **Embeddings:** Ollama `nomic-embed-text` (1024-dim vectors)
+- **Local Storage:** `~/.paloma/memory/memory.sqlite` (preferred local backend on Node runtimes with `node:sqlite`)
+- **Legacy Import:** Existing `~/.paloma/memory/{collection}.json` files are imported on first access, then archived to `~/.paloma/memory/legacy-json/`
 - **MongoDB Storage:** Set `MONGODB_URI` env var in mcp-settings.json to switch to MongoDB (supports Atlas Vector Search)
 - **Keyword Fallback:** Works immediately while embedding model loads, or if model fails
+- **Compatibility Fallback:** If `node:sqlite` is unavailable, the server falls back to the legacy JSON store instead of failing startup
 - **Collections:** Separate memory namespaces (default: "default"). Use for multi-agent/multi-project memory isolation.
 - **Tools:** `memory_store`, `memory_recall`, `memory_list`, `memory_forget`, `memory_update`, `memory_stats`
 

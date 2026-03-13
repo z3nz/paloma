@@ -2,6 +2,7 @@
   <div class="relative" ref="wrapper">
     <button
       @click="open = !open"
+      title="Select the model for this chat"
       class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs bg-bg-primary border border-border rounded-md text-text-secondary hover:text-text-primary hover:border-border transition-colors"
     >
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -20,6 +21,9 @@
       v-if="open"
       class="absolute bottom-full left-0 mb-1 w-72 bg-bg-secondary border border-border rounded-lg shadow-2xl overflow-hidden z-30"
     >
+      <div class="px-3 py-2 text-[11px] text-text-muted border-b border-border bg-bg-primary/60">
+        Applies to this chat only.
+      </div>
       <div class="p-2 border-b border-border">
         <input
           v-model="filter"
@@ -96,7 +100,7 @@
             class="px-3 py-2 text-sm cursor-pointer transition-colors"
             :class="model === modelValue ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
           >
-            {{ model.split('/').pop() }}
+            {{ getOpenRouterName(model) }}
             <span class="text-xs text-text-muted ml-1">{{ model.split('/')[0] }}</span>
           </div>
         </template>
@@ -107,7 +111,8 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { CLI_MODELS, isCliModel, isCodexModel, isOllamaModel } from '../../services/claudeStream.js'
+import { CLI_MODELS } from '../../services/claudeStream.js'
+import { POPULAR_OPENROUTER_MODEL_IDS, getModelDisplayName } from '../../services/modelCatalog.js'
 import { useSettings } from '../../composables/useSettings.js'
 
 const props = defineProps({
@@ -124,27 +129,8 @@ const filter = ref('')
 const filterInput = ref(null)
 const wrapper = ref(null)
 
-const popularModels = [
-  'anthropic/claude-sonnet-4',
-  'anthropic/claude-opus-4',
-  'openai/gpt-4o',
-  'openai/o1',
-  'google/gemini-2.0-flash-001',
-  'google/gemini-2.5-pro-preview',
-  'deepseek/deepseek-chat',
-  'meta-llama/llama-3.3-70b-instruct'
-]
-
 const displayName = computed(() => {
-  if (!props.modelValue) return 'Select model'
-  if (isCliModel(props.modelValue)) {
-    const cli = CLI_MODELS.find(m => m.id === props.modelValue)
-    if (cli) return cli.name
-    if (isOllamaModel(props.modelValue)) return props.modelValue.replace('ollama:', '') + ' (Ollama)'
-    if (isCodexModel(props.modelValue)) return props.modelValue.split(':').pop() + ' (Codex)'
-    return props.modelValue.split(':').pop() + ' (CLI)'
-  }
-  return props.modelValue.split('/').pop()
+  return getModelDisplayName(props.modelValue, props.models)
 })
 
 const filteredPalomaModels = computed(() => {
@@ -178,12 +164,16 @@ const filteredCodexModels = computed(() => {
 const filteredModels = computed(() => {
   const available = props.models.length > 0
     ? props.models.map(m => typeof m === 'string' ? m : m.id)
-    : popularModels
+    : POPULAR_OPENROUTER_MODEL_IDS
 
   if (!filter.value) return available.slice(0, 20)
   const q = filter.value.toLowerCase()
   return available.filter(m => m.toLowerCase().includes(q)).slice(0, 20)
 })
+
+function getOpenRouterName(modelId) {
+  return getModelDisplayName(modelId, props.models)
+}
 
 watch(open, (val) => {
   if (val) {
