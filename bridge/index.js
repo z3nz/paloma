@@ -77,7 +77,9 @@ async function main() {
   function broadcast(msg) {
     const data = JSON.stringify(msg)
     for (const client of wss.clients) {
-      if (client.readyState === 1) client.send(data)
+      if (client.readyState === 1) {
+        try { client.send(data) } catch (_) { /* client disconnected mid-send */ }
+      }
     }
   }
 
@@ -85,7 +87,7 @@ async function main() {
   function sendToOrigin(cliRequestId, msg) {
     const ws = cliRequestToWs.get(cliRequestId)
     if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify(msg))
+      try { ws.send(JSON.stringify(msg)) } catch (_) { broadcast(msg) }
     } else {
       broadcast(msg)
     }
@@ -477,16 +479,21 @@ async function main() {
               }
 
               // Continue conversation with tool results
-              ollamaManager.continueWithToolResults(
-                event.requestId, event.sessionId,
-                event.assistantMessage, results,
-                handleOllamaEvent
-              )
+              try {
+                ollamaManager.continueWithToolResults(
+                  event.requestId, event.sessionId,
+                  event.assistantMessage, results,
+                  handleOllamaEvent
+                )
+              } catch (e) {
+                console.error('[bridge] Failed to continue Ollama tool loop:', e.message)
+                ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
+              }
               return
             }
 
             // Pass through all other events (stream, done, error)
-            ws.send(JSON.stringify({ ...event, id: msg.id }))
+            try { ws.send(JSON.stringify({ ...event, id: msg.id })) } catch (_) { /* client disconnected */ }
             if (event.type === 'ollama_done' || event.type === 'ollama_error') {
               cliRequestToWs.delete(event.requestId)
             }

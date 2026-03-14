@@ -224,6 +224,8 @@ export function createMcpBridge() {
         }
       } else if (msg.type === 'email_received') {
         onEmailReceived?.(msg)
+      } else if (msg.type === 'email_abandoned') {
+        console.warn(`[email] Thread abandoned after ${msg.retries} retries: "${msg.subject}" from ${msg.from}`)
       } else if (msg.type === 'cli_tool_activity') {
         onCliToolActivity?.(msg.toolName, msg.args, msg.status)
       } else if (msg.type === 'cli_tool_confirmation') {

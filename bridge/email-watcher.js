@@ -401,6 +401,14 @@ export class EmailWatcher {
 
       if (entry.retryCount >= MAX_RETRIES) {
         console.warn(`[email-watcher] Thread ${threadId} abandoned after ${MAX_RETRIES} retries — "${entry.subject}" from ${entry.from}`)
+        this.broadcast({
+          type: 'email_abandoned',
+          threadId,
+          subject: entry.subject,
+          from: entry.from,
+          retries: MAX_RETRIES,
+          message: `Email thread abandoned after ${MAX_RETRIES} retries: "${entry.subject}" from ${entry.from}`
+        })
         this.threadTracker.delete(threadId)
         return
       }

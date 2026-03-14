@@ -410,6 +410,13 @@ export class OllamaManager {
     for (const [sessionId, session] of this.sessions) {
       if (now - session.lastActivity > maxAge) {
         console.log(`[ollama] Expiring inactive session ${sessionId}`)
+        // Abort any active requests for this session
+        for (const [reqId, entry] of this.requests) {
+          if (entry.sessionId === sessionId) {
+            entry.abortController?.abort()
+            this.requests.delete(reqId)
+          }
+        }
         this.sessions.delete(sessionId)
       }
     }
