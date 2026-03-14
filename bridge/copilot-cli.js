@@ -45,7 +45,7 @@ export class CopilotCliManager {
     if (this.mcpProxyPort) {
       mcpConfigPath = join(tmpdir(), `paloma-copilot-mcp-${requestId}.json`)
       const mcpConfig = {
-        servers: {
+        mcpServers: {
           paloma: {
             type: 'sse',
             url: `http://localhost:${this.mcpProxyPort}/sse?cliRequestId=${requestId}`
@@ -107,8 +107,9 @@ export class CopilotCliManager {
       console.error(`[copilot] stdout error: ${err.message}`)
     })
 
-    proc.stderr.on('data', () => {
-      // Copilot CLI writes progress info to stderr — ignore
+    proc.stderr.on('data', (data) => {
+      const text = data.toString().trim()
+      if (text) console.error(`[copilot] stderr: ${text}`)
     })
 
     proc.stderr.on('error', (err) => {
