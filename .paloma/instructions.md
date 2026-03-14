@@ -42,9 +42,19 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 ### Recursive Orchestration Tools
 - `pillar_decompose` — Add/update structured work units (WU-N) in plan documents
 - `pillar_orchestrate` — Analyze plan's work units: ready/blocked status, dependency resolution, file-disjoint parallelism recommendations
+- `pillar_stop_tree` — Kill switch: stop a session and ALL its descendants (recursive tree)
 - Work units live inline in plan documents under `## Work Units` section
 - Max 2 concurrent Forge sessions, file-disjoint only
 - Plan document on disk is the source of truth for orchestration state
+- **Ollama spawn queue:** When MAX_CONCURRENT_OLLAMA (4) is hit, new spawns queue in FIFO with `status: 'queued'` instead of being rejected. Dequeues automatically when slots open. Deadlock prevention excludes parents waiting on children from active count.
+
+### Ollama Eval & Training System
+- **Eval runner:** `scripts/ollama-eval/runner.js` — runs eval tasks against Ollama models, scores responses
+- **Eval tasks:** `.paloma/ollama-training/evals/` — 79 tasks across 6 categories (tool-use, instruction-following, code-gen, bug-finding, code-review, paloma-specific)
+- **Prompt engine:** `scripts/ollama-eval/prompt-engine.js` — Modelfile versioning (create/eval/history), tracks improvement lineage
+- **Data pipeline:** `scripts/ollama-eval/data-collector.js` — extract high-scoring responses, generate Claude gold answers, split train/test/valid
+- **Improvement levels:** L0 system prompt → L1 few-shot → L2 parameters → L3 QLoRA fine-tuning (sequential gates, exhaust cheap improvements first)
+- **Sacred rule:** Stock `qwen2.5-coder:32b` is NEVER modified. All improvements create derivatives (`paloma-coder:vN`). Every eval includes stock baseline.
 
 ### Voice System (Dual Voice)
 - **MCP Tool:** `mcp__paloma__voice__speak` — speaks text aloud via Kokoro TTS

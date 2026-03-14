@@ -101,3 +101,43 @@
 - **Insight:** `google-auth-library`'s `OAuth2Client` emits a `tokens` event whenever it obtains a new access token. If you don't listen for it and write the new tokens to disk, the refresh only lasts until the process exits. For any Google API client used in a long-running process: register `oauth2Client.on('tokens', newTokens => { /* merge + write to disk */ })` at initialization. The merge matters: the refresh event only includes the new `access_token` and `expiry_date`, not the `refresh_token` — always spread existing tokens first.
 - **Action:** Applied in `bridge/email-watcher.js` as part of commit `46632d2`. Pattern: `oauth2Client.on('tokens', newTokens => { tokens = { ...tokens, ...newTokens }; fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens)) })`.
 - **Applied:** YES — committed as 46632d2
+
+---
+
+### Lesson: FIFO spawn queue requires a dequeue trigger at every slot-freeing event
+- **Context:** WU-4 of Qwen Recursive Singularity added a spawn queue so Ollama sessions queue instead of being rejected when `MAX_CONCURRENT_OLLAMA` (4) is hit.
+- **Insight:** A FIFO queue is only as good as its dequeue triggers. A slot frees whenever a session ends — by any means. Miss one and the queue stalls silently. The complete set of triggers in `bridge/pillar-manager.js`: (1) `stop()` — explicit stop, (2) `stopTree()` — recursive stop, (3) `isDone` in `_handleCliEvent` — natural completion, (4) `isError` in `_handleCliEvent` — error exit. And a 5th, subtler trigger: (5) when a parent session registers a pending-child Promise and the child's spawn returned `status: 'queued'` — the parent is now blocked and no longer consuming inference capacity, so its slot effectively frees and dequeue runs immediately. Without trigger 5, the parent-waits-on-queued-child scenario stalls until another unrelated session finishes. When adding any code path that terminates OR blocks a session, ask: does this free a slot? If yes, call `_dequeueOllamaSpawns()`.
+- **Action:** In `bridge/pillar-manager.js`. Enumerate all slot-freeing events at design time when building any concurrency-limited queue.
+- **Applied:** YES — committed as 86b46a2
+
+### Lesson: Prevent concurrency deadlock by excluding blocked parents from the active count
+- **Context:** Recursive Ollama spawning: parent P spawns child C, then awaits C's output via a Promise in `_pendingChildCompletions`. If P holds a concurrency slot while waiting and the limit is full, C can never start — classic deadlock.
+- **Insight:** The fix is in `_countActiveOllamaSessions()`. It walks `_pendingChildCompletions`, finds each pending child's `parentPillarId`, and adds those parents to a `waitingParents` Set. The count loop skips sessions in `waitingParents`. A waiting parent holds no active inference capacity — it's blocked on I/O — so excluding it is semantically correct. The invariant: the active count represents sessions actively consuming inference capacity, not sessions that merely exist. Generalizes: for any concurrency-limited resource, distinguish "consuming the resource" from "holding a slot while blocked on something else."
+- **Action:** In `bridge/pillar-manager.js`, `_countActiveOllamaSessions()`. Reuse this pattern whenever building concurrency limits on async recursive work.
+- **Applied:** YES — committed as 86b46a2
+
+### Lesson: Create placeholder session records before async work for immediate visibility
+- **Context:** When a spawn is queued, there's a gap between "session requested" and "session starts." Without a record in `this.pillars`, that session is invisible to `list()` and `getStatus()` until it dequeues.
+- **Insight:** `_enqueueSpawn()` immediately creates a full session object in `this.pillars` with `status: 'queued'` and `queuePosition`, and broadcasts `pillar_queued` to the browser. When `_executeSpawn()` later runs, it upgrades the placeholder in-place. The `pillarId` is reserved at enqueue time, not execution time — so the session is observable, stoppable, and reportable from the moment it's requested. `stop()` handles queued sessions by removing them from the queue; `sendMessage()` rejects them gracefully. Queued sessions are first-class citizens.
+- **Action:** Pattern for any async resource allocation: create the record immediately with a pending status, upgrade in-place when the resource is granted. Avoids phantom sessions and gives real-time queue visibility.
+- **Applied:** YES — committed as 86b46a2
+
+### Lesson: Pre-clear shared state at the top of a tree-kill operation (Polish observation)
+- **Context:** `stopTree()` deletes `_pendingChildCompletions` entries for descendants before stopping each session. If a child's `stop()` also tries to resolve the pending completion in its cleanup path, there's a theoretical race where the resolve fires after `stopTree()` already removed it.
+- **Insight:** No data corruption occurs (the Map entry is already gone, so the resolve is a no-op). But pre-clearing all entries at the top of `stopTree()` — before the stop loop begins — makes intent explicit: "this tree is being destroyed, no completions should fire." The general rule: in a tree-kill operation, invalidate all shared state first, then destroy nodes.
+- **Action:** Future improvement in `bridge/pillar-manager.js`: move all `_pendingChildCompletions.delete()` calls to the top of `stopTree()` before the stop loop. Low priority; current behavior is correct.
+- **Applied:** NO — proposed for future improvement
+
+---
+
+### Lesson: Promises awaiting child session completion need timeout + settlement guard
+- **Context:** In the recursive Qwen architecture, a parent Ollama session spawns a child and blocks on a Promise awaiting the child's completion. The resolve function is stored in a Map (`_pendingChildCompletions`). If the child crashes without emitting a done event, the parent hangs forever.
+- **Insight:** Any Promise that awaits an external subprocess completion needs: (1) A timeout that rejects after a reasonable duration (35 minutes — slightly longer than the session's own MAX_RUNTIME_MS). (2) A settlement flag (`let settled = false`) to prevent race conditions where both the timeout and the child completion fire in close succession. (3) Resolution in the `stop()` method — when a child is force-stopped, the parent must unblock. Without these three safeguards, parent sessions can hang indefinitely.
+- **Action:** Applied in `bridge/pillar-manager.js`. Pattern: Promise wraps timeout + settlement flag, `_pendingChildCompletions` resolves in both `_handleCliEvent` (normal completion) and `stop()` (force stop).
+- **Applied:** YES — committed as 06ad59c
+
+### Lesson: Set cooldowns AFTER successful send, not before
+- **Context:** Notification cooldown (`notificationCooldown.set(pillarId, now)`) was called before `_sendFlowNotification()`. If the send failed (e.g. WebSocket closed), the pillarId was still marked as "recently notified" and blocked for 5 seconds — silently dropping the notification with no retry.
+- **Insight:** Rate-limiting/cooldown timestamps should be set AFTER the action succeeds, not before. Setting before means a failure counts as "done" and prevents retry. This applies to any cooldown/dedup mechanism: email dedup, API rate limiting, event debouncing. The general rule: record "last sent" only when you've confirmed the send worked.
+- **Action:** Moved `notificationCooldown.set(pillarId, now)` from before the send to after `_sendFlowNotification()`.
+- **Applied:** YES — committed as 06ad59c

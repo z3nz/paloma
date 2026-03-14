@@ -2,7 +2,7 @@
 
 > **Read this when you need to reason about bridge internals, session management, MCP routing, or data flows.** This is an on-demand reference, NOT auto-loaded into prompts. For the abstract mental model, see `root-architecture.md`. For quick orientation, see MEMORY.md.
 >
-> Last updated: 2026-03-12
+> Last updated: 2026-03-14
 
 ---
 
@@ -143,6 +143,18 @@ When a pillar completes (or errors), PillarManager automatically resumes Flow's 
 - **Queue:** If Flow is busy (streaming), notifications queue (max 50)
 - **Batching:** Multiple queued notifications combined into single `[PILLAR CALLBACKS — BATCHED]` message
 - **Drain:** Queue drains when Flow's turn completes (`onFlowTurnComplete()`)
+
+**Ollama spawn queue:**
+- `MAX_CONCURRENT_OLLAMA = 4` — soft limit on concurrent Ollama sessions
+- When limit hit, new spawns queue in FIFO (`_spawnQueue[]`) instead of being rejected
+- Queued sessions get `status: 'queued'` and `queuePosition` in responses
+- Dequeue triggers: `stop()`, `stopTree()`, session completion, session error
+- Deadlock prevention: parents blocked on `_pendingChildCompletions` are excluded from active count
+- `pillar_queued` event broadcast to browser for UI visibility
+
+**Non-browser Flow notifications:**
+- If no browser Flow session is registered (e.g. Copilot/Codex CLI), notifications queue in `_pendingNotifications[]`
+- Retrieved via `getNotifications()` / `pillar_notifications` MCP tool
 
 **Recursive orchestration:**
 - `decompose()` — Writes structured work units (WU-N) into plan markdown files
@@ -403,6 +415,35 @@ Drafts saved to IndexedDB `drafts` table every 2 seconds during streaming. On re
 
 ### No-Full-Reload Vite Plugin
 Custom plugin in `vite.config.js` intercepts HMR WebSocket to block `full-reload` messages. Vue component updates work normally. Prevents state loss during development.
+
+---
+
+## Ollama Eval & Training Infrastructure
+
+```
+scripts/ollama-eval/
+├── runner.js          — Eval execution engine (loads tasks, calls Ollama API, scores responses)
+├── scorer.js          — 4 scoring modes: exact_match, contains, code_execution, claude_judge
+├── reporter.js        — Markdown comparison tables (model-vs-model, category breakdown)
+├── prompt-engine.js   — Modelfile versioning: create/eval/history commands
+├── data-collector.js  — Training data: extract high-scoring, generate gold, split train/test/valid
+├── data-curator.js    — Interactive CLI for reviewing/approving training examples
+└── utils.js           — Shared: Ollama HTTP client, paths, JSONL I/O, parseArgs
+
+.paloma/ollama-training/
+├── evals/{category}/  — 79 eval tasks across 6 categories (JSON)
+├── results/           — Eval run results (JSON) + SUMMARY.md
+├── prompts/           — Modelfile versions (stock, v1, ...) + VERSION_LOG.md
+└── data/              — Training data (candidates, approved, train/test/valid JSONL)
+```
+
+**Improvement levels (sequential gates):**
+- L0: System prompt tuning (Modelfile SYSTEM block)
+- L1: Few-shot examples in system prompt
+- L2: Parameter tuning (temperature, num_ctx)
+- L3: QLoRA fine-tuning via MLX (MacBook only)
+
+**Key principle:** Stock model (`qwen2.5-coder:32b`) is NEVER modified. All improvements create derivatives (`paloma-coder:vN`). Every eval includes stock baseline for regression detection.
 
 ---
 

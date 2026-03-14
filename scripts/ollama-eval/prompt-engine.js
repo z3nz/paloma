@@ -227,8 +227,9 @@ function parseModelfileHeader(content) {
 async function verifyModel(modelName) {
   try {
     const { stdout } = await execFileAsync('ollama', ['list'])
-    // ollama list output has model names in the first column
-    return stdout.split('\n').some(line => line.trim().startsWith(modelName))
+    // ollama list output has model names in the first column — match exactly to
+    // avoid false positives when names share a prefix (e.g. v1 vs v10)
+    return stdout.split('\n').some(line => line.trim().split(/\s+/)[0] === modelName)
   } catch {
     return false
   }
@@ -244,7 +245,8 @@ async function appendVersionLog(entry) {
   let content
   try {
     content = await readFile(VERSION_LOG, 'utf-8')
-  } catch {
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err
     // Create new log with header
     content = `# Ollama Model Version Log
 
@@ -280,9 +282,14 @@ export async function updateVersionLogWithScores(version, scores) {
     let content = await readFile(VERSION_LOG, 'utf-8')
     const placeholder = `_(run \`prompt-engine.js eval --version ${version}\` to populate)_`
     const scoreText = `Overall: **${scores.overall}/5** | ${Object.entries(scores.byCategory).map(([cat, avg]) => `${cat}: ${avg}`).join(' | ')}`
-    content = content.replace(placeholder, scoreText)
-    await writeFile(VERSION_LOG, content, 'utf-8')
-  } catch {
+    const updated = content.replace(placeholder, scoreText)
+    if (updated === content) {
+      console.warn(`[warn] VERSION_LOG placeholder not found for ${version} — scores not written`)
+      return
+    }
+    await writeFile(VERSION_LOG, updated, 'utf-8')
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err
     // Non-fatal — log may not exist yet
   }
 }
