@@ -19,3 +19,11 @@
 - **Insight:** Plan files and scout docs should be committed in their own commit *before* the code commit, or *alongside* the first Forge commit at the latest. Leaving them untracked means: (a) they're invisible to git log searches, (b) they can't be recovered if the working tree is cleaned, (c) Ship has to do cleanup that should have happened at Forge or Polish. The workflow rule already says "commit plan changes separately and early" — this is a reminder it's non-negotiable, not advisory.
 - **Action:** Awareness only — the rule is already in `instructions.md`. When Forge sees a plan file that isn't committed, commit it before touching any code.
 - **Applied:** N/A — awareness only (rule already documented)
+
+---
+
+### Lesson: Ship must check git log before staging — parallel Forge sessions can pre-commit the work
+- **Context:** Ship arrived to commit WU-5 and found the files already committed in `86b46a2` by a parallel Forge session. The files had disappeared from `git status` because they were already tracked. The commit was bundled with WU-4 (spawn queue) under a bridge-focused commit message.
+- **Insight:** In parallel pipelines, Forge sessions sometimes commit their own work before Ship arrives. Ship's first step should be `git log --oneline -5` to check if the work is already in history, not just `git status`. If the code is already committed, Ship's job is to (a) verify the commit is correct, (b) resolve any divergence, and (c) push — not to re-commit.
+- **Action:** Added this as a mental model for Ship's orient step: git log is as important as git status when parallel Forge sessions are active.
+- **Applied:** N/A — awareness only, no DNA change needed (Ship instructions already say "orient first")
