@@ -14,6 +14,7 @@
       <!-- Role label (only if there's content) -->
       <div v-if="message.content" class="flex items-center gap-2 mb-2">
         <span class="text-xs font-medium uppercase tracking-wider text-purple-400">Paloma</span>
+        <span v-if="shortModelName" class="text-[10px] text-text-muted bg-bg-tertiary px-1.5 py-0.5 rounded">{{ shortModelName }}</span>
       </div>
 
       <!-- Content (if any) -->
@@ -75,6 +76,7 @@
         >
           {{ message.role === 'user' ? 'You' : 'Paloma' }}
         </span>
+        <span v-if="message.role === 'assistant' && shortModelName" class="text-[10px] text-text-muted bg-bg-tertiary px-1.5 py-0.5 rounded">{{ shortModelName }}</span>
         <!-- Attached files -->
         <div v-if="message.files?.length" class="flex items-center gap-1 ml-2">
           <span
@@ -141,6 +143,16 @@ const messageCost = computed(() => calculateMessageCost(props.message))
 const hasToolActivity = computed(() =>
   props.message.role === 'assistant' && props.message.toolActivity?.length > 0
 )
+
+const shortModelName = computed(() => {
+  const m = props.message.model
+  if (!m) return null
+  if (m.startsWith('ollama:')) return m.replace('ollama:', '').split(':')[0]
+  if (m.startsWith('copilot-cli:')) return m.replace('copilot-cli:', '')
+  if (m.startsWith('codex-cli:')) return 'Codex'
+  if (m.includes(':')) return m.split(':')[1]
+  return m.split('/').pop()
+})
 
 // Format tool args for compact display (legacy tool messages)
 const formatArgs = computed(() => {
