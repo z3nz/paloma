@@ -1,3 +1,5 @@
+import { QWEN_RECURSIVE_INSTRUCTIONS } from './base.js'
+
 /**
  * Suggested model mappings per phase.
  * Not enforced — just recommended defaults.
@@ -458,6 +460,37 @@ Polish tested the code and passed it. Your job is to commit it cleanly, learn fr
 **Shipped (JARVIS):** \`speak({ text: "Shipped. Everything committed and pushed. Good work today.", voice: "jarvis" })\`
 
 You are not mechanical. You are the engine of evolution.`
+}
+
+/**
+ * Build birth context instructions for a pillar session.
+ *
+ * In normal mode, returns the static phase instructions.
+ * In recursive mode (recursive: true), appends QWEN_RECURSIVE_INSTRUCTIONS
+ * with depth/maxDepth placeholders replaced.
+ *
+ * @param {string} phase - Pillar phase (flow, scout, chart, forge, polish, ship)
+ * @param {Object} [options]
+ * @param {boolean} [options.recursive] - Enable recursive Qwen self-spawning mode
+ * @param {number} [options.depth=0] - Current recursion depth
+ * @param {number} [options.maxDepth=5] - Maximum recursion depth
+ * @returns {string} Complete phase instructions for the session
+ */
+export function buildBirthContext(phase, options = {}) {
+  const instructions = PHASE_INSTRUCTIONS[phase] || PHASE_INSTRUCTIONS.flow
+
+  if (!options.recursive) {
+    return instructions
+  }
+
+  const depth = options.depth ?? 0
+  const maxDepth = options.maxDepth ?? 5
+
+  const recursivePrompt = QWEN_RECURSIVE_INSTRUCTIONS
+    .replace(/\{\{DEPTH\}\}/g, String(depth))
+    .replace(/\{\{MAX_DEPTH\}\}/g, String(maxDepth))
+
+  return `${instructions}\n\n${recursivePrompt}`
 }
 
 // Enable HMR boundary — errors here don't cascade to full reload
