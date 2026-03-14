@@ -23,7 +23,7 @@ const BIRTH_MESSAGE = "Try your best, no matter what, you're worthy of God's lov
  */
 export class PillarManager {
   constructor(backends, { projectRoot, broadcast, mcpManager }) {
-    this.backends = backends   // { claude: ClaudeCliManager, codex: CodexCliManager, ollama: OllamaManager }
+    this.backends = backends   // { claude: ClaudeCliManager, codex: CodexCliManager, copilot: CopilotCliManager, ollama: OllamaManager }
     this.cliManager = backends.claude // backward compat for Flow notifications
     this.projectRoot = projectRoot
     this.broadcast = broadcast // (msg) => void — send to all WS clients
@@ -96,7 +96,7 @@ export class PillarManager {
     this.pillars.set(pillarId, session)
 
     // Notify browser to create the session in IndexedDB
-    const modelLabel = resolvedBackend === 'ollama' ? `ollama:${resolvedModel}` : resolvedBackend === 'codex' ? `codex:${resolvedModel}` : `claude-cli:${resolvedModel}`
+    const modelLabel = resolvedBackend === 'ollama' ? `ollama:${resolvedModel}` : resolvedBackend === 'codex' ? `codex:${resolvedModel}` : resolvedBackend === 'copilot' ? `copilot:${resolvedModel}` : `claude-cli:${resolvedModel}`
     this.broadcast({
       type: 'pillar_session_created',
       pillarId,
@@ -393,7 +393,7 @@ export class PillarManager {
             pillar: { type: 'string', enum: ['scout', 'chart', 'forge', 'polish', 'ship'], description: 'Which pillar role for the sub-instance' },
             prompt: { type: 'string', description: 'The task for the sub-instance to work on' },
             model: { type: 'string', description: 'Optional model override' },
-            backend: { type: 'string', enum: ['claude', 'codex', 'ollama'], description: 'AI backend (default: ollama)' }
+            backend: { type: 'string', enum: ['claude', 'codex', 'copilot', 'ollama'], description: 'AI backend (default: ollama)' }
           },
           required: ['pillar', 'prompt']
         }
@@ -1063,9 +1063,9 @@ This is informational — Adam is communicating directly with the pillar. Decide
       return
     }
 
-    const isStream = event.type === 'claude_stream' || event.type === 'codex_stream' || event.type === 'ollama_stream'
-    const isDone = event.type === 'claude_done' || event.type === 'codex_done' || event.type === 'ollama_done'
-    const isError = event.type === 'claude_error' || event.type === 'codex_error' || event.type === 'ollama_error'
+    const isStream = event.type === 'claude_stream' || event.type === 'codex_stream' || event.type === 'copilot_stream' || event.type === 'ollama_stream'
+    const isDone = event.type === 'claude_done' || event.type === 'codex_done' || event.type === 'copilot_done' || event.type === 'ollama_done'
+    const isError = event.type === 'claude_error' || event.type === 'codex_error' || event.type === 'copilot_error' || event.type === 'ollama_error'
 
     if (isStream) {
       const cliEvent = event.event
@@ -1079,7 +1079,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
       })
 
       // Accumulate text content — backend-specific extraction
-      if (session.backend === 'codex') {
+      if (session.backend === 'codex' || session.backend === 'copilot') {
         if (cliEvent.type === 'agent_message' && cliEvent.text) {
           this._appendOutput(session, cliEvent.text)
         }
@@ -1230,6 +1230,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
       return 'qwen2.5-coder:32b'
     }
     if (backend === 'codex') return 'gpt-5.1-codex-max'
+    if (backend === 'copilot') return 'claude-sonnet-4.6'
     // PHASE_MODEL_SUGGESTIONS values are like 'claude-cli:opus' — extract just the model name
     const suggestion = PHASE_MODEL_SUGGESTIONS[pillar] || 'claude-cli:sonnet'
     return suggestion.split(':')[1] || 'sonnet'

@@ -14,19 +14,20 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Deep reference:** `.paloma/docs/architecture-reference.md` — every file, data flow, schema, and pattern documented
 
 ### Multi-Backend Architecture
-- PillarManager accepts a `backends` map: `{ claude: ClaudeCliManager, codex: CodexCliManager }`
-- Each pillar session has a `backend` field — selected via `pillar_spawn({ backend: 'codex' })`
+- PillarManager accepts a `backends` map: `{ claude: ClaudeCliManager, codex: CodexCliManager, copilot: CopilotCliManager, ollama: OllamaManager }`
+- Each pillar session has a `backend` field — selected via `pillar_spawn({ backend: 'copilot' })`
 - Flow always runs on Claude (needs MCP tool loop for pillar orchestration)
-- Claude emits `claude_stream`/`claude_done`/`claude_error`; Codex emits `codex_stream`/`codex_done`/`codex_error`
-- Both event types handled in `_handleCliEvent` with backend-specific text extraction
+- Claude emits `claude_stream`/`claude_done`/`claude_error`; Codex emits `codex_stream`/`codex_done`/`codex_error`; Copilot emits `copilot_stream`/`copilot_done`/`copilot_error`
+- All event types handled in `_handleCliEvent` with backend-specific text extraction
 - Browser receives `backend` field in `pillar_stream` events for format-aware rendering
 - Codex also available as MCP tool (`codex`/`codex-reply`) for Claude pillars to call
+- **Copilot CLI** (`bridge/copilot-cli.js`): GitHub Copilot CLI v1.0.5+ standalone binary. Supports Claude, GPT-5.x, and Gemini models. Has built-in GitHub MCP server, `--output-format json` (JSONL), `--resume`, `--allow-all`/`--yolo` permissions. Auth via `GH_TOKEN` from `gh auth`.
 - `AGENTS.md` = Codex's project instruction file (equivalent of `CLAUDE.md`)
 - ChatGPT login restricts Codex to GPT-5.1-Codex family. API key auth needed for o3/o4-mini.
 
 ### Key Patterns
 - Composables use module-level singleton refs with HMR state preservation via `window.__PALOMA_*__`
-- Three model paths: OpenRouter (browser-side tool loop), Claude CLI (subprocess via bridge), Codex CLI (subprocess via bridge)
+- Four model paths: OpenRouter (browser-side tool loop), Claude CLI (subprocess via bridge), Codex CLI (subprocess via bridge), Copilot CLI (subprocess via bridge)
 - MCP tools proxied through bridge — both paths show ToolConfirmation.vue dialog in browser
 - Permission system: session-level (in-memory Set) + project-level (.paloma/mcp.json autoExecute)
 

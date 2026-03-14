@@ -13,7 +13,7 @@
  */
 
 import { google } from 'googleapis'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -58,8 +58,22 @@ export class EmailWatcher {
       )
       oauth2Client.setCredentials(tokens)
 
+      // Persist refreshed tokens automatically (matches gmail.js behavior)
+      oauth2Client.on('tokens', (newTokens) => {
+        try {
+          const existing = existsSync(TOKENS_PATH)
+            ? JSON.parse(readFileSync(TOKENS_PATH, 'utf8'))
+            : {}
+          writeFileSync(TOKENS_PATH, JSON.stringify({ ...existing, ...newTokens }, null, 2))
+          console.log('[email-watcher] Refreshed tokens saved to disk')
+        } catch (err) {
+          console.error('[email-watcher] Failed to save refreshed tokens:', err.message)
+        }
+      })
+
       return google.gmail({ version: 'v1', auth: oauth2Client })
-    } catch {
+    } catch (err) {
+      console.error('[email-watcher] OAuth client creation failed:', err.message)
       return null
     }
   }

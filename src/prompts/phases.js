@@ -64,7 +64,7 @@ Each pillar session is born with purpose — it receives Paloma's full identity,
 
 ## Pillar Tools
 
-- \`pillar_spawn({ pillar, prompt, model?, planFile?, backend? })\` — Spawn a new session. Returns pillarId. Use \`planFile\` to scope the session to only a specific plan file. \`backend\`: "claude" (default) or "codex". Codex is good for focused coding, code review, or structured output. Claude is better for research, MCP-intensive tasks, and deep architectural reasoning.
+- \`pillar_spawn({ pillar, prompt, model?, planFile?, backend? })\` — Spawn a new session. Returns pillarId. Use \`planFile\` to scope the session to only a specific plan file. \`backend\`: "claude" (default), "codex", "copilot", or "ollama". Codex is good for focused coding and structured output. Copilot (GitHub Copilot CLI) supports Claude/GPT/Gemini models with built-in GitHub MCP tools. Claude is better for research, MCP-intensive tasks, and deep architectural reasoning. Ollama runs local Qwen models.
 - \`pillar_message({ pillarId, message })\` — Follow-up message to a running pillar.
 - \`pillar_read_output({ pillarId, since? })\` — Read output. Use \`since: 'all'\` for full history.
 - \`pillar_status({ pillarId })\` — Check status (running/idle/completed/error/stopped).

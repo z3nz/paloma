@@ -10,6 +10,7 @@ import { loadConfig } from './config.js'
 import { McpManager } from './mcp-manager.js'
 import { ClaudeCliManager } from './claude-cli.js'
 import { CodexCliManager } from './codex-cli.js'
+import { CopilotCliManager } from './copilot-cli.js'
 import { OllamaManager } from './ollama-manager.js'
 import { McpProxyServer } from './mcp-proxy-server.js'
 import { PillarManager } from './pillar-manager.js'
@@ -22,6 +23,7 @@ const proxyPort = 19192
 const manager = new McpManager()
 const cliManager = new ClaudeCliManager()
 const codexManager = new CodexCliManager()
+const copilotManager = new CopilotCliManager()
 const ollamaManager = new OllamaManager()
 let mcpProxy = null
 let pillarManager = null
@@ -118,9 +120,10 @@ async function main() {
   await mcpProxy.start()
   cliManager.mcpProxyPort = proxyPort
   codexManager.mcpProxyPort = proxyPort
+  copilotManager.mcpProxyPort = proxyPort
 
   // Wire PillarManager with multi-backend support
-  const backends = { claude: cliManager, codex: codexManager, ollama: ollamaManager }
+  const backends = { claude: cliManager, codex: codexManager, copilot: copilotManager, ollama: ollamaManager }
   pillarManager = new PillarManager(backends, {
     projectRoot: process.cwd(),
     broadcast,
