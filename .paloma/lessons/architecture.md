@@ -141,3 +141,15 @@
 - **Insight:** Rate-limiting/cooldown timestamps should be set AFTER the action succeeds, not before. Setting before means a failure counts as "done" and prevents retry. This applies to any cooldown/dedup mechanism: email dedup, API rate limiting, event debouncing. The general rule: record "last sent" only when you've confirmed the send worked.
 - **Action:** Moved `notificationCooldown.set(pillarId, now)` from before the send to after `_sendFlowNotification()`.
 - **Applied:** YES — committed as 06ad59c
+
+### Lesson: Wrap CLI-first scripts as MCP tools via subprocess, not imports
+- **Context:** `mcp-servers/ollama-eval.js` needed to expose `runner.js`, `reporter.js`, and `prompt-engine.js` as MCP tools. Those scripts auto-execute `main()` on module load — importing them would trigger CLI behavior immediately.
+- **Insight:** When a script calls `main()` at module level (common pattern for CLI tools), it cannot be imported as a library without side effects. The correct pattern is to spawn it as a child process via `child_process.spawn` with `stdio: 'pipe'`, collect stdout/stderr, and return the output as the tool result. This converts any CLI-first script into an MCP tool with zero refactoring of the original script. The subprocess boundary also enforces timeout control cleanly via `AbortController`.
+- **Action:** Use `spawn(process.execPath, [scriptPath, ...args], { stdio: 'pipe' })` pattern in MCP servers wrapping CLI scripts. This is the canonical approach for `mcp-servers/` wrapping `scripts/`.
+- **Applied:** YES — committed as cef0646
+
+### Lesson: Keep MCP servers self-contained — inline shared constants instead of cross-directory imports
+- **Context:** `ollama-eval.js` needed the same path constants and JSONL utilities as the scripts it wraps. The temptation was to import from `scripts/ollama-eval/utils.js`.
+- **Insight:** MCP servers that import from sibling directories create deployment coupling — if path layouts change or the server is moved, imports break. Inlining small constants (5–10 lines) and simple utilities (JSONL line counter) keeps the server fully self-contained. This matches the pattern of `memory.js` and `ollama.js`. The rule: if the shared code is under ~20 lines and only needed in one MCP server, inline it. Only create a shared module if 3+ servers need the same logic.
+- **Action:** Default to self-contained MCP servers. If genuinely shared logic grows beyond ~20 lines across multiple servers, extract to `mcp-servers/shared/`.
+- **Applied:** YES — committed as cef0646
