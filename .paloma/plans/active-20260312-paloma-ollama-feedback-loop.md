@@ -246,11 +246,37 @@ node scripts/ollama-eval/prompt-engine.js history
 3. Generate comparison report
 
 **Acceptance criteria:**
-- [ ] `create` command produces a working Ollama model from a Modelfile
-- [ ] `eval` command runs the suite and produces a side-by-side comparison
-- [ ] VERSION_LOG.md tracks all versions with metadata (date, parent, targets, results summary)
-- [ ] Modelfile.v1 exists and targets the top 2-3 weaknesses from baseline
-- [ ] v1 model evals show measurable improvement on targeted categories
+- [x] `create` command produces a working Ollama model from a Modelfile
+- [x] `eval` command runs the suite and produces a side-by-side comparison
+- [x] VERSION_LOG.md tracks all versions with metadata (date, parent, targets, results summary)
+- [x] Modelfile.v1 exists and targets the top 2-3 weaknesses from baseline
+- [ ] v1 model evals show measurable improvement on targeted categories _(requires WU-3 baseline + Ollama running)_
+
+**Implementation Notes (WU-4):**
+Built by Forge on 2026-03-14. 1 file created + 2 Modelfiles + prompts directory.
+
+**Files created:**
+- `scripts/ollama-eval/prompt-engine.js` — CLI with 3 commands: `create`, `eval`, `history`
+- `.paloma/ollama-training/prompts/Modelfile.stock` — Stock baseline reference (FROM qwen2.5-coder:32b, temp 0.3, ctx 32768)
+- `.paloma/ollama-training/prompts/Modelfile.v1` — First prompt-tuned version targeting instruction-following, tool-use, and conciseness
+
+**Design decisions:**
+- Subprocess-based: `eval` command spawns runner.js and reporter.js as child processes (both auto-execute `main()` on import, can't be imported directly). Uses `spawn` with `stdio: 'inherit'` for real-time streaming.
+- `create` command uses `execFile('ollama', ['create', ...])` with 5-minute timeout, then verifies with `ollama list`
+- Version resolution: `stock` → `qwen2.5-coder:32b`, `v1` → `paloma-coder:v1`, fully-qualified names pass through
+- Slug resolution for reporter comparison: matches result filenames which use `--` for `:` and `/` separators
+- VERSION_LOG.md auto-created with markdown header on first version, appended with structured entries
+- `updateVersionLogWithScores()` exported for future MCP tool (WU-7) to update eval results in the log
+- Modelfile.v1 system prompt: structured rules for response discipline, code quality, tool usage, output format, and system prompt adherence. Added `repeat_penalty: 1.1` and `top_p: 0.9` parameters.
+- Modelfile header parser extracts Version, Parent, Date, Targets, Changes from `# Key: value` comments
+
+**Verified:**
+- `node --check` — parses clean
+- No-args → usage help
+- `history` with no VERSION_LOG → graceful "no history yet" message
+- `create` with missing `--version` → clear error
+- `create --version nonexistent` → clear "Modelfile not found" error with path
+- `eval` with missing `--version` → clear error with usage hint
 
 ---
 

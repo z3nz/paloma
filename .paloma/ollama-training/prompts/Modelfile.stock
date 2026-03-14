@@ -1,0 +1,9 @@
+# Version: stock
+# Parent: none
+# Date: 2026-03-14
+# Targets: baseline
+# Changes: Stock Qwen config — no customizations, serves as baseline reference
+
+FROM qwen2.5-coder:32b
+PARAMETER temperature 0.3
+PARAMETER num_ctx 32768
