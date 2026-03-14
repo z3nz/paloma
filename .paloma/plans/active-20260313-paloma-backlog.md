@@ -32,13 +32,12 @@ Use MCP filesystem's `edit_file` tool with the Changes Panel workflow. Currently
 
 ### 2. Keyboard shortcuts
 
-Add core keyboard shortcuts for power-user workflow:
-- `Ctrl+K` — command palette / quick actions
-- `Ctrl+/` — toggle sidebar
-- `Ctrl+N` — new chat
-- `Escape` — close modals / cancel streaming
-
-Note: `useKeyboardShortcuts.js` composable exists — check what's already wired up.
+**Mostly complete.** Already implemented in `useKeyboardShortcuts.js`:
+- ✅ `Ctrl+/` — toggle sidebar
+- ✅ `Ctrl+N` — new chat
+- ✅ `Ctrl+M` — toggle voice input
+- ✅ `Escape` — close modals / cancel streaming
+- ⬜ `Ctrl+K` — command palette / quick actions (needs new component)
 
 ---
 
@@ -67,8 +66,9 @@ Allow editing sent messages and regenerating responses:
 
 When switching models mid-conversation, inject a context transfer message so the new model understands Paloma's capabilities and current state.
 
-- Show model attribution per message (badge/icon)
+- Show model attribution per message (badge/icon) — **note: `model` field already stored on every assistant message in IndexedDB, just needs UI**
 - Preserve full conversation history across switches
+- Backend switching already works (cliBackend tracking in useCliChat.js)
 
 ---
 
