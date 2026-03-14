@@ -255,6 +255,16 @@ export class McpProxyServer {
           required: ['planFile', 'unitId', 'scope', 'files']
         }
       })
+
+      tools.push({
+        name: 'pillar_notifications',
+        description: 'Retrieve pending pillar callback notifications. Use this after spawning pillars from a non-browser CLI session (Copilot/Codex/standalone Claude) to get completion callbacks that would normally be pushed automatically. Returns and clears the notification queue.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          required: []
+        }
+      })
     }
 
     // --- Bridge self-restart tool ---
@@ -405,6 +415,9 @@ export class McpProxyServer {
           break
         case 'pillar_orchestrate':
           result = await this.pillarManager.orchestrate(args)
+          break
+        case 'pillar_notifications':
+          result = this.pillarManager.getNotifications()
           break
         default:
           return { content: [{ type: 'text', text: `Unknown pillar tool: ${name}` }], isError: true }

@@ -35,6 +35,7 @@ export class PillarManager {
     this.notificationCount = 0 // notifications sent in current minute
     this.notificationWindowStart = Date.now()
     this._pendingChildCompletions = new Map() // childPillarId → resolve function
+    this._pendingNotifications = [] // queued notifications for non-browser Flow (Copilot/Codex CLI)
 
     // Periodic cleanup of terminal sessions (every 5 min)
     this._cleanupInterval = setInterval(() => this._cleanupTerminalSessions(), 5 * 60 * 1000)
@@ -696,7 +697,18 @@ export class PillarManager {
    */
   async notifyFlow(message, pillarId, metadata = {}) {
     if (!this.flowSession) {
-      console.warn('[pillar] No Flow session registered — notification dropped')
+      // No browser Flow session — queue for retrieval via pillar_notifications MCP tool
+      console.log('[pillar] No Flow session registered — queueing notification for MCP retrieval')
+      this._pendingNotifications.push({
+        message,
+        pillarId: pillarId || null,
+        metadata,
+        timestamp: new Date().toISOString()
+      })
+      // Cap queue size
+      if (this._pendingNotifications.length > MAX_NOTIFICATION_QUEUE) {
+        this._pendingNotifications.shift()
+      }
       return
     }
 
@@ -750,6 +762,24 @@ export class PillarManager {
 
     this.notificationCount++
     this._sendFlowNotification(message, metadata)
+  }
+
+  /**
+   * Retrieve and clear queued notifications (for non-browser CLI sessions).
+   * Called via pillar_notifications MCP tool.
+   */
+  getNotifications() {
+    const notifications = this._pendingNotifications.splice(0)
+    return {
+      count: notifications.length,
+      notifications: notifications.map(n => ({
+        message: n.message,
+        pillarId: n.pillarId,
+        pillar: n.metadata?.pillar || null,
+        type: n.metadata?.notificationType || 'unknown',
+        timestamp: n.timestamp
+      }))
+    }
   }
 
   /**
