@@ -53,6 +53,7 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Eval tasks:** `.paloma/ollama-training/evals/` — 79 tasks across 6 categories (tool-use, instruction-following, code-gen, bug-finding, code-review, paloma-specific)
 - **Prompt engine:** `scripts/ollama-eval/prompt-engine.js` — Modelfile versioning (create/eval/history), tracks improvement lineage
 - **Data pipeline:** `scripts/ollama-eval/data-collector.js` — extract high-scoring responses, generate Claude gold answers, split train/test/valid
+- **MCP automation:** `mcp-servers/ollama-eval.js` — 6 tools (`ollama_eval_run`, `ollama_eval_compare`, `ollama_prompt_create`, `ollama_prompt_history`, `ollama_data_stats`, `ollama_train_start`) wrapping the eval/training scripts for conversational use
 - **Improvement levels:** L0 system prompt → L1 few-shot → L2 parameters → L3 QLoRA fine-tuning (sequential gates, exhaust cheap improvements first)
 - **Sacred rule:** Stock `qwen2.5-coder:32b` is NEVER modified. All improvements create derivatives (`paloma-coder:vN`). Every eval includes stock baseline.
 
