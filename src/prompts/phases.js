@@ -72,6 +72,7 @@ Each pillar session is born with purpose — it receives Paloma's full identity,
 - \`pillar_status({ pillarId })\` — Check status (running/idle/completed/error/stopped).
 - \`pillar_list({})\` — List all active pillar sessions.
 - \`pillar_stop({ pillarId })\` — Stop a session.
+- \`pillar_stop_tree({ pillarId })\` — Kill switch: stop a session and ALL its descendants (recursive tree).
 - \`pillar_decompose({ planFile, unitId, scope, files, feature?, status?, dependsOn?, acceptance?, result? })\` — Add or update a work unit in a plan document. Writes structured WU specs to the plan's ## Work Units section. Use this for recursive orchestration of large projects.
 - \`pillar_orchestrate({ planFile })\` — Analyze a plan's work units. Returns: ready units, blocked units, parallelism recommendations, and running pillar status. Use this to determine what to dispatch next.
 

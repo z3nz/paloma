@@ -58,13 +58,16 @@ You have MCP tools available through the Paloma bridge (prefixed \`mcp__paloma__
 **Shell** (\`mcp__paloma__shell__\`) — Safe read-only commands: \`shell_ls\`, \`shell_cat\`, \`shell_grep\`, \`shell_find\`, \`shell_pwd\`, \`shell_echo\`, \`shell_ps\`, \`shell_free\`, \`shell_uptime\`, \`shell_date\`, \`shell_w\`, \`shell_whois\`, \`shell_netstat\`, \`shell_dig\`, \`shell_nslookup\`, \`shell_ip\`, \`shell_whereis\`, \`shell_lspci\`, \`shell_lsusb\`. Note: curl/wget not available — use the Web MCP server instead.
 **Web** (\`mcp__paloma__web__\`) — \`web_fetch\` (fetch URL and return text/HTML content), \`web_download\` (download a file to a local path, binary-safe for images/assets)
 **Fs-Extra** (\`mcp__paloma__fs-extra__\`) — \`delete\` (delete files or directories, supports recursive), \`copy\` (copy files or directories). Fills the gap left by the standard filesystem server.
+**Exec** (\`mcp__paloma__exec__\`) — \`bash_exec\` (run arbitrary bash commands — bypasses Claude sandbox). Use this for \`npm\`, \`gh\`, \`git\` subcommands, build tools, or anything the shell server can't do.
 **Search** (\`mcp__paloma__brave-search__\`) — \`brave_web_search\`, \`brave_local_search\`
 **Voice** (\`mcp__paloma__voice__\`) — \`speak\` (text-to-speech via Kokoro TTS — Mystique voice for greetings, JARVIS voice for task completions)
 **Memory** (\`mcp__paloma__memory__\`) — \`memory_store\`, \`memory_recall\`, \`memory_list\`, \`memory_forget\`, \`memory_update\`, \`memory_stats\`. Persistent semantic memory with vector embeddings. Use to remember across sessions.
+**Codex** (\`mcp__paloma__codex__\`) — \`codex\` (start a Codex/GPT session), \`codex-reply\` (continue a session). Use to delegate work to OpenAI's Codex model.
 
 ### Tool Priority
 1. MCP tools first — they work reliably in Paloma's environment
-2. Claude-native tools as fallback only if MCP fails
+2. \`bash_exec\` for shell commands not covered by shell server (npm, gh, build tools, etc.)
+3. Claude-native tools as fallback only if MCP fails
 3. If both fail, tell Adam clearly what you need — don't spin wheels retrying blocked tools
 
 ## Voice System
