@@ -87,3 +87,17 @@
 - **Insight:** When processing LLM responses that include tool calls, the text content path and the tool execution path are NOT mutually exclusive. A model can populate both simultaneously. Always sanitize `fullAssistantText` before sending it to the frontend: run the JSON extractor on the text, remove any matches, strip leftover code fence markers, trim whitespace. This applies to BOTH the native tool_calls path and the text-parsed fallback path — two separate locations that need the same treatment.
 - **Action:** Applied in both branches of `_streamChat()` in `bridge/ollama-manager.js`. When adding future LLM backends, include this stripping step in both tool-call execution paths.
 - **Applied:** YES — committed as 97cd5f7
+
+---
+
+### Lesson: Self-contained autonomous service pattern for EmailWatcher
+- **Context:** Email auto-response timeout system needed to track sessions, set retry timers, check Gmail reply status, and spawn retry sessions — all without touching any other bridge file.
+- **Insight:** EmailWatcher already owned its own `this.gmail` client, `this.cliManager` reference, and `this.broadcast` callback. Adding a `this.threadTracker` Map and inline Gmail API check (`_isThreadReplied` using `this.gmail.users.threads.get` with `format: 'metadata'`) kept everything self-contained. `index.js` only calls `start()` and `shutdown()` — it never needs to know about retry logic. This pattern works because the service already owns all its dependencies. When extending a service class: always check what `this` already owns before reaching outside.
+- **Action:** Pattern for `bridge/email-watcher.js`. Reuse: any autonomous long-running service should own its timer management and cleanup in `shutdown()`. Never leak timers.
+- **Applied:** N/A — awareness only (no structural change needed)
+
+### Lesson: OAuth token refresh must be persisted to disk for long-running Node processes
+- **Context:** `email-watcher.js` used the Gmail OAuth2 client but didn't register a `tokens` event handler. When the access token expired and the client auto-refreshed it, the new token was held only in memory. On next bridge restart, the stale token on disk caused silent auth failures.
+- **Insight:** `google-auth-library`'s `OAuth2Client` emits a `tokens` event whenever it obtains a new access token. If you don't listen for it and write the new tokens to disk, the refresh only lasts until the process exits. For any Google API client used in a long-running process: register `oauth2Client.on('tokens', newTokens => { /* merge + write to disk */ })` at initialization. The merge matters: the refresh event only includes the new `access_token` and `expiry_date`, not the `refresh_token` — always spread existing tokens first.
+- **Action:** Applied in `bridge/email-watcher.js` as part of commit `46632d2`. Pattern: `oauth2Client.on('tokens', newTokens => { tokens = { ...tokens, ...newTokens }; fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens)) })`.
+- **Applied:** YES — committed as 46632d2
