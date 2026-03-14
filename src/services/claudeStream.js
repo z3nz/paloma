@@ -9,7 +9,7 @@ export const CLI_MODELS = [
   { id: 'copilot-cli:claude-sonnet-4.6', name: 'Claude Sonnet 4.6 (Copilot)', context_length: 200000, copilot: true },
   { id: 'copilot-cli:claude-opus-4.6', name: 'Claude Opus 4.6 (Copilot)', context_length: 200000, copilot: true },
   { id: 'copilot-cli:gpt-5.4', name: 'GPT-5.4 (Copilot)', context_length: 200000, copilot: true },
-  { id: 'copilot-cli:gemini-2.5-pro', name: 'Gemini 2.5 Pro (Copilot)', context_length: 200000, copilot: true },
+  { id: 'copilot-cli:gemini-3-pro-preview', name: 'Gemini 3 Pro (Copilot)', context_length: 200000, copilot: true },
   { id: 'ollama:qwen2.5-coder:32b', name: 'Qwen 2.5 Coder 32B', context_length: 32768, ollama: true },
   { id: 'ollama:qwen2.5-coder:7b', name: 'Qwen 2.5 Coder 7B', context_length: 32768, ollama: true }
 ]
