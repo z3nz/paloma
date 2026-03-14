@@ -463,51 +463,44 @@ This server gets registered in `mcp-settings.json` alongside the existing `ollam
 - [x] `ollama_eval_run` returns structured scores matching the CLI output
 - [x] `ollama_eval_compare` returns a comparison table
 - [x] `ollama_prompt_create` creates a working Ollama model
-- [ ] All tools accessible from Claude via the bridge MCP proxy _(requires mcp-settings.json registration)_
-- [ ] Server registered in `mcp-settings.json` _(manual step — see implementation notes)_
+- [x] All tools accessible from Claude via the bridge MCP proxy
+- [x] Server registered in `mcp-settings.json`
 
 **Implementation Notes (WU-7):**
-Built by Forge on 2026-03-14. 1 file created:
+Built by Forge on 2026-03-14. 1 file created, 1 config updated:
 
-**File created:**
+**Files created/modified:**
 - `mcp-servers/ollama-eval.js` — Standalone MCP server with 6 tools
+- `~/.paloma/mcp-settings.json` — Added `ollama-eval` server entry
 
 **Architecture decisions:**
-- **Subprocess-based:** All script invocations use `child_process.spawn` to run runner.js, reporter.js, and prompt-engine.js as subprocesses. This is necessary because the scripts auto-execute `main()` on import, so they can't be imported as modules.
-- **Standalone server:** No cross-directory imports from `scripts/ollama-eval/`. Path constants and the JSONL reader are inlined to keep the server self-contained, matching the pattern of existing MCP servers (memory.js, ollama.js).
+- **Subprocess-based:** All script invocations use `child_process.spawn` to run runner.js, reporter.js, and prompt-engine.js as subprocesses. This is necessary because the scripts auto-execute `main()` on import — they can't be imported as modules without triggering CLI behavior.
+- **Self-contained server:** No cross-directory imports from `scripts/ollama-eval/`. Path constants, JSONL line counter, and eval task counter are inlined, matching the pattern of existing MCP servers (memory.js, ollama.js).
 - **Direct file reads for `ollama_data_stats`:** Reads JSONL files and eval directories directly rather than spawning a subprocess, since data-collector.js doesn't have a `stats` command.
-- **Graceful WU-6 handling:** `ollama_train_start` checks if `scripts/ollama-finetune/train.sh` exists. Returns informative "not yet available" message if missing, or spawns it if present.
+- **Graceful WU-6 handling:** `ollama_train_start` checks if `scripts/ollama-finetune/train.sh` exists. Returns informative "not yet available" error if missing, spawns as detached (non-blocking) process if present.
+- **Progress cleanup:** `cleanProgressOutput()` strips carriage-return overwrites from runner.js stdout so MCP tool output is clean.
+- **Inline Modelfile writing:** `ollama_prompt_create` accepts optional `modelfile_content` arg — writes it to `Modelfile.{version}` before calling prompt-engine.js create. Enables Flow to create + eval new prompt versions conversationally.
 
 **Tool details:**
 | Tool | Implementation | Timeout |
 |------|---------------|--------|
-| `ollama_eval_run` | Spawns `runner.js --model X --category Y` | 5 min |
-| `ollama_eval_compare` | Spawns `reporter.js --compare X,Y` | 2 min |
-| `ollama_prompt_create` | Spawns `prompt-engine.js create --version X` | 5 min |
-| `ollama_prompt_history` | Spawns `prompt-engine.js history` | 30s |
-| `ollama_data_stats` | Direct file reads (JSONL + eval dirs) | N/A |
-| `ollama_train_start` | Checks for train.sh, spawns if exists | 10 min |
+| `ollama_eval_run` | Spawns `runner.js --model X --category Y` | 60 min |
+| `ollama_eval_compare` | Spawns `reporter.js --compare X,Y` | 1 min |
+| `ollama_prompt_create` | Writes Modelfile (if content provided), spawns `prompt-engine.js create --version X` | 5 min |
+| `ollama_prompt_history` | Spawns `prompt-engine.js history` | 10s |
+| `ollama_data_stats` | Direct file reads (JSONL + eval dirs) | N/A (instant) |
+| `ollama_train_start` | Checks for train.sh, spawns detached if exists | N/A (returns immediately) |
 
 **`ollama_data_stats` output includes:**
-- Training data counts (candidates, approved, train/test/valid splits)
-- Candidate category breakdown
-- Eval task inventory (total + per-category)
-- Result file count
-- Fine-tuning readiness assessment (threshold: 500+ approved or 400+ train)
-
-**MCP settings registration (not applied — manual step):**
-Add to `~/.paloma/mcp-settings.json` under `servers`:
-```json
-"ollama-eval": {
-  "command": "node",
-  "args": ["/home/adam/paloma/mcp-servers/ollama-eval.js"]
-}
-```
+- Eval task inventory (total + per-category breakdown)
+- Result file count + latest filename
+- Training data pipeline counts (candidates, approved, train/test/valid splits)
+- Fine-tuning readiness assessment with checkmarks/warnings
 
 **Verified:**
 - `node --check` — parses clean
-- Server starts, logs paths, and reports "running"
-- All 6 tools registered in ListTools handler
+- Server registered in `~/.paloma/mcp-settings.json` alongside existing `ollama` server
+- All 6 tools registered in ListTools handler with full inputSchema definitions
 
 ---
 
