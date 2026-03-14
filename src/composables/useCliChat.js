@@ -37,9 +37,25 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   const existingCliSession = (existingBackend === currentBackend) ? (session?.cliSessionId || null) : null
   console.log(`[cli] ${existingCliSession ? 'Resuming' : 'New'} ${currentBackend} session, model=${model}`)
 
+  // Recovery: if starting a new CLI session but prior user messages exist without
+  // assistant responses (e.g. first send failed), include them so they aren't lost.
+  let prompt = fullContent
+  if (!existingCliSession && sessionState?.messages?.value?.length > 1) {
+    const msgs = sessionState.messages.value
+    const unanswered = []
+    for (const m of msgs) {
+      if (m.role === 'assistant') { unanswered.length = 0; continue }
+      if (m.role === 'user' && m.content !== fullContent) unanswered.push(m.content)
+    }
+    if (unanswered.length > 0) {
+      console.log(`[cli] Recovering ${unanswered.length} unanswered message(s) into prompt`)
+      prompt = unanswered.join('\n\n') + '\n\n' + fullContent
+    }
+  }
+
   const resolvedModel = useOllama ? getOllamaModelName(model) : useCopilot ? getCopilotModelName(model) : useCodex ? getCodexModelName(model) : getCliModelName(model)
   const cliOptions = {
-    prompt: fullContent,
+    prompt,
     model: resolvedModel,
     sessionId: existingCliSession,
     systemPrompt: existingCliSession || isDirectCliModel(model)
