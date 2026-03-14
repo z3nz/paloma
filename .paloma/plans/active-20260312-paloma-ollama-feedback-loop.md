@@ -296,11 +296,38 @@ Output:
 - `.paloma/ollama-training/data/valid.jsonl` — Validation split
 
 **Acceptance criteria:**
-- [ ] `extract` command pulls high-scoring responses from eval results into JSONL
-- [ ] `generate-gold` command uses Claude API to create ideal responses for low-scoring tasks
-- [ ] `split` command produces train/test/valid JSONL files in correct MLX format
-- [ ] Data format matches MLX `chat` format exactly (verified by inspection)
-- [ ] README.md documents the format, curation process, and quality bar
+- [x] `extract` command pulls high-scoring responses from eval results into JSONL
+- [x] `generate-gold` command uses Claude API to create ideal responses for low-scoring tasks
+- [x] `split` command produces train/test/valid JSONL files in correct MLX format
+- [x] Data format matches MLX `chat` format exactly (verified by inspection)
+- [x] README.md documents the format, curation process, and quality bar
+
+**Implementation Notes (WU-5):**
+Built by Forge on 2026-03-14. All 3 files created + utils.js extended:
+
+**Files created:**
+- `scripts/ollama-eval/data-collector.js` — CLI with 3 commands: `extract`, `generate-gold`, `split`
+- `scripts/ollama-eval/data-curator.js` — Interactive stdin-based review CLI
+- `.paloma/ollama-training/data/README.md` — Format spec, curation process, quality bar
+
+**Files modified:**
+- `scripts/ollama-eval/utils.js` — Added `DATA_DIR` export, `readJsonlFile()`, `writeJsonlFile()` shared utilities
+
+**Design decisions:**
+- Extract looks up original eval tasks by taskId to recover system prompts (runner results don't store them)
+- Deduplication by `taskId::source` key — keeps highest-scoring version when duplicates exist
+- `generate-gold` merges new gold responses into existing candidates.jsonl (read-merge-write, not append)
+- Split strips metadata from JSONL for MLX-clean format (messages-only); candidates/approved retain metadata
+- Claude gold generation uses `claude-sonnet-4-20250514` (per AD-2), prompts Claude to respond as-if-assistant (no meta-commentary)
+- Curator skips already-approved items, tracks progress, merges newly approved with existing approved.jsonl
+- Graceful handling: missing API key → clear error message; no result files → informative guidance; ENOENT on JSONL → empty array
+
+**Verified:**
+- All 3 scripts parse clean (`node --check`)
+- `extract --min-score 4` correctly extracts 1 candidate from existing baseline result (instruction-following-001, score 5)
+- `split` produces MLX-clean JSONL with metadata stripped
+- `generate-gold` without `ANTHROPIC_API_KEY` fails gracefully with clear message
+- No-args invocation shows usage help
 
 ---
 

@@ -4,7 +4,7 @@
 **Priority:** #1 (all other work deprioritized except Kelsey business work)
 **Created:** 2026-03-12
 **Scope:** paloma
-**Pipeline:** Scout ✅ → Chart ✅ → Forge ✅ (WU-2, WU-3 complete) → Polish → Ship
+**Pipeline:** Scout ✅ → Chart ✅ → Forge ✅ (WU-2, WU-3, WU-4 complete) → Polish → Ship
 
 ## Vision
 
@@ -104,7 +104,7 @@ This runs on Adam's maxed-out MacBook Pro (128GB unified memory) via Ollama.
 - Sub-instances inherit recursive mode with incremented depth
 
 ### WU-4: Spawn queue for concurrency management
-**Status:** ready | depends: WU-2
+**Status:** completed
 **Files:** `bridge/pillar-manager.js`
 **Description:**
 - Add spawn queue in PillarManager for when MAX_CONCURRENT_OLLAMA is reached
@@ -139,3 +139,8 @@ This runs on Adam's maxed-out MacBook Pro (128GB unified memory) via Ollama.
 - **Status:** completed
 - **Files:** src/prompts/base.js, src/prompts/phases.js
 - **Result:** `QWEN_RECURSIVE_INSTRUCTIONS` constant already existed in base.js (from prior Forge pass) with all required content: mandatory delegation rule, {{DEPTH}}/{{MAX_DEPTH}} placeholders, two-tier architecture description (32B orchestrator / 7B workers), concurrency awareness, kill switch awareness, self-improvement protocol, and worker instructions for depth > 0. Added `buildBirthContext(phase, options)` function to phases.js that: (1) imports QWEN_RECURSIVE_INSTRUCTIONS from base.js, (2) returns normal phase instructions when `recursive` is falsy, (3) when `recursive: true`, appends the recursive prompt with {{DEPTH}} and {{MAX_DEPTH}} replaced by actual values. Default maxDepth is 5 per AD-7. Bridge code (WU-2) will call `buildBirthContext()` instead of directly accessing `PHASE_INSTRUCTIONS` to enable recursive mode.
+
+#### WU-4: Spawn queue for concurrency management — COMPLETED
+- **Status:** completed
+- **Files:** bridge/pillar-manager.js
+- **Result:** Full FIFO spawn queue implemented in PillarManager. When Ollama concurrency limit (MAX_CONCURRENT_OLLAMA=4) is reached, new spawns are queued with status 'queued' and a placeholder session is created in `this.pillars` so it shows in list/status. Key components: (1) `_enqueueSpawn()` — creates queued session record, adds to `_spawnQueue[]`, broadcasts `pillar_queued` event, returns immediately with pillarId and queuePosition. (2) `_executeSpawn()` — extracted spawn logic that upgrades queued sessions to running or creates new sessions; used for both immediate and dequeued spawns. (3) `_dequeueOllamaSpawns()` — processes queue FIFO when slots open, broadcasts `pillar_dequeued` events. Called from: `stop()` (after stopping Ollama session), `stopTree()` (after stopping tree), `_handleCliEvent` (on completion/error), and `_handleOllamaToolCall` (when parent starts waiting for queued child). (4) Deadlock prevention: `_countActiveOllamaSessions()` now excludes parents blocked on `_pendingChildCompletions` — if parent P is waiting for child C's output, P doesn't count toward the limit, so C gets a slot. (5) Queue inspection: `list()` returns `ollamaQueue: { length, active, max }` and queued sessions include `queuePosition`. `getStatus()` includes `queuePosition` for queued sessions. (6) Edge cases: `stop()` handles queued sessions (removes from queue), `stopTree()` pre-filters queue before stopping tree, `sendMessage()` rejects messages to queued sessions, `shutdown()` clears queue.
