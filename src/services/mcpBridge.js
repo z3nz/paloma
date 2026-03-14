@@ -240,6 +240,9 @@ export function createMcpBridge() {
           pending.delete(msg.id)
           p.resolve(msg.pillars)
         }
+      } else if (msg.type === 'pillar_queued') {
+        // Spawn queue: pillar is waiting for a slot. Log for now — future: show in sidebar.
+        console.log(`[pillar] ${msg.pillar} queued (position ${msg.queuePosition})`)
       } else if (msg.type === 'pillar_session_created') {
         onPillarSessionCreated?.(msg)
       } else if (msg.type === 'pillar_cli_session') {
