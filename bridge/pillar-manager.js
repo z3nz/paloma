@@ -357,6 +357,148 @@ export class PillarManager {
   }
 
   /**
+   * Get Ollama-format tool definitions for all pillar orchestration tools.
+   * Shared between pillar-spawned sessions and browser-originated Ollama sessions.
+   */
+  static getOllamaPillarToolDefs() {
+    return [
+      {
+        type: 'function',
+        function: {
+          name: 'pillar_spawn',
+          description: 'Spawn a new AI sub-instance as a background process. The sub-instance works on your prompt autonomously.',
+          parameters: {
+            type: 'object',
+            properties: {
+              pillar: { type: 'string', enum: ['scout', 'chart', 'forge', 'polish', 'ship'], description: 'Which pillar role for the sub-instance' },
+              prompt: { type: 'string', description: 'The task for the sub-instance to work on' },
+              model: { type: 'string', description: 'Optional model override' },
+              backend: { type: 'string', enum: ['claude', 'codex', 'copilot', 'ollama'], description: 'AI backend (default: ollama)' }
+            },
+            required: ['pillar', 'prompt']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'pillar_message',
+          description: 'Send a follow-up message to a running sub-instance. If busy, the message is queued.',
+          parameters: {
+            type: 'object',
+            properties: {
+              pillarId: { type: 'string', description: 'The session ID' },
+              message: { type: 'string', description: 'The message to send' }
+            },
+            required: ['pillarId', 'message']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'pillar_read_output',
+          description: "Read a sub-instance's accumulated output. Use since='all' for full history.",
+          parameters: {
+            type: 'object',
+            properties: {
+              pillarId: { type: 'string', description: 'The session ID' },
+              since: { type: 'string', enum: ['last', 'all'], description: "'last' for most recent, 'all' for full history. Default: 'last'" }
+            },
+            required: ['pillarId']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'pillar_status',
+          description: 'Quick status check on a sub-instance. Returns running/idle/completed/error/stopped.',
+          parameters: {
+            type: 'object',
+            properties: {
+              pillarId: { type: 'string', description: 'The session ID' }
+            },
+            required: ['pillarId']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'pillar_list',
+          description: 'List all active AI sub-instance sessions.',
+          parameters: { type: 'object', properties: {} }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'pillar_stop',
+          description: 'Stop a running sub-instance session.',
+          parameters: {
+            type: 'object',
+            properties: {
+              pillarId: { type: 'string', description: 'The session ID to stop' }
+            },
+            required: ['pillarId']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'pillar_stop_tree',
+          description: 'Kill switch — stop an entire recursive session tree. Stops the session and ALL its descendants.',
+          parameters: {
+            type: 'object',
+            properties: {
+              pillarId: { type: 'string', description: 'The root session ID of the tree to stop' }
+            },
+            required: ['pillarId']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'pillar_orchestrate',
+          description: "Analyze a plan's work units for orchestration — dependencies, ready status, parallelism.",
+          parameters: {
+            type: 'object',
+            properties: {
+              planFile: { type: 'string', description: 'Plan filename (e.g., "active-20260301-project-slug.md")' }
+            },
+            required: ['planFile']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'pillar_decompose',
+          description: 'Add or update a work unit in a plan document.',
+          parameters: {
+            type: 'object',
+            properties: {
+              planFile: { type: 'string', description: 'Plan filename' },
+              unitId: { type: 'string', description: 'Work unit ID (e.g., "WU-1")' },
+              feature: { type: 'string', description: 'Feature group name' },
+              status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'failed', 'skipped'] },
+              dependsOn: { type: 'array', items: { type: 'string' }, description: 'WU-IDs this depends on' },
+              files: { type: 'array', items: { type: 'string' }, description: 'Files to create/modify' },
+              scope: { type: 'string', description: 'Description of what this unit does' },
+              acceptance: { type: 'string', description: 'How to verify success' },
+              result: { type: 'string', description: 'Completion summary' }
+            },
+            required: ['planFile', 'unitId', 'scope', 'files']
+          }
+        }
+      }
+    ]
+  }
+
+  /**
    * Build Ollama-format tool list from MCP servers + pillar tools.
    */
   _buildOllamaTools(session) {
@@ -382,47 +524,7 @@ export class PillarManager {
     }
 
     // Pillar orchestration tools — so Qwen can spawn sub-instances
-    tools.push({
-      type: 'function',
-      function: {
-        name: 'pillar_spawn',
-        description: 'Spawn a new AI sub-instance as a background process. For recursive work, the sub-instance works on your prompt and returns its output when complete. Returns the sub-instance output directly.',
-        parameters: {
-          type: 'object',
-          properties: {
-            pillar: { type: 'string', enum: ['scout', 'chart', 'forge', 'polish', 'ship'], description: 'Which pillar role for the sub-instance' },
-            prompt: { type: 'string', description: 'The task for the sub-instance to work on' },
-            model: { type: 'string', description: 'Optional model override' },
-            backend: { type: 'string', enum: ['claude', 'codex', 'copilot', 'ollama'], description: 'AI backend (default: ollama)' }
-          },
-          required: ['pillar', 'prompt']
-        }
-      }
-    })
-
-    tools.push({
-      type: 'function',
-      function: {
-        name: 'pillar_list',
-        description: 'List all active AI sub-instance sessions.',
-        parameters: { type: 'object', properties: {} }
-      }
-    })
-
-    tools.push({
-      type: 'function',
-      function: {
-        name: 'pillar_stop',
-        description: 'Stop a running sub-instance session.',
-        parameters: {
-          type: 'object',
-          properties: {
-            pillarId: { type: 'string', description: 'The session ID to stop' }
-          },
-          required: ['pillarId']
-        }
-      }
-    })
+    tools.push(...PillarManager.getOllamaPillarToolDefs())
 
     console.log(`[pillar] Built ${tools.length} Ollama tools for ${session.pillar} session`)
     return tools
@@ -486,10 +588,22 @@ export class PillarManager {
 
           content = childOutput || '(child produced no output)'
           console.log(`[pillar] Child ${childPillarId.slice(0, 8)} completed — ${content.length} chars returned to parent`)
+        } else if (toolName === 'pillar_message') {
+          content = JSON.stringify(this.sendMessage(toolArgs), null, 2)
+        } else if (toolName === 'pillar_read_output') {
+          content = JSON.stringify(this.readOutput(toolArgs), null, 2)
+        } else if (toolName === 'pillar_status') {
+          content = JSON.stringify(this.getStatus(toolArgs), null, 2)
         } else if (toolName === 'pillar_list') {
           content = JSON.stringify(this.list(), null, 2)
         } else if (toolName === 'pillar_stop') {
           content = JSON.stringify(this.stop(toolArgs), null, 2)
+        } else if (toolName === 'pillar_stop_tree') {
+          content = JSON.stringify(this.stopTree(toolArgs), null, 2)
+        } else if (toolName === 'pillar_orchestrate') {
+          content = JSON.stringify(await this.orchestrate(toolArgs), null, 2)
+        } else if (toolName === 'pillar_decompose') {
+          content = JSON.stringify(await this.decompose(toolArgs), null, 2)
         } else {
           // MCP server tool — parse server__tool format
           const sepIdx = toolName.indexOf('__')

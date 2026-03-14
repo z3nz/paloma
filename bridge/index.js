@@ -378,7 +378,15 @@ async function main() {
                 toolRouteMap.set(ollamaName, { server: serverName, tool: tool.name })
               }
             }
-            console.log(`[ollama] Passing ${ollamaTools.length} tools to model (filtered to essential servers)`)
+            // Add pillar orchestration tools — enables recursive Qwen sub-instance spawning
+            if (pillarManager) {
+              for (const tool of PillarManager.getOllamaPillarToolDefs()) {
+                ollamaTools.push(tool)
+                toolRouteMap.set(tool.function.name, { _pillar: true })
+              }
+            }
+
+            console.log(`[ollama] Passing ${ollamaTools.length} tools to model (essential servers + pillar tools)`)
           }
 
           let toolRounds = 0
@@ -413,6 +421,29 @@ async function main() {
                   type: 'ollama_stream', id: msg.id,
                   event: { type: 'tool_use', tool_use: { id: toolId, name: toolName, input: toolArgs } }
                 }))
+
+                // Pillar tools — route through MCP proxy's pillar handler
+                if (route?._pillar) {
+                  try {
+                    console.log(`[ollama] Executing pillar tool: ${toolName}`)
+                    const result = await mcpProxy._handlePillarTool(toolName, toolArgs, null)
+                    const content = result.content?.map(c => c.text || JSON.stringify(c)).join('\n') || ''
+                    results.push({ content })
+                    ws.send(JSON.stringify({
+                      type: 'ollama_stream', id: msg.id,
+                      event: { type: 'tool_result', toolUseId: toolId, content }
+                    }))
+                  } catch (e) {
+                    console.error(`[ollama] Pillar tool error (${toolName}):`, e.message)
+                    const errContent = `Error executing ${toolName}: ${e.message}`
+                    results.push({ content: errContent })
+                    ws.send(JSON.stringify({
+                      type: 'ollama_stream', id: msg.id,
+                      event: { type: 'tool_result', toolUseId: toolId, content: errContent }
+                    }))
+                  }
+                  continue
+                }
 
                 if (!route) {
                   console.warn(`[ollama] Unknown tool: ${toolName}`)
