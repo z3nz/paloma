@@ -11,6 +11,7 @@ export const PROJECT_ROOT = join(__dirname, '..', '..')
 export const TRAINING_DIR = join(PROJECT_ROOT, '.paloma', 'ollama-training')
 export const EVALS_DIR = join(TRAINING_DIR, 'evals')
 export const RESULTS_DIR = join(TRAINING_DIR, 'results')
+export const DATA_DIR = join(TRAINING_DIR, 'data')
 
 const OLLAMA_BASE = process.env.OLLAMA_HOST || 'http://localhost:11434'
 const DEFAULT_TIMEOUT_MS = 120_000
@@ -136,6 +137,24 @@ export function parseArgs(argv) {
     }
   }
   return args
+}
+
+// --- JSONL I/O ---
+
+export async function readJsonlFile(filePath) {
+  try {
+    const raw = await readFile(filePath, 'utf-8')
+    return raw.trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
+  } catch (err) {
+    if (err.code === 'ENOENT') return []
+    throw err
+  }
+}
+
+export async function writeJsonlFile(filePath, items) {
+  await ensureDir(join(filePath, '..'))
+  const content = items.map(item => JSON.stringify(item)).join('\n') + (items.length ? '\n' : '')
+  await writeFile(filePath, content, 'utf-8')
 }
 
 // --- Formatting ---

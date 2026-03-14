@@ -35,6 +35,7 @@ export class PillarManager {
     this.notificationCount = 0 // notifications sent in current minute
     this.notificationWindowStart = Date.now()
     this._pendingChildCompletions = new Map() // childPillarId → resolve function
+    this._spawnQueue = [] // FIFO queue for Ollama spawns when at concurrency limit
 
     // Periodic cleanup of terminal sessions (every 5 min)
     this._cleanupInterval = setInterval(() => this._cleanupTerminalSessions(), 5 * 60 * 1000)
@@ -46,63 +47,142 @@ export class PillarManager {
    */
   async spawn({ pillar, prompt, model, flowRequestId, planFile, backend, parentPillarId, recursive, depth }) {
     const pillarId = randomUUID()
-    const cliSessionId = randomUUID()
     const resolvedBackend = backend || 'claude'
 
-    // Concurrency warning for Ollama
+    // Check Ollama concurrency — queue if at limit
     if (resolvedBackend === 'ollama') {
       const activeOllama = this._countActiveOllamaSessions()
       if (activeOllama >= MAX_CONCURRENT_OLLAMA) {
-        console.warn(`[pillar] ⚠ Ollama concurrency at ${activeOllama}/${MAX_CONCURRENT_OLLAMA} — spawning anyway but memory pressure may occur`)
+        return this._enqueueSpawn(pillarId, { pillar, prompt, model, flowRequestId, planFile, backend: resolvedBackend, parentPillarId, recursive, depth })
       }
     }
 
+    return this._executeSpawn(pillarId, { pillar, prompt, model, flowRequestId, planFile, backend: resolvedBackend, parentPillarId, recursive, depth })
+  }
+
+  /**
+   * Queue an Ollama spawn when concurrency limit is reached.
+   * Creates a placeholder session with status 'queued' and returns immediately.
+   */
+  _enqueueSpawn(pillarId, params) {
+    const resolvedModel = params.model || this._defaultModel(params.pillar, params.backend, { recursive: params.recursive, depth: params.depth })
+
+    // Create queued session record so it shows in list/status
+    const session = {
+      pillarId,
+      cliSessionId: null,
+      pillar: params.pillar,
+      model: resolvedModel,
+      backend: params.backend,
+      status: 'queued',
+      currentlyStreaming: false,
+      turnCount: 0,
+      lastActivity: new Date().toISOString(),
+      flowRequestId: params.flowRequestId,
+      cliRequestId: null,
+      output: [],
+      outputChunks: [],
+      _cachedOutput: '',
+      messageQueue: [],
+      startTime: Date.now(),
+      timeoutTimer: null,
+      dbSessionId: null,
+      parentPillarId: params.parentPillarId || null,
+      recursive: params.recursive || false,
+      depth: params.depth || 0,
+      _toolRounds: 0
+    }
+    this.pillars.set(pillarId, session)
+
+    // Add to FIFO queue
+    this._spawnQueue.push({ pillarId, params, enqueuedAt: Date.now() })
+    const queuePosition = this._spawnQueue.length
+
+    console.log(`[pillar] Ollama ${params.pillar} session ${pillarId.slice(0, 8)} queued — ${this._countActiveOllamaSessions()}/${MAX_CONCURRENT_OLLAMA} active, position ${queuePosition}`)
+
+    // Notify browser
+    this.broadcast({
+      type: 'pillar_queued',
+      pillarId,
+      pillar: params.pillar,
+      backend: params.backend,
+      queuePosition
+    })
+
+    return {
+      pillarId,
+      pillar: params.pillar,
+      status: 'queued',
+      queuePosition,
+      message: `${this._capitalize(params.pillar)} session queued — Ollama concurrency limit (${MAX_CONCURRENT_OLLAMA}) reached. Queue position: ${queuePosition}`
+    }
+  }
+
+  /**
+   * Execute a spawn immediately — creates/upgrades session, starts CLI, sets timeout.
+   * Called for both immediate spawns and when dequeuing.
+   */
+  async _executeSpawn(pillarId, params) {
+    const { pillar, prompt, model, flowRequestId, planFile, backend, parentPillarId, recursive, depth } = params
+    const cliSessionId = randomUUID()
+
     // Resolve model: use provided, or phase suggestion, or default
     // Recursive children automatically get the small fast model (7B)
-    const resolvedModel = model || this._defaultModel(pillar, resolvedBackend, { recursive, depth })
+    const resolvedModel = model || this._defaultModel(pillar, backend, { recursive, depth })
 
     // Build system prompt from disk (Ollama gets condensed prompt)
-    const systemPrompt = await this._buildSystemPrompt(pillar, { planFilter: planFile, recursive, depth, backend: resolvedBackend })
+    const systemPrompt = await this._buildSystemPrompt(pillar, { planFilter: planFile, recursive, depth, backend })
 
     // Compose the full first message with birth protocol
     const fullPrompt = `${BIRTH_MESSAGE}\n\n${prompt}`
 
-    // Create session record
-    const session = {
-      pillarId,
-      cliSessionId,
-      pillar,
-      model: resolvedModel,
-      backend: resolvedBackend,
-      status: 'running',       // running | idle | completed | error | stopped
-      currentlyStreaming: true,
-      turnCount: 1,
-      lastActivity: new Date().toISOString(),
-      flowRequestId,           // the CLI requestId of the parent Flow session
-      cliRequestId: null,      // current child CLI requestId
-      output: [],              // accumulated assistant messages
-      outputChunks: [],        // current turn's streaming chunks (joined on read)
-      _cachedOutput: '',       // cached join of outputChunks
-      messageQueue: [],        // queued messages for when current turn finishes
-      startTime: Date.now(),
-      timeoutTimer: null,
-      dbSessionId: null,       // set by frontend via WS event
-      parentPillarId: parentPillarId || null,
-      recursive: recursive || false,
-      depth: depth || 0,
-      _toolRounds: 0           // Ollama tool call round counter
+    // Check if session already exists (queued → executing)
+    let session = this.pillars.get(pillarId)
+    if (session && session.status === 'queued') {
+      // Upgrade queued session to running
+      session.cliSessionId = cliSessionId
+      session.model = resolvedModel
+      session.status = 'running'
+      session.currentlyStreaming = true
+      session.turnCount = 1
+      session.lastActivity = new Date().toISOString()
+    } else {
+      // Create new session record
+      session = {
+        pillarId,
+        cliSessionId,
+        pillar,
+        model: resolvedModel,
+        backend,
+        status: 'running',       // running | idle | completed | error | stopped | queued
+        currentlyStreaming: true,
+        turnCount: 1,
+        lastActivity: new Date().toISOString(),
+        flowRequestId,           // the CLI requestId of the parent Flow session
+        cliRequestId: null,      // current child CLI requestId
+        output: [],              // accumulated assistant messages
+        outputChunks: [],        // current turn's streaming chunks (joined on read)
+        _cachedOutput: '',       // cached join of outputChunks
+        messageQueue: [],        // queued messages for when current turn finishes
+        startTime: Date.now(),
+        timeoutTimer: null,
+        dbSessionId: null,       // set by frontend via WS event
+        parentPillarId: parentPillarId || null,
+        recursive: recursive || false,
+        depth: depth || 0,
+        _toolRounds: 0           // Ollama tool call round counter
+      }
+      this.pillars.set(pillarId, session)
     }
 
-    this.pillars.set(pillarId, session)
-
     // Notify browser to create the session in IndexedDB
-    const modelLabel = resolvedBackend === 'ollama' ? `ollama:${resolvedModel}` : resolvedBackend === 'codex' ? `codex:${resolvedModel}` : resolvedBackend === 'copilot' ? `copilot:${resolvedModel}` : `claude-cli:${resolvedModel}`
+    const modelLabel = backend === 'ollama' ? `ollama:${resolvedModel}` : backend === 'codex' ? `codex:${resolvedModel}` : backend === 'copilot' ? `copilot:${resolvedModel}` : `claude-cli:${resolvedModel}`
     this.broadcast({
       type: 'pillar_session_created',
       pillarId,
       pillar,
       model: modelLabel,
-      backend: resolvedBackend,
+      backend,
       flowRequestId,
       flowCliSessionId: session.flowCliSessionId || this.flowSession?.cliSessionId || null,
       prompt: fullPrompt
@@ -142,7 +222,7 @@ export class PillarManager {
       return { pillarId, status: 'error', message: `No pillar session found with id ${pillarId}` }
     }
 
-    if (session.status === 'stopped' || session.status === 'error') {
+    if (session.status === 'stopped' || session.status === 'error' || session.status === 'queued') {
       return { pillarId, status: 'error', message: `Pillar session is ${session.status} and cannot receive messages.` }
     }
 
@@ -212,7 +292,7 @@ export class PillarManager {
       return { pillarId, status: 'not_found', message: `No pillar session found with id ${pillarId}` }
     }
 
-    return {
+    const result = {
       pillarId,
       pillar: session.pillar,
       status: session.status,
@@ -221,6 +301,13 @@ export class PillarManager {
       currentlyStreaming: session.currentlyStreaming,
       lastActivity: session.lastActivity
     }
+
+    if (session.status === 'queued') {
+      const queueIdx = this._spawnQueue.findIndex(e => e.pillarId === pillarId)
+      result.queuePosition = queueIdx >= 0 ? queueIdx + 1 : null
+    }
+
+    return result
   }
 
   /**
@@ -229,7 +316,7 @@ export class PillarManager {
   list() {
     const pillars = []
     for (const [, session] of this.pillars) {
-      pillars.push({
+      const entry = {
         pillarId: session.pillarId,
         pillar: session.pillar,
         status: session.status,
@@ -237,9 +324,21 @@ export class PillarManager {
         turnCount: session.turnCount,
         currentlyStreaming: session.currentlyStreaming,
         lastActivity: session.lastActivity
-      })
+      }
+      if (session.status === 'queued') {
+        const queueIdx = this._spawnQueue.findIndex(e => e.pillarId === session.pillarId)
+        entry.queuePosition = queueIdx >= 0 ? queueIdx + 1 : null
+      }
+      pillars.push(entry)
     }
-    return { pillars }
+    return {
+      pillars,
+      ollamaQueue: {
+        length: this._spawnQueue.length,
+        active: this._countActiveOllamaSessions(),
+        max: MAX_CONCURRENT_OLLAMA
+      }
+    }
   }
 
   /**
@@ -249,6 +348,15 @@ export class PillarManager {
     const session = this.pillars.get(pillarId)
     if (!session) {
       return { pillarId, status: 'not_found', message: `No pillar session found with id ${pillarId}` }
+    }
+
+    // If session is queued, remove from queue and mark stopped
+    if (session.status === 'queued') {
+      this._spawnQueue = this._spawnQueue.filter(e => e.pillarId !== pillarId)
+      session.status = 'stopped'
+      session.lastActivity = new Date().toISOString()
+      this.broadcast({ type: 'pillar_done', pillarId, status: 'stopped', pillar: session.pillar })
+      return { pillarId, status: 'stopped', message: `${this._capitalize(session.pillar)} session removed from queue.` }
     }
 
     // Kill the CLI process if running
@@ -262,6 +370,8 @@ export class PillarManager {
       session.timeoutTimer = null
     }
 
+    const wasOllama = session.backend === 'ollama'
+
     session.status = 'stopped'
     session.currentlyStreaming = false
     session.lastActivity = new Date().toISOString()
@@ -273,12 +383,25 @@ export class PillarManager {
       session.output.push(stoppedOutput)
     }
 
+    // Resolve any parent waiting for this child's completion
+    const pendingResolve = this._pendingChildCompletions.get(pillarId)
+    if (pendingResolve) {
+      this._pendingChildCompletions.delete(pillarId)
+      const finalOutput = session.output.map(o => o.text || o).join('\n')
+      pendingResolve(finalOutput || `(child ${pillarId.slice(0, 8)} was stopped)`)
+    }
+
     this.broadcast({
       type: 'pillar_done',
       pillarId,
       status: 'stopped',
       pillar: session.pillar
     })
+
+    // Dequeue waiting spawns if an Ollama slot freed up
+    if (wasOllama) {
+      this._dequeueOllamaSpawns().catch(e => console.error('[pillar] Dequeue error after stop:', e.message))
+    }
 
     return { pillarId, status: 'stopped', message: `${this._capitalize(session.pillar)} session stopped.` }
   }
@@ -304,6 +427,11 @@ export class PillarManager {
     }
 
     const descendants = this._getDescendants(pillarId)
+
+    // Remove any queued descendants from spawn queue
+    const treeIds = new Set([pillarId, ...descendants])
+    this._spawnQueue = this._spawnQueue.filter(e => !treeIds.has(e.pillarId))
+
     const stopped = []
 
     // Stop children first (bottom-up)
@@ -320,6 +448,9 @@ export class PillarManager {
     for (const id of [pillarId, ...descendants]) {
       this._pendingChildCompletions.delete(id)
     }
+
+    // Dequeue waiting spawns since slots may have freed up
+    this._dequeueOllamaSpawns().catch(e => console.error('[pillar] Dequeue error after stopTree:', e.message))
 
     return {
       pillarId,
@@ -345,15 +476,60 @@ export class PillarManager {
 
   /**
    * Count active Ollama sessions (running or streaming).
+   * Excludes parents blocked waiting for child completions to prevent deadlock.
    */
   _countActiveOllamaSessions() {
+    // Find parents currently blocked waiting for child completions —
+    // these hold no Ollama inference slot and shouldn't count toward the limit.
+    // This prevents deadlock: parent P waiting for child C shouldn't block C's slot.
+    const waitingParents = new Set()
+    for (const [childId] of this._pendingChildCompletions) {
+      const childSession = this.pillars.get(childId)
+      if (childSession?.parentPillarId) {
+        waitingParents.add(childSession.parentPillarId)
+      }
+    }
+
     let count = 0
     for (const [, session] of this.pillars) {
       if (session.backend === 'ollama' && (session.status === 'running' || session.currentlyStreaming)) {
+        if (waitingParents.has(session.pillarId)) continue
         count++
       }
     }
     return count
+  }
+
+  /**
+   * Dequeue waiting Ollama spawns when slots become available.
+   * Called after session completion, stop, error, or when a parent starts waiting for a child.
+   */
+  async _dequeueOllamaSpawns() {
+    while (this._spawnQueue.length > 0) {
+      const active = this._countActiveOllamaSessions()
+      if (active >= MAX_CONCURRENT_OLLAMA) break
+
+      const entry = this._spawnQueue.shift()
+      console.log(`[pillar] Dequeuing ${entry.params.pillar} session ${entry.pillarId.slice(0, 8)} \u2014 ${active}/${MAX_CONCURRENT_OLLAMA} active`)
+
+      // Notify browser
+      this.broadcast({
+        type: 'pillar_dequeued',
+        pillarId: entry.pillarId,
+        pillar: entry.params.pillar
+      })
+
+      try {
+        await this._executeSpawn(entry.pillarId, entry.params)
+      } catch (e) {
+        console.error(`[pillar] Failed to execute dequeued spawn ${entry.pillarId}:`, e.message)
+        const session = this.pillars.get(entry.pillarId)
+        if (session) {
+          session.status = 'error'
+          session.lastActivity = new Date().toISOString()
+        }
+      }
+    }
   }
 
   /**
@@ -579,11 +755,31 @@ export class PillarManager {
           const spawnResult = await this.spawn(childArgs)
           const childPillarId = spawnResult.pillarId
 
-          console.log(`[pillar] ${session.pillar} spawned child ${childPillarId.slice(0, 8)} — waiting for completion`)
+          console.log(`[pillar] ${session.pillar} spawned child ${childPillarId.slice(0, 8)} — ${spawnResult.status === 'queued' ? 'queued' : 'running'}`)
 
-          // Wait for child to complete (resolved in _handleCliEvent)
-          const childOutput = await new Promise((resolve) => {
-            this._pendingChildCompletions.set(childPillarId, resolve)
+          // Wait for child to complete (resolved in _handleCliEvent), with timeout
+          const CHILD_TIMEOUT_MS = 35 * 60 * 1000 // 35 minutes (slightly longer than session MAX_RUNTIME_MS)
+          const childOutput = await new Promise((resolve, reject) => {
+            let settled = false
+            const timer = setTimeout(() => {
+              if (settled) return
+              settled = true
+              this._pendingChildCompletions.delete(childPillarId)
+              reject(new Error(`Child ${childPillarId.slice(0, 8)} timed out after 35 minutes`))
+            }, CHILD_TIMEOUT_MS)
+            this._pendingChildCompletions.set(childPillarId, (output) => {
+              if (settled) return
+              settled = true
+              clearTimeout(timer)
+              resolve(output)
+            })
+            // If child was queued, parent is now "waiting" — trigger dequeue.
+            // _countActiveOllamaSessions() will exclude this parent (it's in
+            // _pendingChildCompletions), freeing a slot for the child.
+            if (spawnResult.status === 'queued') {
+              this._dequeueOllamaSpawns().catch(e =>
+                console.error('[pillar] Dequeue error after parent wait:', e.message))
+            }
           })
 
           content = childOutput || '(child produced no output)'
@@ -636,11 +832,18 @@ export class PillarManager {
     }
 
     // Continue Ollama conversation with tool results
-    manager.continueWithToolResults(
-      event.requestId, event.sessionId,
-      event.assistantMessage, results,
-      (nextEvent) => this._handleCliEvent(session, nextEvent)
-    )
+    try {
+      manager.continueWithToolResults(
+        event.requestId, event.sessionId,
+        event.assistantMessage, results,
+        (nextEvent) => this._handleCliEvent(session, nextEvent)
+      )
+    } catch (e) {
+      console.error(`[pillar] Failed to continue Ollama conversation for ${session.pillar}:`, e.message)
+      session.currentlyStreaming = false
+      session.status = 'error'
+      this.broadcast({ type: 'pillar_done', pillarId: session.pillarId, status: 'error', pillar: session.pillar })
+    }
   }
 
   /**
@@ -708,7 +911,6 @@ export class PillarManager {
         console.log(`[pillar] Cooldown active for ${pillarId} — skipping notification`)
         return
       }
-      this.notificationCooldown.set(pillarId, now)
 
       // Periodic cleanup: remove stale cooldown entries (older than 60s)
       for (const [id, ts] of this.notificationCooldown) {
@@ -750,6 +952,10 @@ export class PillarManager {
 
     this.notificationCount++
     this._sendFlowNotification(message, metadata)
+    // Set cooldown AFTER successful send (not before) so failed sends don't block retries
+    if (pillarId) {
+      this.notificationCooldown.set(pillarId, Date.now())
+    }
   }
 
   /**
@@ -908,6 +1114,9 @@ This is informational — Adam is communicating directly with the pillar. Decide
       this.cliManager.stop(this.flowSession.cliRequestId)
     }
     this.flowSession = null
+
+    // Clear spawn queue
+    this._spawnQueue = []
 
     for (const [, session] of this.pillars) {
       if (session.cliRequestId) {
@@ -1279,9 +1488,14 @@ This is informational — Adam is communicating directly with the pillar. Decide
             notificationType: 'completion',
             pillar: session.pillar,
             pillarId: session.pillarId
-          })
+          }).catch(e => console.error('[pillar] Failed to notify Flow of completion:', e.message))
         } else {
           console.log(`[pillar] ${session.pillar} completed — parent ${session.parentPillarId.slice(0, 8)} will handle`)
+        }
+
+        // Dequeue waiting Ollama spawns if a slot freed up
+        if (session.backend === 'ollama') {
+          this._dequeueOllamaSpawns().catch(e => console.error('[pillar] Dequeue error after completion:', e.message))
         }
       }
     } else if (isError) {
@@ -1324,7 +1538,12 @@ This is informational — Adam is communicating directly with the pillar. Decide
           notificationType: 'completion',
           pillar: session.pillar,
           pillarId: session.pillarId
-        })
+        }).catch(e => console.error('[pillar] Failed to notify Flow of error:', e.message))
+      }
+
+      // Dequeue waiting Ollama spawns if a slot freed up
+      if (session.backend === 'ollama') {
+        this._dequeueOllamaSpawns().catch(e => console.error('[pillar] Dequeue error after error:', e.message))
       }
     }
   }
