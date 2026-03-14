@@ -1,4 +1,4 @@
-import { isDirectCliModel, isCodexModel, isOllamaModel, getCliModelName, getCodexModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamOllamaChat } from '../services/claudeStream.js'
+import { isDirectCliModel, isCodexModel, isCopilotModel, isOllamaModel, getCliModelName, getCodexModelName, getCopilotModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamCopilotChat, streamOllamaChat } from '../services/claudeStream.js'
 import { useMCP } from './useMCP.js'
 import { useProject } from './useProject.js'
 import { useToolExecution } from './useToolExecution.js'
@@ -23,20 +23,21 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     sessionState = activeState()
   }
 
-  const { sendClaudeChat, sendCodexChat, sendOllamaChat } = useMCP()
+  const { sendClaudeChat, sendCodexChat, sendCopilotChat, sendOllamaChat } = useMCP()
   const { addActivity, markActivityDone, toolActivity } = useToolExecution(sessionState)
 
   const useCodex = isCodexModel(model)
+  const useCopilot = isCopilotModel(model)
   const useOllama = isOllamaModel(model)
   const session = await db.sessions.get(sessionId)
 
   // If backend changed from previous session, start fresh
   const existingBackend = session?.cliBackend || 'claude'
-  const currentBackend = useOllama ? 'ollama' : useCodex ? 'codex' : 'claude'
+  const currentBackend = useOllama ? 'ollama' : useCopilot ? 'copilot' : useCodex ? 'codex' : 'claude'
   const existingCliSession = (existingBackend === currentBackend) ? (session?.cliSessionId || null) : null
   console.log(`[cli] ${existingCliSession ? 'Resuming' : 'New'} ${currentBackend} session, model=${model}`)
 
-  const resolvedModel = useOllama ? getOllamaModelName(model) : useCodex ? getCodexModelName(model) : getCliModelName(model)
+  const resolvedModel = useOllama ? getOllamaModelName(model) : useCopilot ? getCopilotModelName(model) : useCodex ? getCodexModelName(model) : getCliModelName(model)
   const cliOptions = {
     prompt: fullContent,
     model: resolvedModel,
@@ -57,10 +58,12 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
 
   const sendFn = useOllama
     ? (opts, cbs) => sendOllamaChat(opts, cbs)
-    : useCodex
-      ? (opts, cbs) => sendCodexChat(opts, cbs)
-      : (opts, cbs) => sendClaudeChat(opts, cbs)
-  const streamGenerator = useOllama ? streamOllamaChat : useCodex ? streamCodexChat : streamClaudeChat
+    : useCopilot
+      ? (opts, cbs) => sendCopilotChat(opts, cbs)
+      : useCodex
+        ? (opts, cbs) => sendCodexChat(opts, cbs)
+        : (opts, cbs) => sendClaudeChat(opts, cbs)
+  const streamGenerator = useOllama ? streamOllamaChat : useCopilot ? streamCopilotChat : useCodex ? streamCodexChat : streamClaudeChat
 
   for await (const chunk of streamGenerator(sendFn, cliOptions)) {
     if (chunk.type === 'content') {
@@ -77,7 +80,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
         await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId, cliBackend: currentBackend })
       }
       // Register Flow sessions for pillar auto-callback notifications (Claude only)
-      if (phase === 'flow' && !useCodex && !useOllama) {
+      if (phase === 'flow' && !useCodex && !useCopilot && !useOllama) {
         const cliSessionIdToRegister = chunk.sessionId || existingCliSession
         if (cliSessionIdToRegister) {
           const { registerFlowSession } = useMCP()
@@ -148,9 +151,11 @@ export function stopCli(sessionState, model) {
     sessionState = activeState()
   }
   if (sessionState.cliRequestId) {
-    const { stopClaudeChat, stopCodexChat, stopOllamaChat } = useMCP()
+    const { stopClaudeChat, stopCodexChat, stopCopilotChat, stopOllamaChat } = useMCP()
     if (model && isOllamaModel(model)) {
       stopOllamaChat(sessionState.cliRequestId)
+    } else if (model && isCopilotModel(model)) {
+      stopCopilotChat(sessionState.cliRequestId)
     } else if (model && isCodexModel(model)) {
       stopCodexChat(sessionState.cliRequestId)
     } else {

@@ -110,7 +110,7 @@ function getAutoExecuteServers(mcpConfig) {
 
 // Shared helper: accumulate text from a pillar stream event into session state
 function _accumulatePillarStream(state, event, backend) {
-  if (backend === 'codex') {
+  if (backend === 'codex' || backend === 'copilot') {
     if (event.type === 'agent_message' && event.text) {
       state.streamingContent.value += event.text
     }
@@ -643,6 +643,15 @@ export function useMCP() {
     if (bridge) bridge.stopCodexChat(requestId)
   }
 
+  function sendCopilotChat(options, callbacks) {
+    if (!bridge || !connected.value) throw new Error('Bridge not connected')
+    return bridge.sendCopilotChat(options, callbacks)
+  }
+
+  function stopCopilotChat(requestId) {
+    if (bridge) bridge.stopCopilotChat(requestId)
+  }
+
   function sendOllamaChat(options, callbacks) {
     if (!bridge || !connected.value) throw new Error('Bridge not connected')
     return bridge.sendOllamaChat(options, callbacks)
@@ -793,6 +802,8 @@ export function useMCP() {
     stopClaudeChat,
     sendCodexChat,
     stopCodexChat,
+    sendCopilotChat,
+    stopCopilotChat,
     sendOllamaChat,
     stopOllamaChat,
     respondToAskUser,

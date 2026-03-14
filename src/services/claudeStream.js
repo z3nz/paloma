@@ -6,16 +6,24 @@ export const CLI_MODELS = [
   { id: 'claude-cli-direct:sonnet', name: 'Claude Sonnet (CLI Direct)', context_length: 200000, direct: true },
   { id: 'claude-cli-direct:haiku', name: 'Claude Haiku (CLI Direct)', context_length: 200000, direct: true },
   { id: 'codex-cli:codex-max', name: 'GPT-5.1 Codex Max', context_length: 1000000, codex: true },
+  { id: 'copilot-cli:claude-sonnet-4.6', name: 'Claude Sonnet 4.6 (Copilot)', context_length: 200000, copilot: true },
+  { id: 'copilot-cli:claude-opus-4.6', name: 'Claude Opus 4.6 (Copilot)', context_length: 200000, copilot: true },
+  { id: 'copilot-cli:gpt-5.4', name: 'GPT-5.4 (Copilot)', context_length: 200000, copilot: true },
+  { id: 'copilot-cli:gemini-2.5-pro', name: 'Gemini 2.5 Pro (Copilot)', context_length: 200000, copilot: true },
   { id: 'ollama:qwen2.5-coder:32b', name: 'Qwen 2.5 Coder 32B', context_length: 32768, ollama: true },
   { id: 'ollama:qwen2.5-coder:7b', name: 'Qwen 2.5 Coder 7B', context_length: 32768, ollama: true }
 ]
 
 export function isCliModel(modelId) {
-  return modelId?.startsWith('claude-cli:') || modelId?.startsWith('claude-cli-direct:') || modelId?.startsWith('codex-cli:') || modelId?.startsWith('ollama:')
+  return modelId?.startsWith('claude-cli:') || modelId?.startsWith('claude-cli-direct:') || modelId?.startsWith('codex-cli:') || modelId?.startsWith('copilot-cli:') || modelId?.startsWith('ollama:')
 }
 
 export function isCodexModel(modelId) {
   return modelId?.startsWith('codex-cli:')
+}
+
+export function isCopilotModel(modelId) {
+  return modelId?.startsWith('copilot-cli:')
 }
 
 export function isOllamaModel(modelId) {
@@ -42,6 +50,11 @@ const CODEX_MODEL_MAP = {
 export function getCodexModelName(modelId) {
   const shortName = modelId?.split(':')[1] || 'codex-max'
   return CODEX_MODEL_MAP[shortName] || shortName
+}
+
+export function getCopilotModelName(modelId) {
+  // 'copilot-cli:claude-sonnet-4.6' → 'claude-sonnet-4.6'
+  return modelId?.split(':')[1] || 'claude-sonnet-4.6'
 }
 
 /**
@@ -217,6 +230,68 @@ export async function* streamCodexChat(sendFn, options) {
         if (event.command) text += `\`\`\`\n$ ${event.command}\n`
         if (event.output) text += event.output
         text += '\n```\n'
+        yield { type: 'content', text }
+      } else if (event.type === 'result' && event.subtype === 'done') {
+        continue
+      }
+    }
+  }
+}
+
+/**
+ * Async generator for Copilot CLI events. Same agent_message format as Codex.
+ * Yields: { type: 'content', text } | { type: 'session_id', sessionId }
+ */
+export async function* streamCopilotChat(sendFn, options) {
+  const queue = []
+  let resolve = null
+  let done = false
+  let streamError = null
+
+  function push(item) {
+    queue.push(item)
+    if (resolve) {
+      resolve()
+      resolve = null
+    }
+  }
+
+  function waitForItem() {
+    if (queue.length > 0 || done) return Promise.resolve()
+    return new Promise(r => { resolve = r })
+  }
+
+  const { requestId, sessionId } = await sendFn(options, {
+    onStream(event) {
+      push(event)
+    },
+    onDone(sid, exitCode) {
+      push({ type: 'result', subtype: 'done', sessionId: sid, exitCode })
+      done = true
+      if (resolve) { resolve(); resolve = null }
+    },
+    onError(err) {
+      console.error(`[copilot] stream error:`, err)
+      streamError = err
+      done = true
+      if (resolve) { resolve(); resolve = null }
+    }
+  })
+
+  yield { type: 'session_id', sessionId, requestId }
+
+  while (!done || queue.length > 0) {
+    await waitForItem()
+    if (streamError) throw new Error(streamError)
+
+    while (queue.length > 0) {
+      const event = queue.shift()
+
+      if (event.type === 'agent_message' && event.text) {
+        yield { type: 'content', text: event.text }
+      } else if (event.type === 'tool_call') {
+        let text = `**Tool:** ${event.tool}\n`
+        if (event.arguments) text += `\`\`\`json\n${JSON.stringify(event.arguments, null, 2)}\n\`\`\`\n`
         yield { type: 'content', text }
       } else if (event.type === 'result' && event.subtype === 'done') {
         continue

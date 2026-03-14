@@ -167,6 +167,30 @@ export function createMcpBridge() {
           streamListeners.delete(msg.id)
           listener.onError?.(msg.error)
         }
+      } else if (msg.type === 'copilot_ack' && msg.id) {
+        const p = pending.get(msg.id)
+        if (p) {
+          pending.delete(msg.id)
+          p.resolve({ requestId: msg.requestId, sessionId: msg.sessionId })
+        }
+      } else if (msg.type === 'copilot_stream' && msg.id) {
+        const listener = streamListeners.get(msg.id)
+        if (listener) {
+          listener.onStream?.(msg.event)
+        }
+      } else if (msg.type === 'copilot_done' && msg.id) {
+        const listener = streamListeners.get(msg.id)
+        if (listener) {
+          streamListeners.delete(msg.id)
+          listener.onDone?.(msg.sessionId, msg.exitCode)
+        }
+      } else if (msg.type === 'copilot_error' && msg.id) {
+        console.error(`[copilot] error:`, msg.error)
+        const listener = streamListeners.get(msg.id)
+        if (listener) {
+          streamListeners.delete(msg.id)
+          listener.onError?.(msg.error)
+        }
       } else if (msg.type === 'ollama_ack' && msg.id) {
         const p = pending.get(msg.id)
         if (p) {
@@ -384,6 +408,35 @@ export function createMcpBridge() {
     _send({ type: 'codex_stop', requestId })
   }
 
+  function sendCopilotChat(options, callbacks) {
+    const id = crypto.randomUUID()
+    streamListeners.set(id, {
+      onStream: callbacks.onStream,
+      onDone: callbacks.onDone,
+      onError: callbacks.onError
+    })
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject })
+      _send({
+        type: 'copilot_chat',
+        id,
+        prompt: options.prompt,
+        model: options.model,
+        sessionId: options.sessionId,
+        systemPrompt: options.systemPrompt,
+        cwd: options.cwd
+      }).catch((e) => {
+        pending.delete(id)
+        streamListeners.delete(id)
+        reject(e)
+      })
+    })
+  }
+
+  function stopCopilotChat(requestId) {
+    _send({ type: 'copilot_stop', requestId })
+  }
+
   function sendOllamaChat(options, callbacks) {
     const id = crypto.randomUUID()
     streamListeners.set(id, {
@@ -465,7 +518,7 @@ export function createMcpBridge() {
     _send({ type: 'pillar_user_message', pillarId, message })
   }
 
-  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendOllamaChat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, sendPillarUserMessage, getState }
+  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendOllamaChat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, sendPillarUserMessage, getState }
 }
 
 // Enable HMR boundary — errors here don't cascade to full reload

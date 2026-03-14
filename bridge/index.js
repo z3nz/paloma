@@ -327,6 +327,29 @@ async function main() {
         } catch (e) {
           ws.send(JSON.stringify({ type: 'codex_error', id: msg.id, error: e.message }))
         }
+      } else if (msg.type === 'copilot_chat') {
+        try {
+          const { requestId, sessionId } = copilotManager.chat(
+            {
+              prompt: msg.prompt,
+              model: msg.model,
+              sessionId: msg.sessionId,
+              systemPrompt: msg.systemPrompt,
+              cwd: msg.cwd
+            },
+            (event) => {
+              if (ws.readyState !== 1) return
+              ws.send(JSON.stringify({ ...event, id: msg.id }))
+              if (event.type === 'copilot_done' || event.type === 'copilot_error') {
+                cliRequestToWs.delete(requestId)
+              }
+            }
+          )
+          cliRequestToWs.set(requestId, ws)
+          ws.send(JSON.stringify({ type: 'copilot_ack', id: msg.id, requestId, sessionId }))
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'copilot_error', id: msg.id, error: e.message }))
+        }
       } else if (msg.type === 'ollama_chat') {
         try {
           // Convert MCP tools to Ollama's tool format (only if requested)
@@ -460,6 +483,9 @@ async function main() {
       } else if (msg.type === 'codex_stop') {
         cliRequestToWs.delete(msg.requestId)
         codexManager.stop(msg.requestId)
+      } else if (msg.type === 'copilot_stop') {
+        cliRequestToWs.delete(msg.requestId)
+        copilotManager.stop(msg.requestId)
       } else if (msg.type === 'ollama_stop') {
         cliRequestToWs.delete(msg.requestId)
         ollamaManager.stop(msg.requestId)
