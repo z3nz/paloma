@@ -27,3 +27,15 @@
 - **Insight:** In parallel pipelines, Forge sessions sometimes commit their own work before Ship arrives. Ship's first step should be `git log --oneline -5` to check if the work is already in history, not just `git status`. If the code is already committed, Ship's job is to (a) verify the commit is correct, (b) resolve any divergence, and (c) push — not to re-commit.
 - **Action:** Added this as a mental model for Ship's orient step: git log is as important as git status when parallel Forge sessions are active.
 - **Applied:** N/A — awareness only, no DNA change needed (Ship instructions already say "orient first")
+
+---
+
+### Lesson: Multi-machine Paloma instances MUST coordinate via email before touching shared code
+- **Context:** MacBook Paloma started work on WU-4 (frontend fallback) and WU-5 (backend selection DNA) from the multi-backend resilience plan. Built both, committed, went to push — and discovered Lynch Tower Paloma had ALREADY shipped the exact same WUs (commit 26b2526). Had to abort the rebase and discard all work.
+- **Insight:** When multiple Paloma instances run on different machines (Lynch Tower, Lenovo, MacBook), they can independently pick up the same work units from the same active plans. Git prevents data loss (push is rejected, rebase shows conflicts), but the duplicated work is wasted time and API costs. The fix is coordination BEFORE starting work, not conflict resolution AFTER.
+- **Action:** Before starting any work unit that touches shared code:
+  1. `git fetch origin && git log --oneline origin/main ^HEAD` — check what other machines have pushed
+  2. Check email from other Paloma instances — what are they working on?
+  3. Prefer machine-specific work (e.g., Ollama/MLX for MacBook, since it requires Apple Silicon)
+  4. Email the other machines when claiming a work unit to prevent overlap
+- **Applied:** N/A — awareness lesson. Email coordination system is being established (2026-03-15).

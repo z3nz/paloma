@@ -421,11 +421,29 @@ ollama create paloma-coder:$VERSION -f Modelfile.$VERSION
 ```
 
 **Acceptance criteria:**
-- [ ] train.sh runs QLoRA training on sample data without errors (test with small iter count)
-- [ ] convert.sh produces a working GGUF and imports it into Ollama
-- [ ] The fine-tuned model can respond to basic prompts via `ollama run`
-- [ ] README.md documents all prerequisites (mlx-lm, llama.cpp, disk space)
-- [ ] `.gitignore` updated to exclude large model files (adapters, GGUF, mlx-base)
+- [ ] train.sh runs QLoRA training on sample data without errors (test with small iter count) _(requires mlx-lm installed + training data)_
+- [ ] convert.sh produces a working GGUF and imports it into Ollama _(requires trained adapter)_
+- [ ] The fine-tuned model can respond to basic prompts via `ollama run` _(requires above)_
+- [x] README.md documents all prerequisites (mlx-lm, llama.cpp, disk space)
+- [x] `.gitignore` updated to exclude large model files (adapters, GGUF, mlx-base, llama.cpp)
+
+**Implementation Notes (WU-6):**
+Built by MacBook Paloma on 2026-03-15. 3 files created + .gitignore updated:
+
+**Files created:**
+- `scripts/ollama-finetune/train.sh` — QLoRA training wrapper. Handles base model quantization (4-bit, first run only), then runs `mlx_lm.lora` with configurable version/iterations. Validates training data exists before starting.
+- `scripts/ollama-finetune/convert.sh` — Three-step pipeline: fuse adapter → GGUF conversion (Q4_K_M via llama.cpp) → `ollama create`. Auto-clones llama.cpp if not present. Uses existing Modelfile from prompts dir if available, generates default otherwise.
+- `scripts/ollama-finetune/README.md` — Full docs: prerequisites (hardware + software), training data generation workflow, usage guide, improvement levels (L0-L3), sacred rule, disk space estimates (~54GB peak), file layout.
+- `.paloma/ollama-training/models/.gitkeep` — Directory structure for adapter artifacts.
+
+**Design decisions:**
+- Scripts use absolute paths via `$(cd "$(dirname "$0")" && pwd)` — works from any working directory
+- Base model quantization is idempotent (skips if mlx-base/ exists)
+- convert.sh checks for existing Modelfile.{version} in prompts dir before generating a default
+- All intermediate files (fused model, GGUF) stored in scripts/ollama-finetune/ with cleanup guidance
+- Syntax-verified: both scripts pass `bash -n`
+
+**Remaining:** Acceptance criteria 1-3 require `pip install mlx-lm` + curated training data from WU-5's pipeline. Scripts are ready — execution blocked on prerequisites.
 
 ---
 
