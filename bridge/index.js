@@ -14,6 +14,7 @@ import { CopilotCliManager } from './copilot-cli.js'
 import { OllamaManager } from './ollama-manager.js'
 import { McpProxyServer } from './mcp-proxy-server.js'
 import { PillarManager } from './pillar-manager.js'
+import { BackendHealth } from './backend-health.js'
 import { EmailWatcher } from './email-watcher.js'
 import { printBanner, stepOk, stepFail, stepInfo, printSummary, printShutdown } from './startup.js'
 
@@ -60,6 +61,21 @@ staleRequestInterval = setInterval(() => {
 async function main() {
   const startTime = Date.now()
   printBanner()
+
+  // Check backend health
+  const health = new BackendHealth()
+  stepInfo('Checking AI backends...')
+  const healthSummary = await health.checkAll()
+  for (const [backend, info] of Object.entries(healthSummary)) {
+    if (info.available) {
+      const detail = backend === 'ollama' && info.models?.length
+        ? `${info.reason} (${info.models.join(', ')})`
+        : info.reason
+      stepOk(backend, detail)
+    } else {
+      stepFail(backend, info.reason)
+    }
+  }
 
   stepInfo('Loading MCP servers...')
   const servers = await loadConfig()
@@ -129,7 +145,8 @@ async function main() {
   pillarManager = new PillarManager(backends, {
     projectRoot: process.cwd(),
     broadcast,
-    mcpManager: manager
+    mcpManager: manager,
+    health
   })
   mcpProxy.pillarManager = pillarManager
 

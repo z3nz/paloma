@@ -176,7 +176,7 @@ The `pillar_fallback` event will be broadcast alongside `pillar_stream` events. 
 
 ### WU-1: Codex Error Event Handling
 
-**Status:** Ready  
+**Status:** completed  
 **Files:** `bridge/codex-cli.js`  
 **Depends on:** Nothing  
 **Size:** Small  
@@ -197,7 +197,7 @@ The `pillar_fallback` event will be broadcast alongside `pillar_stream` events. 
 
 ### WU-2: Backend Health Module
 
-**Status:** Ready  
+**Status:** completed  
 **Files:** `bridge/backend-health.js` (new), `bridge/index.js`  
 **Depends on:** Nothing  
 **Size:** Medium  
@@ -231,7 +231,7 @@ The `pillar_fallback` event will be broadcast alongside `pillar_stream` events. 
 
 ### WU-3: PillarManager Fallback Logic
 
-**Status:** Blocked (WU-2)  
+**Status:** completed  
 **Files:** `bridge/pillar-manager.js`  
 **Depends on:** WU-2 (needs BackendHealth)  
 **Size:** Medium  
@@ -350,3 +350,29 @@ WU-2 ──── WU-3 (fallback logic) ──┤
 1. **Commit Copilot working copy fixes** — The MCP config key fix and stderr logging in `bridge/copilot-cli.js` need to be committed. This is a Ship action, not Forge.
 2. **Codex auth** — Adam confirmed he logged in. Verify `OPENAI_API_KEY` is set or `codex login` was completed.
 3. **Ollama models** — Run `ollama pull qwen2.5-coder:7b` at minimum. Full capability: `ollama pull qwen2.5-coder:32b`.
+
+---
+
+## Implementation Notes (WU-1, WU-2, WU-3)
+
+**Forge session — 2026-03-14**
+
+### Files Created
+- `bridge/backend-health.js` — New BackendHealth class (165 lines)
+
+### Files Modified
+- `bridge/codex-cli.js` — Added `event.type === 'error'` handler in `_handleEvent()` (13 lines added)
+- `bridge/index.js` — Import BackendHealth, probe all backends at startup with stepOk/stepFail logging, pass `health` to PillarManager (17 lines added)
+- `bridge/pillar-manager.js` — Constructor accepts `health`, pre-spawn health gate in `spawn()`, fast-fail retry in both `isDone` and `isError` branches of `_handleCliEvent`, new `_attemptFallback()` method, session stores `_originalPrompt`/`_planFile`/`_fallbackAttempted` for replay
+
+### Deviations from Plan
+- Health checks run BEFORE MCP servers load (not after) — backends are independent of MCP, and this puts the health summary visually first in startup output
+- Claude auth check is generous: if the binary exists but `auth status --json` fails, it's still marked available (Claude CLI often works despite auth check errors)
+
+### Decisions Made During Building
+- Error text extraction in Codex handler: `event.message || event.error || JSON.stringify(event)` — covers all observed Codex error event shapes
+- `_attemptFallback` resets `session.startTime` to give the fallback its own 15s fast-fail window
+- Pre-spawn fallback sets `_fallbackAttempted = true` so if the fallback also fails at runtime, it goes through normal error handling (no double-fallback)
+
+### Ready for Polish
+All three WUs implemented, syntax-checked. WU-4 (frontend) and WU-5 (DNA docs) are now unblocked.

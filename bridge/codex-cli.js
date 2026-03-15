@@ -123,6 +123,20 @@ export class CodexCliManager {
    * Each item.completed becomes a codex_stream event with the item data.
    */
   _handleEvent(event, requestId, onEvent) {
+    // Surface error events (auth 401, rate limits, reconnection attempts, etc.)
+    // These are informational — the process hasn't died yet. The actual terminal
+    // failure comes when the process exits with non-zero code.
+    if (event.type === 'error') {
+      const errorText = event.message || event.error || JSON.stringify(event)
+      console.error(`[codex] Error event: ${errorText}`)
+      onEvent({
+        type: 'codex_stream',
+        requestId,
+        event: { type: 'error', text: errorText }
+      })
+      return
+    }
+
     if (event.type === 'item.completed' && event.item) {
       const item = event.item
       if (item.type === 'agent_message') {
