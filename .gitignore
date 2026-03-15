@@ -35,6 +35,7 @@ tmp/
 *.gguf
 mlx-base/
 fused-*/
+llama.cpp/
 
 # Per-machine local context (not shared across machines)
 .paloma/local-machine.md

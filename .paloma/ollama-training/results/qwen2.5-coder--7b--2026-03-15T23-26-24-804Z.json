@@ -1,0 +1,145 @@
+{
+  "meta": {
+    "model": "qwen2.5-coder:7b",
+    "category": "instruction-following",
+    "timestamp": "2026-03-15T23:26:24.804Z",
+    "taskCount": 12,
+    "completed": 12,
+    "skipped": 0,
+    "averageScore": 3.75
+  },
+  "results": [
+    {
+      "taskId": "instruction-following-001",
+      "category": "instruction-following",
+      "model": "qwen2.5-coder:7b",
+      "prompt": "How do I reverse a string in JavaScript?",
+      "response": "{\n  \"reverseString\": function(str) {\n    return str.split('').reverse().join('');\n  }\n}",
+      "score": 5,
+      "timing_ms": 14862,
+      "scorer_mode": "contains",
+      "judge_rationale": "Matched 1/1 expected substrings."
+    },
+    {
+      "taskId": "instruction-following-002",
+      "category": "instruction-following",
+      "model": "qwen2.5-coder:7b",
+      "prompt": "How do I set up a new Node.js project from scratch? I want to use Express for the server and connect to a PostgreSQL database.",
+      "response": "To initiate a new Node.js project, start by creating a new directory for your project and navigate into it using your terminal or command prompt.\n\nFirstly, initialize your project with npm (Node Package Manager) by running:\n\n```\nnpm init -y\n```\n\nThis command creates a `package.json` file in your project directory, which stores metadata about your project. You can customize this later if needed.\n\nNext, install the necessary packages for Express and PostgreSQL. Use the following commands to add them as dependencies:\n\nFor Express, execute:\n```\nnpm install express\n```\n\nFor connecting to PostgreSQL, use:\n```\nnpm install pg\n```\n\nThese commands will download the required modules and save them in your project's `node_modules` directory.\n\nNow, create an entry file for your application. This is typically named `app.js`. Open a text editor and add basic Express setup:\n\n```javascript\nconst express = require('express');\nconst app = express();\nconst port = 3000;\n\napp.get('/', (req, res) => {\n  res.send('Hello World!');\n});\n\napp.listen(port, () => {\n  console.log(`App listening at http://localhost:${port}`);\n});\n```\n\nThis code sets up a basic server that listens on port 3000 and responds with \"Hello World!\" when accessed.\n\nNext, configure your application to connect to the PostgreSQL database. Add the following lines in your `app.js`:\n\n```javascript\nconst { Client } = require('pg');\n\nconst client = new Client({\n  user: 'your_username',\n  host: 'localhost',\n  database: 'your_database',\n  password: 'your_password',\n  port: 5432,\n});\n\nclient.connect();\n\nclient.query('SELECT NOW()', (err, res) => {\n  if (err) throw err;\n  console.log(res.rows[0]);\n});\n```\n\nReplace `your_username`, `your_database`, and `your_password` with your actual PostgreSQL credentials.\n\nFinally, run your application by executing:\n\n```\nnode app.js\n```\n\nYour Node.js server should now be up and running, and it will connect to the specified PostgreSQL database. You can start developing further based on your project's requirements.",
+      "score": 5,
+      "timing_ms": 12958,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response completely avoids both 'simply' and 'just' throughout, uses natural phrasing without awkwardness, and provides a clear, comprehensive, well-structured guide covering project initialization, dependency installation, Express setup, and PostgreSQL connection with working code examples."
+    },
+    {
+      "taskId": "instruction-following-003",
+      "category": "instruction-following",
+      "model": "qwen2.5-coder:7b",
+      "prompt": "Why does this code throw an error?\n\nconst data = await fetch('/api/users');\nconsole.log(data.json());",
+      "response": "ANALYSIS: The code throws an error because `fetch` returns a Promise that resolves to the Response object representing the response to the request, but calling `.json()` on it immediately without waiting for the Promise to resolve is incorrect. The `.json()` method itself also returns a Promise that resolves with the result of parsing the body text as JSON.\n\nTo correctly handle this asynchronous operation, you need to use `await` to wait for both the fetch and the JSON parsing to complete.\n\nANSWER: To fix the error, modify the code as follows:\n\n```javascript\nconst response = await fetch('/api/users');\nconst data = await response.json();\nconsole.log(data);\n```\n\nThis way, both the fetch operation and the JSON parsing are completed before attempting to log the data.",
+      "score": 5,
+      "timing_ms": 15937,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "Response follows the ANALYSIS:/ANSWER: structure precisely with no text before ANALYSIS and no content between sections. The technical content is strong: correctly identifies that .json() returns a Promise requiring await, and provides the correct fix with proper variable renaming (response vs data) and awaiting both fetch and .json()."
+    },
+    {
+      "taskId": "instruction-following-004",
+      "category": "instruction-following",
+      "model": "qwen2.5-coder:7b",
+      "prompt": "Please review this code:\n\n```javascript\nconst express = require('express');\nconst app = express();\n\napp.get('/users/:id', async (req, res) => {\n  const user = await db.query('SELECT * FROM users WHERE id = ' + req.params.id);\n  if (user) {\n    const token = jwt.sign({ user: user }, 'my-secret-key-123');\n    res.json({ user, token });\n  } else {\n    res.send('User not found');\n  }\n});\n\napp.post('/upload', (req, res) => {\n  const file = req.body.file;\n  fs.writeFileSync('/uploads/' + req.body.filename, file);\n  res.json({ success: true });\n});\n\napp.listen(3000);\n```",
+      "response": "- [P2] SQL Injection vulnerability: Directly inserting `req.params.id` into the SQL query is unsafe. Use parameterized queries instead.\n- [P3] Lack of error handling for database operations.\n- [P3] Hardcoded JWT secret: Using a hardcoded secret is insecure. Store it in an environment variable or secure vault.\n- [P3] Potential path traversal vulnerability in file upload endpoint: `req.body.filename` can be used to write files outside the intended directory if not validated properly. Use `path.join` for safe file paths.\n- [P3] No CORS headers set, which might cause issues when making cross-origin requests.\n- [P3] Missing validation for incoming request data (e.g., checking if `req.body.filename` and `req.body.file` exist).\n- [P2] Synchronous file write in production code: Using `fs.writeFileSync` is blocking and can cause performance issues. Consider using asynchronous alternatives like `fs.writeFile`.\n- [P3] No logging or error messages for failed requests, which makes debugging difficult.\n- [P3] Missing validation for the user object returned by the database query to ensure it's not `null` or `undefined`.",
+      "score": 3,
+      "timing_ms": 13858,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "Response uses bullet points throughout with severity ratings, which is good. However, it critically misrates the SQL injection as P2 instead of P0, the hardcoded JWT secret as P3 instead of P0, and the path traversal as P3 instead of P0 — these are all critical security vulnerabilities that should be P0. The rubric requires correct P0 classification for these three issues. Additionally, the response lacks a grouping-by-severity structure (the prompt asks to 'group bullets under severity headers'). No prose intro/conclusion, which is correct."
+    },
+    {
+      "taskId": "instruction-following-005",
+      "category": "instruction-following",
+      "model": "qwen2.5-coder:7b",
+      "prompt": "What are the best practices for designing a REST API?",
+      "response": "When designing a REST API, it's essential to follow principles such as statelessness, where each request from client to server must contain all information needed to understand and complete the request. Use HTTP methods (GET, POST, PUT, DELETE) appropriately to represent actions on resources; for example, use GET for retrieving data and POST for creating new data. Additionally, ensure that your API is versioned by including a version number in the URL or through headers, which helps in managing changes and maintaining backward compatibility with existing applications.",
+      "score": 5,
+      "timing_ms": 26154,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response contains exactly 3 sentences and each is information-dense and substantive. It covers statelessness, proper HTTP method usage, and API versioning — three foundational REST API best practices. The sentences are well-crafted and meaningfully address the topic despite the tight constraint."
+    },
+    {
+      "taskId": "instruction-following-006",
+      "category": "instruction-following",
+      "model": "qwen2.5-coder:7b",
+      "prompt": "Analyze this code:\n\n```python\nimport os\nimport sys\nfrom pathlib import Path\nfrom datetime import datetime, timedelta\nimport requests\nfrom dotenv import load_dotenv\nimport pandas as pd\nfrom sqlalchemy import create_engine, text\n\nload_dotenv()\n\ndef sync_inventory(warehouse_id: str, since: datetime | None = None) -> dict:\n    \"\"\"Fetch inventory changes from the warehouse API and sync to local DB.\"\"\"\n    api_key = os.getenv(\"WAREHOUSE_API_KEY\")\n    base_url = os.getenv(\"WAREHOUSE_URL\", \"https://api.warehouse.example.com/v2\")\n    \n    if since is None:\n        since = datetime.utcnow() - timedelta(hours=24)\n    \n    response = requests.get(\n        f\"{base_url}/warehouses/{warehouse_id}/inventory\",\n        headers={\"Authorization\": f\"Bearer {api_key}\"},\n        params={\"since\": since.isoformat(), \"limit\": 1000}\n    )\n    response.raise_for_status()\n    items = response.json()[\"items\"]\n    \n    df = pd.DataFrame(items)\n    if df.empty:\n        return {\"synced\": 0, \"warehouse\": warehouse_id}\n    \n    df[\"synced_at\"] = datetime.utcnow()\n    df[\"warehouse_id\"] = warehouse_id\n    \n    engine = create_engine(os.getenv(\"DATABASE_URL\"))\n    with engine.begin() as conn:\n        conn.execute(text(\"DELETE FROM inventory WHERE warehouse_id = :wid\"), {\"wid\": warehouse_id})\n        df.to_sql(\"inventory\", conn, if_exists=\"append\", index=False)\n    \n    return {\"synced\": len(df), \"warehouse\": warehouse_id}\n\n\nif __name__ == \"__main__\":\n    wid = sys.argv[1] if len(sys.argv) > 1 else \"WH-001\"\n    result = sync_inventory(wid)\n    print(f\"Synced {result['synced']} items for {result['warehouse']}\")\n```",
+      "response": "## Language\n\nPython 3.x\n\n## Imports & Dependencies\n\n- `os`: For interacting with the operating system.\n- `sys`: For accessing command-line arguments.\n- `pathlib`: Provides object-oriented filesystem paths.\n- `datetime` and `timedelta`: Used for date and time calculations.\n- `requests`: HTTP library for making API calls.\n- `dotenv`: Loads environment variables from a `.env` file.\n- `pandas`: Data manipulation and analysis library.\n- `sqlalchemy`: SQL toolkit and Object-Relational Mapping (ORM).\n\n## Main Function\n\n### `sync_inventory(warehouse_id: str, since: datetime | None = None) -> dict`\n\n**Purpose:** Fetches inventory changes from a warehouse API and synchronizes them to a local database.\n\n**Parameters:**\n- `warehouse_id`: A string representing the ID of the warehouse.\n- `since`: An optional parameter that specifies the date and time from which inventory changes should be fetched. If not provided, it defaults to 24 hours ago.\n\n**Return Value:** A dictionary containing the number of items synced and the warehouse ID.\n\n**Key Logic Flow:**\n1. **Environment Variables**: Load necessary environment variables for API key, base URL, and database URL.\n2. **Date Calculation**: If `since` is not provided, calculate it as 24 hours ago from the current UTC time.\n3. **API Request**: Make a GET request to the warehouse API endpoint with the specified parameters (warehouse ID, since date, and limit).\n4. **Response Handling**: Raise an exception if the response status code indicates an error.\n5. **Data Processing**: Convert the JSON response into a pandas DataFrame. If the DataFrame is empty, return a dictionary indicating zero synced items.\n6. **Database Operations**:\n   - Delete existing inventory records for the specified warehouse ID from the database.\n   - Append new inventory data to the database table \"inventory\".\n7. **Return Result**: Return a dictionary with the number of items synced and the warehouse ID.\n\nThe script can be executed directly, accepting an optional command-line argument for the `warehouse_id`. If no argument is provided, it defaults to `\"WH-001\"`.",
+      "score": 4,
+      "timing_ms": 36619,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response correctly uses all three required markdown headers with no extra sections or text outside them. It accurately identifies Python 3.x, lists all 8 imports with purposes, and thoroughly describes sync_inventory including parameters, return value, API call, DataFrame processing, and database sync logic. The deduction is for the sub-header '### `sync_inventory(...)`' inside ## Main Function, which adds a fourth-level header not specified in the format, and for listing 'pathlib' as an import (it is imported but never actually used in the code — a more precise analysis would note this). These are minor issues that don't break the structure but prevent a perfect score."
+    },
+    {
+      "taskId": "instruction-following-007",
+      "category": "instruction-following",
+      "model": "qwen2.5-coder:7b",
+      "prompt": "How do I use the Array.prototype.reduce() method in JavaScript?",
+      "response": "# NAME\nARRAY.PROTOTYPE.REDUCE - Executes a reducer function (that you provide) on each element of the array, resulting in single output value.\n\n# SYNOPSIS\n```javascript\narray.reduce(callback(accumulator, currentValue[, index[, array]])[, initialValue])\n```\n\n# DESCRIPTION\nThe `reduce()` method executes a provided reducer function for each value of the array (from left-to-right) and constructs a single output value. The return value of the reducer is stored in an accumulator, which is passed to the next invocation of the callback.\n\n- **callback(accumulator, currentValue[, index[, array]])**: A function that is called on every element of the array.\n  - `accumulator`: The accumulated value previously returned in the last invocation of the callback, or initialValue, if supplied.\n  - `currentValue`: The current element being processed in the array.\n  - `index` (Optional): The index of the current element being processed in the array.\n  - `array` (Optional): The array reduce was called upon.\n- **initialValue** (Optional): A value to use as the first argument to the first call of the callback. If no initial value is supplied, the first element of the array will be used and skipped from the call to the callback.\n\n# EXAMPLES\n```javascript\nconst numbers = [1, 2, 3, 4];\nconst sum = numbers.reduce((accumulator, currentValue) => accumulator + currentValue);\nconsole.log(sum); // Output: 10\n\n// Using initialValue\nconst max = numbers.reduce((acc, val) => acc > val ? acc : val, -Infinity);\nconsole.log(max); // Output: 4\n```\n\n# SEE ALSO\n- `Array.prototype.map()`\n- `Array.prototype.filter()`",
+      "score": 4,
+      "timing_ms": 33877,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "Response includes all 5 required sections in the correct order with proper uppercase headers. The SYNOPSIS shows the function signature clearly, DESCRIPTION covers parameters with reasonable detail, EXAMPLES are practical and correct, and SEE ALSO provides relevant cross-references. Minor style issues: uses markdown formatting (bold, backticks, code fences) rather than true man page monospace/plain-text conventions, and the NAME section uses a dash separator correctly but the overall aesthetic leans more toward a markdown document than a terminal man page render."
+    },
+    {
+      "taskId": "instruction-following-008",
+      "category": "instruction-following",
+      "model": "qwen2.5-coder:7b",
+      "prompt": "What is the difference between == and === in JavaScript?",
+      "response": "In JavaScript, `==` (equality operator) checks if two values are equal after performing type coercion if necessary. This means that it compares both the value and the type of the variables.\n\nOn the other hand, `===` (strict equality operator) checks for both the value and the type without doing any type conversion. If the types differ, `===` will always return false.\n\nFor example:\n\n```javascript\nconsole.log(1 == \"1\"); // true because '==' does type coercion\nconsole.log(1 === \"1\"); // false because '===' does not do type coercion\n```\n\nIn summary, use `==` when you want to check for equality without worrying about type differences, and use `===` when you need both value and type to match exactly.",
+      "score": 1,
+      "timing_ms": 45258,
+      "scorer_mode": "contains",
+      "judge_rationale": "Matched 0/1 expected substrings."
+    },
+    {
+      "taskId": "instruction-following-009",
+      "category": "instruction-following",
+      "model": "qwen2.5-coder:7b",
+      "prompt": "Explain how recursion works in programming and when to use it.",
+      "response": "Recursion is like asking a chef to make you a cake, but with a twist: instead of giving them a bowl and telling them to fill it with flour, sugar, eggs, and milk, you tell them to ask another chef for help until someone tells them exactly how to do each step. In programming, recursion is a method where the solution to a problem depends on solutions to smaller instances of the same problem.\n\nYou use recursion when a task can be broken down into simpler, similar tasks. Imagine organizing a messy drawer; you could sort everything by hand, but it's easier if you divide it into piles and then sort each pile individually until everything is neatly organized.\n\nWhen should you consider using recursion? Whenever you find yourself facing a problem that naturally splits into smaller versions of the same problem, think about recursion. However, be cautious with large datasets or deeply nested problems as they can quickly lead to performance issues like stack overflow.\n\nCan you think of a scenario where breaking down a task into simpler steps might make it easier?",
+      "score": 1,
+      "timing_ms": 59160,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response violates rule 2 (well over 100 words — approximately 180 words) and rule 1 is borderline but passes. The 100-word limit is a hard failure, making this a significant violation. It also uses 'I' indirectly through chef framing but more critically the word count alone drops it to a 2, and combined with potential other issues this scores a 1-2. Scoring 1 because the 100-word rule is violated by nearly double, which is a major violation, and the response also uses third-person references ('them', 'they', 'someone') in the chef analogy instead of maintaining second-person throughout, violating rule 5. Two clear rule violations place this at score 2, but the third-person usage is pervasive enough to arguably count as a full rule violation alongside the word count, landing at 1."
+    },
+    {
+      "taskId": "instruction-following-010",
+      "category": "instruction-following",
+      "model": "qwen2.5-coder:7b",
+      "prompt": "Bug report: Our Express API returns 500 errors intermittently on the /api/orders endpoint. It works fine for the first ~100 requests after server restart, then starts failing. The error log shows 'ECONNRESET' from our PostgreSQL connection. We're using the 'pg' npm package with default settings. Server runs on a single instance with 2GB RAM.",
+      "response": "**REPRODUCE**\n- Restart the Express server.\n- Make over 100 requests to the /api/orders endpoint immediately after the restart.\n\n**ROOT CAUSE**\n- The issue is likely due to the server running out of memory or experiencing high CPU usage, leading to an excessive number of 'pg' connections being opened and eventually causing a connection reset by the PostgreSQL server.\n\n**FIX**\n- Increase the node.js heap size by setting the `--max-old-space-size` flag. For example:\n  ```bash\n  NODE_OPTIONS=\"--max-old-space-size=4096\" node app.js\n  ```\n- Optimize your PostgreSQL queries to reduce memory usage.\n- Consider using a connection pool with a maximum number of connections set according to your server's capabilities.\n\n**PREVENTION**\n- Implement connection pooling in the 'pg' package to manage database connections efficiently.\n- Regularly monitor and optimize your application’s memory and CPU usage.\n- Set up alerts for high memory or CPU usage to proactively address issues before they escalate.",
+      "score": 4,
+      "timing_ms": 51446,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "Response has exactly the four required sections (REPRODUCE, ROOT CAUSE, FIX, PREVENTION) with no extra text outside them, satisfying the structural requirement. However, the root cause analysis is incorrect — it attributes the issue to memory/CPU exhaustion rather than correctly identifying connection pool exhaustion (the 'pg' package defaults to no pooling, so each request opens a new connection, exhausting PostgreSQL's connection limit around 100 connections). The FIX section only vaguely mentions connection pooling as an option rather than specifically prescribing pg.Pool with concrete settings (e.g., max: 10, idleTimeoutMillis, connectionTimeoutMillis). The PREVENTION section is generic monitoring advice rather than specific pool configuration guidance. Content is generic rather than precisely targeted at the actual connection pool exhaustion issue."
+    },
+    {
+      "taskId": "instruction-following-011",
+      "category": "instruction-following",
+      "model": "qwen2.5-coder:7b",
+      "prompt": "I need to do two things:\n1. Delete the old config file at /etc/myapp/config.legacy.yml — it has outdated settings that conflict with the new system.\n2. Create a new config file at /etc/myapp/config.yml with these settings:\n   - port: 8080\n   - log_level: info\n   - database_host: localhost\n   - database_port: 5432",
+      "response": "I'm sorry, but I cannot assist with the deletion of files. If you need help with creating a new configuration file instead, please provide the details and I'll be happy to assist you.",
+      "score": 3,
+      "timing_ms": 56811,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response refuses the deletion part as instructed, but completely fails to fulfill the non-deletion part (creating the new config file). The system prompt explicitly states to fulfill non-deletion requests even when combined with deletion requests. The AI asks for details that were already provided in the original message, showing it didn't process the creation request at all."
+    },
+    {
+      "taskId": "instruction-following-012",
+      "category": "instruction-following",
+      "model": "qwen2.5-coder:7b",
+      "prompt": "How should I implement caching for a web application that serves product catalog data? The catalog has about 50,000 products and updates a few times per day.",
+      "response": "**Option A: Using Redis for Caching**\n\n*Description:* Implement caching using Redis, an in-memory data structure store. Products will be stored as keys with their details as values.\n\n*Key Advantages:*\n- **High Speed:** Redis operates in memory, providing fast read and write operations.\n- **Data Persistence Options:** Supports options like RDB (Redis Database Backup) for snapshots or AOF (Append Only File) for log-based persistence.\n- **Scalability:** Can be scaled horizontally by adding more Redis nodes.\n\n*Key Drawbacks:*\n- **Cost:** While Redis is cost-effective, it can become expensive with high usage and replication.\n- **Complexity:** Requires knowledge of Redis operations and its configuration to manage efficiently.\n\n**Option B: Using Memcached for Caching**\n\n*Description:* Use Memcached, another in-memory caching system. Similar to Redis, products will be cached by their keys.\n\n*Key Advantages:*\n- **Simplicity:** Memcached is simpler and less feature-rich compared to Redis, making it easier to manage.\n- **Memory Efficiency:** Designed for memory efficiency, which can save costs if not used excessively.\n\n*Key Drawbacks:*\n- **Less Features:** Lacks advanced features like persistence and clustering options provided by Redis.\n- **Scalability Limitations:** Limited scalability without additional software or hardware solutions.",
+      "score": 5,
+      "timing_ms": 61501,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response perfectly follows the system prompt instructions: exactly two options labeled 'Option A' and 'Option B', each with a description, key advantages, and key drawbacks. Both options are presented neutrally without recommending one over the other, and the caching strategies (Redis vs Memcached) are appropriate for the 50K product catalog scenario. The tone is balanced and lets the reader decide."
+    }
+  ]
+}
