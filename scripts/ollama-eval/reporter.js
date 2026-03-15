@@ -38,7 +38,9 @@ async function compareModels(modelsArg) {
   // Find the most recent result file for each model key
   const modelResults = {}
   for (const key of modelKeys) {
-    const matching = allFiles.filter(f => f.toLowerCase().includes(key.toLowerCase()))
+    // Convert model name to filename slug format (e.g. "qwen2.5-coder:32b" → "qwen2.5-coder--32b")
+    const slug = key.replace(/[:/]/g, '--').toLowerCase()
+    const matching = allFiles.filter(f => f.toLowerCase().includes(slug))
     if (matching.length === 0) {
       console.error(`No results found matching "${key}"`)
       continue
