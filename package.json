@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@kevinwatt/shell-mcp": "^0.4.17",
-    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@modelcontextprotocol/server-brave-search": "^0.6.2",
     "@modelcontextprotocol/server-filesystem": "^2026.1.14",
     "@mseep/git-mcp-server": "^2.1.4",
