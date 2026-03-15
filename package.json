@@ -4,11 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "start": "bash scripts/paloma-sync.sh && npm install && bash scripts/setup-mcp.sh && concurrently -k -n vite,bridge -c cyan,magenta \"vite\" \"node bridge/run.js\"",
+    "start": "bash scripts/paloma-sync.sh && npm install && bash scripts/setup-mcp.sh && vite build && node bridge/run.js",
     "first-run": "bash scripts/first-run.sh",
     "setup": "bash scripts/setup-mcp.sh",
     "postinstall": "bash scripts/setup-mcp.sh",
     "dev": "vite",
+    "dev:full": "concurrently -k -n vite,bridge -c cyan,magenta \"vite\" \"node bridge/run.js\"",
     "bridge": "node bridge/run.js",
     "bridge:direct": "node bridge/index.js",
     "build": "vite build",

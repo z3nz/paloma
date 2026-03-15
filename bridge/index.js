@@ -1,7 +1,8 @@
 import { WebSocketServer } from 'ws'
+import { createServer as createHttpServer } from 'http'
 import { mkdir, writeFile, readdir, stat, unlink } from 'fs/promises'
-import { writeFileSync, unlinkSync } from 'fs'
-import { join } from 'path'
+import { writeFileSync, unlinkSync, createReadStream, existsSync } from 'fs'
+import { join, extname } from 'path'
 import { homedir, tmpdir } from 'os'
 import { randomUUID } from 'crypto'
 
@@ -84,7 +85,56 @@ async function main() {
     else stepFail(name, error || 'failed')
   })
 
-  const wss = new WebSocketServer({ port })
+  // Serve built frontend from dist/ if available
+  const distDir = join(process.cwd(), 'dist')
+  const hasDistDir = existsSync(join(distDir, 'index.html'))
+
+  const MIME_TYPES = {
+    '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css',
+    '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
+    '.gif': 'image/gif', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+    '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
+    '.map': 'application/json'
+  }
+
+  const httpServer = createHttpServer((req, res) => {
+    if (!hasDistDir) {
+      res.writeHead(503, { 'Content-Type': 'text/plain' })
+      res.end('Paloma: run "npm run build" first to generate the frontend')
+      return
+    }
+    const url = new URL(req.url, `http://localhost:${port}`)
+    let filePath = join(distDir, url.pathname === '/' ? 'index.html' : url.pathname)
+    const ext = extname(filePath)
+
+    // SPA fallback: non-file routes serve index.html
+    if (!ext) filePath = join(distDir, 'index.html')
+
+    const mime = MIME_TYPES[ext] || 'application/octet-stream'
+    const stream = createReadStream(filePath)
+    stream.on('open', () => {
+      const headers = { 'Content-Type': mime }
+      if (url.pathname.startsWith('/assets/')) {
+        headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+      }
+      res.writeHead(200, headers)
+      stream.pipe(res)
+    })
+    stream.on('error', () => {
+      // File not found → SPA fallback
+      const indexStream = createReadStream(join(distDir, 'index.html'))
+      indexStream.on('open', () => {
+        res.writeHead(200, { 'Content-Type': 'text/html' })
+        indexStream.pipe(res)
+      })
+      indexStream.on('error', () => {
+        res.writeHead(404)
+        res.end('Not found')
+      })
+    })
+  })
+
+  const wss = new WebSocketServer({ server: httpServer })
 
   wss.on('error', (err) => {
     console.error('[bridge] WebSocket server error:', err.message)
@@ -153,6 +203,14 @@ async function main() {
   // Start email watcher — polls Gmail, spawns new session per email
   emailWatcher = new EmailWatcher(cliManager, { broadcast })
   emailWatcher.start()
+
+  // Start HTTP + WebSocket server
+  httpServer.listen(port)
+  if (hasDistDir) {
+    stepOk('frontend', `serving built files at http://localhost:${port}`)
+  } else {
+    stepInfo('frontend: run "npm run build" to enable — Vite dev server still works')
+  }
 
   printSummary({
     serverCount,
@@ -607,6 +665,7 @@ async function main() {
     if (mcpProxy) await mcpProxy.shutdown()
     await manager.shutdown()
     wss.close()
+    httpServer.close()
     try { await unlink(PID_FILE) } catch { /* best-effort */ }
     process.exit(exitCode)
   }
