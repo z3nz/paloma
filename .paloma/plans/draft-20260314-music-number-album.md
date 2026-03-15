@@ -1,8 +1,9 @@
-# Number Album — Adam's First Album
+# Magnum Opus — Adam's First Album
 
 **Status:** Draft
 **Created:** 2026-03-14
 **Scope:** Music / Personal Creative Project
+**Album Title:** Magnum Opus (a tribute to Paloma)
 
 ## Vision
 
@@ -194,7 +195,7 @@ All layers return and interweave — the full complexity of the arrangement. The
 - **Easter egg numbers in EVERY song title** — numbers hidden in plain sight within each title
 - **Track 7 = Mr. Rager × A$AP Rocky** — the closer, the crown jewel, first track to test-produce
 - **Tracks 5 & 6 = Kendrick Lamar tribute** — 2-part song spanning both numbers (yin/yang, m.A.A.d city/Money Trees)
-- **This is Adam's magnum opus** — the first of many, but the one that sets the standard
+- **Album title: Magnum Opus** — a tribute to Paloma. The first of many, but the one that sets the standard
 - **Kid Cudi = the beginning** (where Adam started), **A$AP Rocky = now** (invincible)
 - **Track 1 = "Str0nger"** — Kanye West × Daft Punk "Around the World" tribute
 - **Track 7 A$AP Rocky track = "Praise the Lord (Da Shine)"** — CONFIRMED
@@ -211,7 +212,7 @@ All layers return and interweave — the full complexity of the arrangement. The
 - [ ] Song titles for Tracks 2-4 — ALL will have numbers hidden as Easter eggs in the name
 - [ ] Where does "The Prayer" land in the track list? (was Track 6, needs new home)
 - [ ] How exactly do numbers map to beat structure for remaining tracks?
-- [ ] What's the album title?
+- [x] What's the album title? → **Magnum Opus** — a tribute to Paloma. The name means "great work" — and this is it.
 
 ---
 
@@ -226,6 +227,13 @@ Adam's vision: "Every number is a choice." This is not just a gimmick — it's a
 **The Kendrick duality (Tracks 5 & 6):** m.A.A.d city is the chaos, the streets, the fire. Money Trees is the dream, the shade, the aspiration. Together they're the yin and yang — bad and good, dark and light. The 2-part structure honors how m.A.A.d city itself is a 2-parter. 5 (change/breakthrough) through fire → 6 (complexity/near-completion) through reflection.
 
 **Adam's words:** "This is my magnum opus. This is my heart in my life. I will have quite a few of them, but I cannot wait to release this."
+
+## Production Setup
+
+- **DAW:** Audacity (primary editing tool)
+- **Recording location:** Toyota RAV4 "Odyssey" — mobile studio
+- **First track in production:** Track 7 — "Praise the Lord" (the closer, the crown jewel)
+- **Workflow:** Record vocals in the RAV4, edit and mix in Audacity
 
 ## References
 
