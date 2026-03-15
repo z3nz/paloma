@@ -1,10 +1,10 @@
 # Multi-Backend Resilience — All CLI Backends Working & Fault-Tolerant
 
 > **Goal:** Ensure all four AI backends (Claude CLI, Copilot CLI, Codex CLI, Ollama) are fully operational, well-tested, and fault-tolerant. If any single backend goes down, Paloma can seamlessly continue with the others.
-> **Status:** Active — Chart complete, ready for Forge
+> **Status:** Completed — All 5 WUs shipped
 > **Created:** 2026-03-14
 > **Priority:** #1 — Critical infrastructure
-> **Pipeline:** Scout → **Chart** → Forge → Polish → Ship
+> **Pipeline:** Scout → Chart → Forge → Polish → **Ship** ✅
 
 ---
 
@@ -281,7 +281,7 @@ The `pillar_fallback` event will be broadcast alongside `pillar_stream` events. 
 
 ### WU-4: Frontend Fallback Display
 
-**Status:** Blocked (WU-3)  
+**Status:** completed  
 **Files:** `src/composables/usePillarSessions.js` (or equivalent pillar event handler)  
 **Depends on:** WU-3 (needs `pillar_fallback` event)  
 **Size:** Small  
@@ -301,7 +301,7 @@ The `pillar_fallback` event will be broadcast alongside `pillar_stream` events. 
 
 ### WU-5: Backend Selection Guidance in DNA
 
-**Status:** Blocked (WU-1, WU-2, WU-3)  
+**Status:** completed  
 **Files:** `src/prompts/base.js`  
 **Depends on:** WU-1, WU-2, WU-3 (design validated by implementation)  
 **Size:** Small  

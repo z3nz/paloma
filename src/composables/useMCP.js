@@ -264,6 +264,22 @@ export function useMCP() {
         const { updateSession } = useSessions()
         await updateSession(dbSessionId, {})
       },
+      async onPillarFallback(msg) {
+        const dbSessionId = pillarSessionMap.get(msg.pillarId)
+        if (!dbSessionId) return
+        const { getState } = useSessionState()
+        const state = getState(dbSessionId)
+        // Append an info message about the fallback
+        const infoMsg = {
+          sessionId: dbSessionId,
+          role: 'system',
+          content: `Backend fallback: ${msg.from} → ${msg.to} (${msg.reason})`,
+          timestamp: Date.now()
+        }
+        const msgId = await db.messages.add(infoMsg)
+        infoMsg.id = msgId
+        state.messages.value.push(infoMsg)
+      },
       async onPillarDone(msg) {
         const dbSessionId = pillarSessionMap.get(msg.pillarId)
         if (!dbSessionId) return
