@@ -89,6 +89,26 @@ Every number is a choice. The album traces a journey from infinite possibility (
 - **A$AP Rocky reference track:** "Praise the Lord (Da Shine)" — CONFIRMED. Adam's instinct was right.
 - **Notes:** Final track. Completion. Divine perfection. The culmination of the entire number journey. This is the song Adam wants to test-produce first.
 
+**Verse 1 (WRITTEN):**
+> Woke up, smoked it up, woke up saw the kids were up
+> They said good morning and it wasn't foreign
+> So the feelings started pouring in the best way
+> The kind of shit you can get lost in
+> I'd be crisscross-in' sin
+> I'm awoken, Amen
+
+**Chorus (IN PROGRESS):**
+> Praise the Lord...
+> *(rest TBD)*
+
+**Lyric Notes:**
+- Verse 1 is a morning-after-awakening scene — gratitude, presence, the kids, the feeling of being blessed
+- "It wasn't foreign" — the good morning was natural, real, not forced
+- "Feelings started pouring" — overwhelmed by gratitude
+- "Crisscross-in' sin" — navigating between right and wrong, the human tension
+- "I'm awoken, Amen" — spiritual awakening as the punchline, leads directly into the chorus
+- The verse flows naturally into "Praise the Lord" — awakening → gratitude → praise
+
 ---
 
 ## Suno Instrumental Prompts
