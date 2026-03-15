@@ -2,14 +2,13 @@
 // Modes: exact_match, contains, code_execution, claude_judge
 // Automated checks are tried first; claude_judge is the fallback for subjective tasks.
 
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { writeFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 
-const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages'
-const CLAUDE_MODEL = 'claude-sonnet-4-20250514'
+const CLAUDE_TIMEOUT_MS = 180_000
 
 // --- Main scorer entry point ---
 
@@ -141,7 +140,8 @@ async function executeCode(lang, code, expectedOutput) {
       }
     }
 
-    const stdout = output.stdout.trim()
+    // Strip ANSI escape codes (color codes from Node/terminal output)
+    const stdout = output.stdout.replace(/\x1b\[[0-9;]*m/g, '').trim()
 
     if (!expectedOutput) {
       // No expected output specified — code ran successfully, that's a pass
@@ -189,15 +189,6 @@ function runProcess(cmd, args, timeoutMs) {
 // --- Claude-as-Judge ---
 
 async function scoreClaudeJudge(task, response) {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    return {
-      score: 0,
-      mode: 'claude_judge',
-      rationale: 'ANTHROPIC_API_KEY not set. Cannot use Claude-as-judge scoring.'
-    }
-  }
-
   const rubric = task.rubric || 'Rate the response quality from 1 (poor) to 5 (excellent). Consider correctness, completeness, and clarity.'
 
   const judgePrompt = `You are an expert code evaluator. Score the following AI response to a coding task.
@@ -217,31 +208,19 @@ Respond with ONLY a JSON object (no markdown, no explanation outside the JSON):
 {"score": <1-5>, "rationale": "<brief explanation>"}`
 
   try {
-    const res = await fetch(ANTHROPIC_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: CLAUDE_MODEL,
-        max_tokens: 300,
-        messages: [{ role: 'user', content: judgePrompt }]
-      })
-    })
+    const result = await callClaude(judgePrompt)
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '')
+    if (result.error) {
       return {
         score: 0,
         mode: 'claude_judge',
-        rationale: `Claude API error ${res.status}: ${truncate(errText, 200)}`
+        rationale: `Claude CLI error: ${truncate(result.error, 200)}`
       }
     }
 
-    const data = await res.json()
-    const text = data.content?.[0]?.text || ''
+    // Claude CLI --output-format json returns { result: "...", ... }
+    const cliOutput = JSON.parse(result.stdout)
+    const text = cliOutput.result || ''
 
     // Parse JSON from response — handle possible markdown wrapping
     const jsonStr = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
@@ -259,6 +238,44 @@ Respond with ONLY a JSON object (no markdown, no explanation outside the JSON):
       rationale: `Claude judge failed: ${err.message}`
     }
   }
+}
+
+// Call Claude CLI via subprocess — uses pre-authenticated claude binary
+function callClaude(prompt) {
+  return new Promise((resolve) => {
+    const proc = spawn('claude', ['-p', '--output-format', 'json', '--model', 'sonnet'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env }
+    })
+
+    let stdout = ''
+    let stderr = ''
+    proc.stdout.on('data', d => { stdout += d })
+    proc.stderr.on('data', d => { stderr += d })
+
+    const timer = setTimeout(() => {
+      proc.kill()
+      resolve({ error: 'Claude CLI timeout (60s)' })
+    }, CLAUDE_TIMEOUT_MS)
+
+    proc.on('close', (code) => {
+      clearTimeout(timer)
+      if (code !== 0) {
+        resolve({ error: stderr || `Claude CLI exited with code ${code}` })
+      } else {
+        resolve({ stdout })
+      }
+    })
+
+    proc.on('error', (err) => {
+      clearTimeout(timer)
+      resolve({ error: err.message })
+    })
+
+    // Pipe prompt via stdin (avoids argument length/escaping issues)
+    proc.stdin.write(prompt)
+    proc.stdin.end()
+  })
 }
 
 // --- Helpers ---

@@ -24,7 +24,7 @@ export class OllamaManager {
     // Create or resume session
     let session = this.sessions.get(sessionId)
     if (!session) {
-      session = { messages: [], model: model || 'qwen2.5-coder:32b', tools: null, lastActivity: Date.now() }
+      session = { messages: [], model: model || 'qwen3-coder:30b', tools: null, lastActivity: Date.now() }
       // Prepend system message on new session
       if (systemPrompt) {
         session.messages.push({ role: 'system', content: systemPrompt })

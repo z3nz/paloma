@@ -18,12 +18,17 @@ const DEFAULT_TIMEOUT_MS = 120_000
 
 // --- Ollama HTTP Client ---
 
-export async function ollamaChat({ model, messages, options = {} }) {
+export async function ollamaChat({ model, messages, options = {}, tools }) {
   const body = {
     model,
     messages,
     stream: false,
     options: { num_ctx: 32768, ...options }
+  }
+
+  // Pass tools to Ollama API if provided (converts MCP format → OpenAI format)
+  if (tools && tools.length > 0) {
+    body.tools = tools.map(convertToolFormat)
   }
 
   const response = await fetchWithTimeout(`${OLLAMA_BASE}/api/chat`, {
@@ -40,8 +45,26 @@ export async function ollamaChat({ model, messages, options = {} }) {
   const data = await response.json()
   return {
     content: data.message?.content || '',
+    toolCalls: data.message?.tool_calls || [],
     totalDuration: data.total_duration,
     evalCount: data.eval_count
+  }
+}
+
+// Convert MCP tool format { name, description, inputSchema } to
+// Ollama/OpenAI format { type: "function", function: { name, description, parameters } }
+function convertToolFormat(tool) {
+  // Already in OpenAI format
+  if (tool.type === 'function' && tool.function) return tool
+
+  // MCP format → OpenAI format
+  return {
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description || '',
+      parameters: tool.inputSchema || tool.parameters || { type: 'object', properties: {} }
+    }
   }
 }
 

@@ -20,7 +20,7 @@ import { scoreResponse } from './scorer.js'
 import { join } from 'node:path'
 
 const args = parseArgs(process.argv)
-const model = args.model || 'qwen2.5-coder:32b'
+const model = args.model || 'qwen3-coder:30b'
 const category = args.category || 'all'
 
 async function main() {
@@ -58,24 +58,28 @@ async function main() {
       }
       messages.push({ role: 'user', content: task.prompt })
 
-      // Send to Ollama
+      // Send to Ollama (pass tools if the task defines them)
       const ollamaResponse = await ollamaChat({
         model,
         messages,
-        options: task.options || {}
+        options: task.options || {},
+        tools: task.tools || undefined
       })
 
       const timingMs = Date.now() - startTime
 
+      // Build scoreable response text — includes tool calls if any
+      const responseText = formatResponseForScoring(ollamaResponse)
+
       // Score the response
-      const scoreResult = await scoreResponse(task, ollamaResponse.content)
+      const scoreResult = await scoreResponse(task, responseText)
 
       const result = {
         taskId: task.id || `${task.category}-unknown`,
         category: task.category,
         model,
         prompt: task.prompt,
-        response: ollamaResponse.content,
+        response: responseText,
         score: scoreResult.score,
         timing_ms: timingMs,
         scorer_mode: scoreResult.mode,
@@ -162,6 +166,28 @@ async function main() {
   }
 
   console.log('')
+}
+
+// Format Ollama response (text + tool calls) into a single string for scoring
+function formatResponseForScoring(response) {
+  const parts = []
+
+  if (response.content) {
+    parts.push(response.content)
+  }
+
+  if (response.toolCalls && response.toolCalls.length > 0) {
+    parts.push('\n--- Tool Calls ---')
+    for (const tc of response.toolCalls) {
+      const fn = tc.function || {}
+      const args = typeof fn.arguments === 'string'
+        ? fn.arguments
+        : JSON.stringify(fn.arguments || {}, null, 2)
+      parts.push(`Tool: ${fn.name}\nArguments: ${args}`)
+    }
+  }
+
+  return parts.join('\n') || '(empty response)'
 }
 
 main().catch(err => {
