@@ -66,7 +66,7 @@ Allow editing sent messages and regenerating responses:
 
 When switching models mid-conversation, inject a context transfer message so the new model understands Paloma's capabilities and current state.
 
-- Show model attribution per message (badge/icon) — **note: `model` field already stored on every assistant message in IndexedDB, just needs UI**
+- ✅ Show model attribution per message (badge/icon) — already implemented in MessageItem.vue via `shortModelName` computed
 - Preserve full conversation history across switches
 - Backend switching already works (cliBackend tracking in useCliChat.js)
 
@@ -92,4 +92,4 @@ When switching models mid-conversation, inject a context transfer message so the
 
 - **File search edge cases** — fuzzy search sometimes misses obvious matches.
 - **Cost tracking accuracy** — occasional mismatch between calculated cost values.
-- **Draft persistence race condition** — rapid session switching can lose draft.
+- ~~**Draft persistence race condition** — rapid session switching can lose draft.~~ ✅ Fixed: synchronous content capture, generation counter for stale detection, session validation on debounced saves.

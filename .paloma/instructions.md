@@ -5,11 +5,14 @@
 Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI CLI agents (Claude CLI, Codex CLI) and MCP tool servers.
 
 ### Architecture
-- **Frontend:** Vue 3 + Vite + Tailwind CSS (`src/`)
-- **Bridge:** Node.js WebSocket server (`bridge/`) on port 19191
+- **Frontend:** Vue 3 + Vite + Tailwind CSS (`src/`), served as built static files from bridge in production
+- **Bridge:** Node.js WebSocket + HTTP server (`bridge/`) on port 19191 — serves both WebSocket API and built frontend
 - **MCP Proxy:** SSE + Streamable HTTP (`bridge/mcp-proxy-server.js`) on port 19192
 - **Custom MCP Servers:** `mcp-servers/` (version-controlled, travel with git clone)
-- **AI Backends:** Claude CLI (`bridge/claude-cli.js`), Codex CLI (`bridge/codex-cli.js`), and Ollama (`bridge/ollama-manager.js`) as subprocess/API-managed sessions
+- **AI Backends:** Claude CLI (`bridge/claude-cli.js`), Codex CLI (`bridge/codex-cli.js`), Copilot CLI (`bridge/copilot-cli.js`), and Ollama (`bridge/ollama-manager.js`) as subprocess/API-managed sessions
+- **Production serving:** `npm start` builds frontend via Vite, then serves `dist/` from bridge HTTP server on port 19191. Access at `http://localhost:19191`
+- **Development:** `npm run dev:full` runs Vite HMR (port 5173) + bridge (port 19191) concurrently
+- **Backend resilience:** BackendHealth module (`bridge/backend-health.js`) probes all backends at startup; PillarManager auto-falls back through chain: claude → copilot → codex → ollama
 - **Email:** Gmail polling + session spawning (`bridge/email-watcher.js`), daily continuity journal at 11 PM
 - **Deep reference:** `.paloma/docs/architecture-reference.md` — every file, data flow, schema, and pattern documented
 

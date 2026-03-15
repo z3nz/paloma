@@ -261,16 +261,18 @@ watch(voiceError, (err) => {
 // --- Draft persistence ---
 let saveTimeout = null
 let suppressSave = false
+let switchGeneration = 0
 
-async function saveDraftNow(sessionId) {
+// Save with explicit content (avoids reading stale input.value)
+async function saveDraftSnapshot(sessionId, content, files) {
   if (!sessionId) return
   try {
     const existing = await db.drafts.get(sessionId)
     await db.drafts.put({
       sessionId,
       ...existing,
-      content: input.value,
-      files: attachedFiles.value.map(f => ({ path: f.path, name: f.name })),
+      content,
+      files,
       updatedAt: Date.now()
     })
   } catch {
@@ -278,12 +280,22 @@ async function saveDraftNow(sessionId) {
   }
 }
 
+// Save current input for current session (used by debounce and unmount)
+async function saveDraftNow(sessionId) {
+  saveDraftSnapshot(sessionId, input.value, attachedFiles.value.map(f => ({ path: f.path, name: f.name })))
+}
+
 function scheduleDraftSave() {
   if (suppressSave) return
   clearTimeout(saveTimeout)
   const sessionId = props.session?.id
   if (!sessionId) return
-  saveTimeout = setTimeout(() => saveDraftNow(sessionId), 500)
+  saveTimeout = setTimeout(() => {
+    // Only save if still on the same session
+    if (props.session?.id === sessionId) {
+      saveDraftNow(sessionId)
+    }
+  }, 500)
 }
 
 watch([input, attachedFiles], scheduleDraftSave, { deep: true })
@@ -292,10 +304,14 @@ watch([input, attachedFiles], scheduleDraftSave, { deep: true })
 watch(
   () => props.session?.id,
   async (sessionId, oldSessionId) => {
-    // Save draft for outgoing session
+    const thisSwitch = ++switchGeneration
+
+    // Save draft for outgoing session — capture content synchronously before async
     if (oldSessionId) {
       clearTimeout(saveTimeout)
-      await saveDraftNow(oldSessionId)
+      const content = input.value
+      const files = attachedFiles.value.map(f => ({ path: f.path, name: f.name }))
+      saveDraftSnapshot(oldSessionId, content, files)
     }
 
     // Load draft for incoming session
@@ -305,10 +321,12 @@ watch(
       attachedFiles.value = []
     } else {
       const draft = await db.drafts.get(sessionId)
+      if (switchGeneration !== thisSwitch) return // stale — another switch happened
       input.value = draft?.content || ''
       attachedFiles.value = draft?.files || []
     }
     await nextTick()
+    if (switchGeneration !== thisSwitch) return // stale
     suppressSave = false
   },
   { immediate: true }
