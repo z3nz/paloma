@@ -739,11 +739,20 @@ export function useMCP() {
           pillarParents.set(session.pillarId, session.parentFlowSessionId)
         }
         pillarDbSessions.set(session.pillarId, session.id)
-        // Restore phase from activePillars list
+        // Restore phase and streaming state from activePillars list
         const pillarInfo = activePillars.find(p => p.pillarId === session.pillarId)
         if (pillarInfo) {
           pillarStatuses.set(session.pillarId, pillarInfo.status || 'running')
           pillarPhases.set(session.pillarId, session.phase || pillarInfo.pillar)
+
+          // Restore streaming content that was in-flight during page refresh
+          if (pillarInfo.currentlyStreaming && pillarInfo.streamingOutput) {
+            const { getState } = useSessionState()
+            const state = getState(session.id)
+            state.streaming.value = true
+            state.streamingContent.value = pillarInfo.streamingOutput
+            console.log(`[pillar] Restored ${pillarInfo.streamingOutput.length} chars of streaming content for ${session.pillarId.slice(0, 8)}`)
+          }
         }
         console.log(`[pillar] Reconnected pillar ${session.pillarId.slice(0, 8)} → db session ${session.id}`)
       }

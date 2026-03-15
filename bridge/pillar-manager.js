@@ -272,7 +272,10 @@ export class PillarManager {
         dbSessionId: session.dbSessionId,
         turnCount: session.turnCount,
         currentlyStreaming: session.currentlyStreaming,
-        lastActivity: session.lastActivity
+        lastActivity: session.lastActivity,
+        backend: session.backend,
+        // Include streaming output so frontend can restore on reconnect
+        streamingOutput: session.currentlyStreaming ? this._getCurrentOutput(session) : ''
       })
     }
     return { pillars }

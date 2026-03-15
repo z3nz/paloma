@@ -37,6 +37,9 @@ const pendingAskUser = new Map()
 const pendingToolConfirm = new Map()
 // CLI requestId → originating WebSocket (for targeted sends)
 const cliRequestToWs = new Map()
+// Buffer direct Flow chat output for reconnect resilience
+// sessionId → { output: string, requestId, msgId, streaming: boolean }
+const flowChatBuffers = new Map()
 
 // Auto-reject stale pending requests (5 min timeout)
 const PENDING_TIMEOUT_MS = 5 * 60 * 1000
@@ -280,11 +283,27 @@ async function main() {
               cwd: msg.cwd
             },
             (event) => {
-              if (ws.readyState !== 1) return // OPEN
-              ws.send(JSON.stringify({ ...event, id: msg.id }))
+              // Buffer output for reconnect resilience (always, even if WS is dead)
+              const buf = flowChatBuffers.get(sessionId)
+              if (buf && event.type === 'claude_stream' && event.event) {
+                const ev = event.event
+                if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
+                  buf.output += ev.delta.text
+                } else if (ev.type === 'assistant' && ev.message?.content) {
+                  for (const block of ev.message.content) {
+                    if (block.type === 'text') buf.output += block.text
+                  }
+                }
+              }
+
+              // Use dynamic WS lookup so reconnected clients receive events
+              const targetWs = cliRequestToWs.get(requestId) || ws
+              if (targetWs.readyState !== 1) return // OPEN
+              targetWs.send(JSON.stringify({ ...event, id: msg.id }))
               // Clean up mapping when CLI session ends
               if (event.type === 'claude_done' || event.type === 'claude_error') {
                 cliRequestToWs.delete(requestId)
+                flowChatBuffers.delete(sessionId)
                 // If this was the Flow session, mark it as no longer streaming
                 // so queued notifications can be processed
                 if (pillarManager?.flowSession?.cliSessionId === sessionId) {
@@ -295,6 +314,8 @@ async function main() {
           )
           // Map this CLI request to the originating WebSocket
           cliRequestToWs.set(requestId, ws)
+          // Buffer for reconnect resilience
+          flowChatBuffers.set(sessionId, { output: '', requestId, msgId: msg.id, streaming: true })
           // If this is a message to the registered Flow session, mark it as streaming
           if (pillarManager?.flowSession?.cliSessionId === (msg.sessionId || sessionId)) {
             pillarManager.flowSession.currentlyStreaming = true
@@ -357,7 +378,15 @@ async function main() {
             cwd: msg.cwd,
             wsClient: ws
           })
-          ws.send(JSON.stringify({ type: 'flow_session_registered', id: msg.id }))
+          // Re-map any active CLI requests to the new WS (reconnect after page refresh)
+          const buf = flowChatBuffers.get(msg.cliSessionId)
+          if (buf && buf.requestId) {
+            cliRequestToWs.set(buf.requestId, ws)
+            console.log(`[bridge] Re-mapped Flow CLI request ${buf.requestId.slice(0, 8)} to new WS (reconnect)`)
+          }
+          // Return any buffered output so frontend can restore streaming content
+          const bufferedOutput = buf?.output || ''
+          ws.send(JSON.stringify({ type: 'flow_session_registered', id: msg.id, bufferedOutput }))
         }
       } else if (msg.type === 'pillar_list') {
         // Frontend asking for active pillars (e.g., after reconnect to rebuild session map)
