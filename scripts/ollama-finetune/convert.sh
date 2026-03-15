@@ -16,6 +16,12 @@
 
 set -euo pipefail
 
+# Activate MLX virtual environment if it exists
+MLX_VENV="$(cd "$(dirname "$0")/../.." && pwd)/mlx_env"
+if [ -d "$MLX_VENV" ]; then
+  source "$MLX_VENV/bin/activate"
+fi
+
 VERSION="${1:-ft-v1}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
