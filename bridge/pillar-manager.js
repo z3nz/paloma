@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
-import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, QWEN_RECURSIVE_INSTRUCTIONS } from '../src/prompts/base.js'
+import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_BRAIN_PROMPT, SINGULARITY_HANDS_PROMPT } from '../src/prompts/base.js'
 import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
 
 const MAX_RUNTIME_MS = 30 * 60 * 1000 // 30 minutes
@@ -290,6 +290,11 @@ export class PillarManager {
       return { pillarId, status: 'not_found', message: `No pillar session found with id ${pillarId}` }
     }
 
+    // If this is a Brain waiting for Hands, use stopTree to kill the whole family
+    if (session._waitingForHands) {
+      return this.stopTree({ pillarId })
+    }
+
     // Kill the CLI process if running
     if (session.cliRequestId) {
       const manager = this.backends[session.backend] || this.backends.claude
@@ -303,6 +308,7 @@ export class PillarManager {
 
     session.status = 'stopped'
     session.currentlyStreaming = false
+    session._waitingForHands = false
     session.lastActivity = new Date().toISOString()
     session.messageQueue = [] // clear queued messages to prevent memory leak
 
@@ -341,6 +347,9 @@ export class PillarManager {
     if (!session) {
       return { pillarId, status: 'not_found', message: `No pillar session found with id ${pillarId}` }
     }
+
+    // Clear waiting flag FIRST to prevent stop() → stopTree() recursion
+    session._waitingForHands = false
 
     const descendants = this._getDescendants(pillarId)
     const stopped = []
@@ -389,6 +398,8 @@ export class PillarManager {
     let count = 0
     for (const [, session] of this.pillars) {
       if (session.backend === 'ollama' && (session.status === 'running' || session.currentlyStreaming)) {
+        // Exclude Brain sessions waiting for Hands — they're not actively using GPU
+        if (session._waitingForHands) continue
         count++
       }
     }
@@ -680,6 +691,100 @@ export class PillarManager {
       event.assistantMessage, results,
       (nextEvent) => this._handleCliEvent(session, nextEvent)
     )
+  }
+
+  /**
+   * Extract <delegate>...</delegate> tags from Brain's output text.
+   * Returns array of task description strings.
+   */
+  _extractDelegations(text) {
+    const delegations = []
+    const regex = /<delegate>([\s\S]*?)<\/delegate>/g
+    let match
+    while ((match = regex.exec(text)) !== null) {
+      const task = match[1].trim()
+      if (task) delegations.push(task)
+    }
+    return delegations
+  }
+
+  /**
+   * Handle singularity delegations — spawn Hands instances for each task
+   * IN PARALLEL, wait for all to complete, then feed results back to Brain.
+   */
+  async _handleSingularityDelegations(session, delegations) {
+    const HANDS_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes per Hands instance
+
+    // Mark Brain as waiting so it doesn't count against concurrency
+    session._waitingForHands = true
+    session.status = 'waiting'
+    this.broadcast({ type: 'pillar_status', pillarId: session.pillarId, status: 'waiting' })
+
+    // Spawn all Hands instances in parallel
+    const spawnAndWait = async (task, index) => {
+      console.log(`[singularity] Spawning Hands #${index + 1}: ${task.slice(0, 80)}...`)
+
+      const child = await this.spawn({
+        pillar: 'forge',
+        prompt: task,
+        backend: 'ollama',
+        parentPillarId: session.pillarId,
+        recursive: true,
+        depth: (session.depth || 0) + 1
+      })
+
+      if (!child.pillarId) {
+        return `[Hands error: ${child.message}]`
+      }
+
+      // Wait for Hands with timeout protection
+      const output = await new Promise((resolve) => {
+        this._pendingChildCompletions.set(child.pillarId, resolve)
+
+        setTimeout(() => {
+          if (this._pendingChildCompletions.has(child.pillarId)) {
+            this._pendingChildCompletions.delete(child.pillarId)
+            console.warn(`[singularity] Hands ${child.pillarId.slice(0, 8)} timed out after ${HANDS_TIMEOUT_MS / 1000}s`)
+            this.stop({ pillarId: child.pillarId })
+            resolve('[Hands timed out]')
+          }
+        }, HANDS_TIMEOUT_MS)
+      })
+
+      console.log(`[singularity] Hands #${index + 1} completed — ${(output || '').length} chars`)
+      return output || '(Hands produced no output)'
+    }
+
+    const results = await Promise.all(delegations.map((task, i) => spawnAndWait(task, i)))
+
+    // Clear waiting state
+    session._waitingForHands = false
+
+    // If Brain was stopped/killed while waiting, don't try to resume it
+    if (session.status === 'stopped' || session.status === 'error') {
+      console.log(`[singularity] Brain was stopped while waiting for Hands — discarding results`)
+      return
+    }
+
+    // Feed results back to Brain as a follow-up message
+    const resultMessage = delegations.length === 1
+      ? `Your Hands completed the task. Here is the result:\n\n${results[0]}`
+      : `Your Hands completed ${delegations.length} tasks. Here are the results:\n\n${results.map((r, i) => `### Task ${i + 1}\n${r}`).join('\n\n---\n\n')}`
+
+    // Broadcast the results as a user message to the Brain's chat
+    this.broadcast({
+      type: 'pillar_message_saved',
+      pillarId: session.pillarId,
+      role: 'user',
+      content: resultMessage
+    })
+
+    // Continue Brain with the results
+    session.turnCount++
+    session.status = 'running'
+    session.currentlyStreaming = true
+    session.lastActivity = new Date().toISOString()
+    this._startCliTurn(session, resultMessage, null, true)
   }
 
   /**
@@ -1215,7 +1320,9 @@ This is informational — Adam is communicating directly with the pillar. Decide
     }
 
     // For Ollama, pass tools so the model can call them
-    if (session.backend === 'ollama' && this.mcpManager) {
+    // Brain (depth 0 + recursive) gets NO tools — it delegates via <delegate> tags
+    const isSingularityBrain = session.recursive && (session.depth || 0) === 0
+    if (session.backend === 'ollama' && this.mcpManager && !isSingularityBrain) {
       chatOptions.tools = this._buildOllamaTools(session)
     }
 
@@ -1322,6 +1429,29 @@ This is informational — Adam is communicating directly with the pillar. Decide
         role: 'assistant',
         content: completedOutput
       })
+
+      // SINGULARITY: Check for <delegate> tags in Brain output
+      const isSingularityBrain = session.recursive && (session.depth || 0) === 0 && session.backend === 'ollama'
+      if (isSingularityBrain && completedOutput) {
+        const delegations = this._extractDelegations(completedOutput)
+        if (delegations.length > 0) {
+          console.log(`[singularity] Brain delegated ${delegations.length} task(s)`)
+          this._handleSingularityDelegations(session, delegations).catch(err => {
+            console.error(`[singularity] Delegation failed:`, err)
+            session._waitingForHands = false
+            session.status = 'idle'
+            session.currentlyStreaming = false
+            this.broadcast({
+              type: 'pillar_done',
+              pillarId: session.pillarId,
+              status: 'idle',
+              pillar: session.pillar,
+              error: `Singularity delegation failed: ${err.message}`
+            })
+          })
+          return // Don't complete — waiting for Hands
+        }
+      }
 
       // Check for queued messages
       if (session.messageQueue.length > 0) {
@@ -1480,7 +1610,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
     if (backend === 'ollama') {
       // Recursive children use the small fast model — big brain delegates, small hands act
       if (recursive && depth > 0) return 'qwen2.5-coder:7b'
-      return 'qwen2.5-coder:32b'
+      return 'qwen3-coder:30b'
     }
     if (backend === 'codex') return 'gpt-5.1-codex-max'
     if (backend === 'copilot') return 'claude-sonnet-4.6'
@@ -1558,12 +1688,15 @@ This is informational — Adam is communicating directly with the pillar. Decide
     prompt += '\n\n## Current Pillar: ' + this._capitalize(activePillar) + '\n\n'
     prompt += PHASE_INSTRUCTIONS[activePillar] || PHASE_INSTRUCTIONS.flow
 
-    // Inject recursive Qwen instructions when in recursive mode
+    // Inject singularity prompts in recursive/singularity mode
     if (recursive) {
-      const recursivePrompt = QWEN_RECURSIVE_INSTRUCTIONS
-        .replace(/\{\{DEPTH\}\}/g, String(depth || 0))
-        .replace(/\{\{MAX_DEPTH\}\}/g, '5')
-      prompt += '\n\n' + recursivePrompt
+      if (depth === 0) {
+        // Brain instance — the thinker (no tools, delegates via <delegate> tags)
+        prompt += '\n\n' + SINGULARITY_BRAIN_PROMPT
+      } else {
+        // Hands instance — the executor (has tools, receives tasks from Brain)
+        prompt += '\n\n' + SINGULARITY_HANDS_PROMPT
+      }
     }
 
     return prompt

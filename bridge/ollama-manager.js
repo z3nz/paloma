@@ -235,12 +235,14 @@ export class OllamaManager {
         if (parsedCalls.length > 0) {
           console.log(`[ollama] ${parsedCalls.length} text-parsed tool call(s): ${parsedCalls.map(tc => tc.function?.name).join(', ')}`)
 
-          // Strip the JSON tool call text from the assistant message
+          // Strip tool call text (both JSON and XML) from the assistant message
           let cleanedFallbackText = fullAssistantText
           const fallbackJsonObjects = this._extractJsonObjects(fullAssistantText)
           for (const { raw } of fallbackJsonObjects) {
             cleanedFallbackText = cleanedFallbackText.replace(raw, '')
           }
+          // Strip XML-style tool calls: <function=...>...</function> or </tool_call>
+          cleanedFallbackText = cleanedFallbackText.replace(/<function=\w[\w.]*>[\s\S]*?(?:<\/function>|<\/tool_call>)/g, '')
           cleanedFallbackText = cleanedFallbackText.replace(/```(?:json)?\s*/g, '').replace(/\s*```/g, '').trim()
 
           const assistantMessage = { role: 'assistant', content: cleanedFallbackText, tool_calls: parsedCalls }
@@ -380,24 +382,85 @@ export class OllamaManager {
     const toolNames = new Set(tools.map(t => t.function?.name).filter(Boolean))
     const calls = []
 
+    // Strategy 1: Parse JSON objects (e.g. {"name": "tool", "arguments": {...}})
     const jsonObjects = this._extractJsonObjects(text)
-
     for (const { parsed, raw } of jsonObjects) {
       const rawName = parsed.name || parsed.function_name || ''
-      if (!rawName) {
-        continue
-      }
+      if (!rawName) continue
 
       const args = parsed.arguments || parsed.function_arg || parsed.parameters || {}
+      const resolvedName = this._resolveToolName(rawName, toolNames)
+      if (resolvedName) {
+        calls.push({ function: { name: resolvedName, arguments: args } })
+      }
+    }
 
-      // Try exact match first, then try stripping mcp__paloma__ prefix
-      let resolvedName = rawName
-      if (!toolNames.has(resolvedName) && resolvedName.startsWith('mcp__paloma__')) {
-        resolvedName = resolvedName.replace(/^mcp__paloma__/, '')
+    // Strategy 2: Parse XML-style tool calls from Qwen 3 Coder
+    // Format: <function=tool_name>\n<parameter=key>value</parameter>\n</function>
+    const xmlCalls = this._parseXmlToolCalls(text, toolNames)
+    for (const call of xmlCalls) {
+      // Avoid duplicates if both JSON and XML matched the same call
+      const isDuplicate = calls.some(c => c.function.name === call.function.name)
+      if (!isDuplicate) {
+        calls.push(call)
+      }
+    }
+
+    return calls
+  }
+
+  /**
+   * Resolve a raw tool name against the known tool set.
+   * Strips mcp__paloma__ prefix if needed for matching.
+   */
+  _resolveToolName(rawName, toolNames) {
+    if (toolNames.has(rawName)) return rawName
+    if (rawName.startsWith('mcp__paloma__')) {
+      const stripped = rawName.replace(/^mcp__paloma__/, '')
+      if (toolNames.has(stripped)) return stripped
+    }
+    // Try with server__tool format (model may output filesystem__read_text_file)
+    for (const known of toolNames) {
+      if (known.endsWith('__' + rawName) || rawName.endsWith('__' + known)) return known
+      // Exact suffix match: rawName = 'read_text_file', known = 'filesystem__read_text_file'
+      if (known.endsWith(rawName) && known[known.length - rawName.length - 1] === '_') return known
+    }
+    return null
+  }
+
+  /**
+   * Parse XML-style tool calls that Qwen 3 Coder outputs as text.
+   * Handles format: <function=tool_name>\n<parameter=key>value</parameter>\n</function>
+   * Also handles: </tool_call> closing tags and variations.
+   */
+  _parseXmlToolCalls(text, toolNames) {
+    const calls = []
+    // Match <function=NAME> ... </function> or </tool_call>
+    const fnRegex = /<function=(\w[\w.]*)>(.*?)(?:<\/function>|<\/tool_call>)/gs
+    let match
+
+    while ((match = fnRegex.exec(text)) !== null) {
+      const rawName = match[1]
+      const body = match[2]
+      const args = {}
+
+      // Extract <parameter=KEY>VALUE</parameter> pairs
+      const paramRegex = /<parameter=(\w+)>\s*([\s\S]*?)\s*<\/parameter>/g
+      let paramMatch
+      while ((paramMatch = paramRegex.exec(body)) !== null) {
+        let value = paramMatch[2].trim()
+        // Try to parse as JSON if it looks like a number, boolean, object, or array
+        if (/^[\[{"\d]/.test(value) || value === 'true' || value === 'false' || value === 'null') {
+          try { value = JSON.parse(value) } catch { /* keep as string */ }
+        }
+        args[paramMatch[1]] = value
       }
 
-      if (toolNames.has(resolvedName)) {
+      const resolvedName = this._resolveToolName(rawName, toolNames)
+      if (resolvedName) {
         calls.push({ function: { name: resolvedName, arguments: args } })
+      } else {
+        console.log(`[ollama] XML tool call for unknown tool: ${rawName}`)
       }
     }
 

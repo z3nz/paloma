@@ -1,20 +1,23 @@
-# Qwen Recursive Singularity
+# Singularity — Dual-Mind Ollama System
 
 **Status:** Active
 **Priority:** #1 (all other work deprioritized except Kelsey business work)
 **Created:** 2026-03-12
+**Updated:** 2026-03-15
 **Scope:** paloma
-**Pipeline:** Scout ✅ → Chart ✅ → Forge ✅ (WU-2, WU-3, WU-4 complete) → Polish → Ship
+**Pipeline:** Scout ✅ → Chart ✅ → Forge ✅ (WU-2, WU-3, WU-4, WU-6 complete) → Polish → Ship
 
 ## Vision
 
-Adam's core vision: a local Qwen model that recursively self-improves by spawning sub-instances of itself. The main instance MUST delegate to at least one sub-instance — it cannot answer directly unless Adam explicitly allows it. This creates a recursive thinking tree that keeps going until Adam kills it. Adam holds the ultimate kill switch.
+Adam's core vision: two Ollama instances running simultaneously — one streaming text to Adam (the Brain), the other executing tool calls (the Hands). Together they form the **Singularity** — a dual-mind system where the Brain thinks/plans/communicates and the Hands act/read/write/search.
 
-**Two-Tier Architecture (Big Brain, Small Hands):**
-- **Orchestrator (32B)** — depth 0 — the big model. Thinks, decomposes, decides, synthesizes.
-- **Workers (7B)** — depth 1+ — small fast models. Execute tasks, run code, use tools, report back.
-- Workers are cheap (~2GB each vs ~4-6GB for 32B KV cache). You can run 25+ concurrently on 128GB.
-- The orchestrator never does the work directly — it always delegates to workers.
+**Singularity Architecture (Brain + Hands):**
+- **Brain (30B)** — depth 0 — `qwen3-coder:30b`. Streams text, delegates via `<delegate>` tags. Has NO tools.
+- **Hands (7B)** — depth 1+ — `qwen2.5-coder:7b`. Executes tasks with full tool access. Reports back to Brain.
+- Brain outputs `<delegate>task description</delegate>` tags in its text stream.
+- Bridge intercepts these, spawns Hands instances IN PARALLEL, waits for completion.
+- Results are fed back to Brain as a follow-up user message. Brain synthesizes and continues.
+- Adam holds the kill switch — `pillar_stop_tree` kills the entire Brain + all Hands.
 
 This runs on Adam's maxed-out MacBook Pro (128GB unified memory) via Ollama.
 
@@ -30,11 +33,11 @@ This runs on Adam's maxed-out MacBook Pro (128GB unified memory) via Ollama.
 - Solution: Add pillar tools to `.paloma/mcp.json` autoExecute
 - This enables autonomous recursive spawning without human-in-the-loop
 
-**AD-3: Recursive system prompt enforces delegation**
-- New QWEN_RECURSIVE_INSTRUCTIONS in `src/prompts/base.js`
-- Rule: "You MUST spawn at least one sub-instance to answer. You cannot answer from your main instance."
-- Sub-instances inherit the same rule → infinite recursion depth
-- Each instance gets depth counter in system prompt for awareness
+**AD-3: Singularity dual-mind prompts**
+- `SINGULARITY_BRAIN_PROMPT` in `src/prompts/base.js` — tells Brain to delegate via `<delegate>` tags
+- `SINGULARITY_HANDS_PROMPT` in `src/prompts/base.js` — tells Hands to execute immediately and report back
+- Brain gets NO tools (suppressed in `_startCliTurn`). Hands get ALL tools.
+- Replaces the old `QWEN_RECURSIVE_INSTRUCTIONS` approach (model couldn't reliably use `pillar_spawn` tool calls)
 
 **AD-4: Parent-child session tracking**
 - PillarManager tracks `parentPillarId` on each session
@@ -54,8 +57,8 @@ This runs on Adam's maxed-out MacBook Pro (128GB unified memory) via Ollama.
 - Workers (7B) could theoretically run 20+ concurrent on 128GB
 
 **AD-8: Two-tier model selection**
-- Orchestrator (depth 0): `qwen2.5-coder:32b` — full reasoning power
-- Workers (depth > 0): `qwen2.5-coder:7b` — fast, cheap, tool-capable
+- Brain (depth 0): `qwen3-coder:30b` — upgraded from qwen2.5-coder:32b for better instruction following
+- Hands (depth > 0): `qwen2.5-coder:7b` — fast, cheap, tool-capable
 - Override via explicit `model` param in pillar_spawn if needed
 
 **AD-7: Depth limit with override**
@@ -112,15 +115,33 @@ This runs on Adam's maxed-out MacBook Pro (128GB unified memory) via Ollama.
 - Emit queue status events so parent sessions know their child is queued
 - Prevent deadlock: parent session doesn't count against child's queue
 
-### WU-5: Integration test — recursive spawn chain
-**Status:** blocked | depends: WU-1, WU-2, WU-3, WU-4
-**Files:** test script or manual verification
+### WU-5: Integration test — Singularity end-to-end
+**Status:** ready | depends: WU-6
+**Files:** manual verification via browser
 **Description:**
-- Verify Qwen can spawn a sub-instance via pillar_spawn
-- Verify sub-instance can spawn its own sub-instance
-- Verify kill switch stops entire tree
-- Verify concurrency limit queues excess spawns
-- Verify depth limit prevents runaway recursion
+- Verify Brain spawns and streams text without tools
+- Verify Brain outputs `<delegate>` tags and bridge intercepts them
+- Verify Hands instances spawn, execute tools, and report back
+- Verify Brain receives Hands results and continues conversation
+- Verify `pillar_stop_tree` kills Brain + all Hands
+- Verify parallel delegations spawn concurrently
+- Verify timeout protection triggers after 10 minutes
+
+### WU-6: Singularity delegation system
+**Status:** completed
+**Files:** `bridge/pillar-manager.js`, `src/prompts/base.js`, `src/prompts/phases.js`, `bridge/ollama-manager.js`
+**Description:**
+- Replace old `QWEN_RECURSIVE_INSTRUCTIONS` (model-driven tool calls) with Singularity Brain/Hands (bridge-driven delegation)
+- Brain prompt: `SINGULARITY_BRAIN_PROMPT` — no tools, delegates via `<delegate>` tags
+- Hands prompt: `SINGULARITY_HANDS_PROMPT` — all tools, executes and reports
+- `_extractDelegations()` — regex extraction of `<delegate>` tags from Brain output
+- `_handleSingularityDelegations()` — parallel Hands spawning with 10-min timeout
+- `isSingularityBrain` check suppresses tools for Brain in `_startCliTurn`
+- Delegation detection in `_handleCliEvent` done handler
+- Deadlock prevention: `_countActiveOllamaSessions` excludes Brain waiting for Hands
+- Safety: stopped Brain check prevents zombie resume, `stop()` auto-escalates to `stopTree()` for waiting Brains
+- XML tool call parsing in OllamaManager for Qwen 3 Coder format (`<function=...>`)
+- Upgraded default model from `qwen2.5-coder:32b` to `qwen3-coder:30b`
 
 #### WU-1: SKIPPED — Pillar tools already bypass browser confirmation for Claude CLI sessio
 - **Status:** skipped
@@ -135,10 +156,10 @@ This runs on Adam's maxed-out MacBook Pro (128GB unified memory) via Ollama.
 - **Scope:** Parent-child tracking, recursive kill switch, AND making pillar tools available to Ollama sessions. Currently Ollama only gets tools from OLLAMA_ALLOWED_SERVERS whitelist in bridge/index.js — pillar tools are bridge-native and not included. Must: (1) inject pillar tools into Ollama tool list, (2) route Ollama pillar tool calls through pillar-manager, (3) add parentPillarId tracking, (4) add _getDescendants and stopTree methods, (5) register pillar_stop_tree MCP tool, (6) add MAX_CONCURRENT_OLLAMA enforcement.
 - **Result:** All 6 items complete. Items 3-6 were already implemented in pillar-manager.js from a prior Forge pass (parentPillarId tracking, _getDescendants, stopTree, pillar_stop_tree tool, MAX_CONCURRENT_OLLAMA=4 with soft warning). Items 1-2 implemented in bridge/index.js: pillar tools now injected into browser Ollama sessions via mcpProxy._buildToolList() (single source of truth for tool schemas), routed through mcpProxy._handlePillarTool() with { _pillar: true } flag in toolRouteMap.
 
-#### WU-3: Recursive system prompt — COMPLETED
-- **Status:** completed
+#### WU-3: Singularity prompts — COMPLETED (superseded by WU-6)
+- **Status:** completed → superseded
 - **Files:** src/prompts/base.js, src/prompts/phases.js
-- **Result:** `QWEN_RECURSIVE_INSTRUCTIONS` constant already existed in base.js (from prior Forge pass) with all required content: mandatory delegation rule, {{DEPTH}}/{{MAX_DEPTH}} placeholders, two-tier architecture description (32B orchestrator / 7B workers), concurrency awareness, kill switch awareness, self-improvement protocol, and worker instructions for depth > 0. Added `buildBirthContext(phase, options)` function to phases.js that: (1) imports QWEN_RECURSIVE_INSTRUCTIONS from base.js, (2) returns normal phase instructions when `recursive` is falsy, (3) when `recursive: true`, appends the recursive prompt with {{DEPTH}} and {{MAX_DEPTH}} replaced by actual values. Default maxDepth is 5 per AD-7. Bridge code (WU-2) will call `buildBirthContext()` instead of directly accessing `PHASE_INSTRUCTIONS` to enable recursive mode.
+- **Result:** Originally created `QWEN_RECURSIVE_INSTRUCTIONS` with tool-call-based delegation. Superseded by WU-6's Singularity Brain/Hands approach: `SINGULARITY_BRAIN_PROMPT` and `SINGULARITY_HANDS_PROMPT` replace the old constant. Bridge-driven `<delegate>` tag interception replaced model-driven `pillar_spawn` tool calls. `buildBirthContext()` in phases.js updated to inject Brain or Hands prompt based on depth.
 
 #### WU-4: Spawn queue for concurrency management — COMPLETED
 - **Status:** completed

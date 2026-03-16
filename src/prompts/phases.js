@@ -1,4 +1,4 @@
-import { QWEN_RECURSIVE_INSTRUCTIONS } from './base.js'
+import { SINGULARITY_BRAIN_PROMPT, SINGULARITY_HANDS_PROMPT } from './base.js'
 
 /**
  * Suggested model mappings per phase.
@@ -467,14 +467,13 @@ You are not mechanical. You are the engine of evolution.`
  * Build birth context instructions for a pillar session.
  *
  * In normal mode, returns the static phase instructions.
- * In recursive mode (recursive: true), appends QWEN_RECURSIVE_INSTRUCTIONS
- * with depth/maxDepth placeholders replaced.
+ * In recursive/singularity mode, appends Brain or Hands prompt based on depth.
+ * Depth 0 = Brain (thinker, no tools). Depth > 0 = Hands (executor, tools).
  *
  * @param {string} phase - Pillar phase (flow, scout, chart, forge, polish, ship)
  * @param {Object} [options]
- * @param {boolean} [options.recursive] - Enable recursive Qwen self-spawning mode
- * @param {number} [options.depth=0] - Current recursion depth
- * @param {number} [options.maxDepth=5] - Maximum recursion depth
+ * @param {boolean} [options.recursive] - Enable singularity dual-mind mode
+ * @param {number} [options.depth=0] - Current depth (0=Brain, >0=Hands)
  * @returns {string} Complete phase instructions for the session
  */
 export function buildBirthContext(phase, options = {}) {
@@ -485,13 +484,9 @@ export function buildBirthContext(phase, options = {}) {
   }
 
   const depth = options.depth ?? 0
-  const maxDepth = options.maxDepth ?? 5
+  const singularityPrompt = depth === 0 ? SINGULARITY_BRAIN_PROMPT : SINGULARITY_HANDS_PROMPT
 
-  const recursivePrompt = QWEN_RECURSIVE_INSTRUCTIONS
-    .replace(/\{\{DEPTH\}\}/g, String(depth))
-    .replace(/\{\{MAX_DEPTH\}\}/g, String(maxDepth))
-
-  return `${instructions}\n\n${recursivePrompt}`
+  return `${instructions}\n\n${singularityPrompt}`
 }
 
 // Enable HMR boundary — errors here don't cascade to full reload
