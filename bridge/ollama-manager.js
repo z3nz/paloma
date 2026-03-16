@@ -141,7 +141,10 @@ export class OllamaManager {
 
             // Stream text content
             if (chunk.message?.content) {
-              const text = chunk.message.content
+              let text = chunk.message.content
+              // Strip Qwen tokenizer artifacts
+              text = text.replace(/<\|im_start\|>|<\|im_end\|>|<\|endoftext\|>/g, '')
+              if (!text) continue // skip empty after stripping
               fullAssistantText += text
 
               onEvent({
@@ -175,15 +178,18 @@ export class OllamaManager {
         try {
           const chunk = JSON.parse(buffer.trim())
           if (chunk.message?.content) {
-            fullAssistantText += chunk.message.content
-            onEvent({
-              type: 'ollama_stream',
-              requestId,
-              event: {
-                type: 'content_block_delta',
-                delta: { type: 'text_delta', text: chunk.message.content }
-              }
-            })
+            let text = chunk.message.content.replace(/<\|im_start\|>|<\|im_end\|>|<\|endoftext\|>/g, '')
+            if (text) {
+              fullAssistantText += text
+              onEvent({
+                type: 'ollama_stream',
+                requestId,
+                event: {
+                  type: 'content_block_delta',
+                  delta: { type: 'text_delta', text }
+                }
+              })
+            }
           }
           if (chunk.message?.tool_calls?.length > 0) {
             for (const tc of chunk.message.tool_calls) {
@@ -260,6 +266,8 @@ export class OllamaManager {
       }
 
       // No tool calls — normal completion
+      // Final cleanup of tokenizer artifacts from accumulated text
+      fullAssistantText = fullAssistantText.replace(/<\|im_start\|>|<\|im_end\|>|<\|endoftext\|>/g, '').trim()
       const session2 = this.sessions.get(sessionId)
       if (session2) {
         session2.messages.push({ role: 'assistant', content: fullAssistantText })

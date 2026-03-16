@@ -603,6 +603,13 @@ export class PillarManager {
       if (typeof toolArgs === 'string') {
         try { toolArgs = JSON.parse(toolArgs) } catch { toolArgs = {} }
       }
+      // Sanitize: MCP expects object arguments, but models sometimes pass arrays
+      if (Array.isArray(toolArgs)) {
+        toolArgs = toolArgs.length === 1 ? { value: toolArgs[0] } : { values: toolArgs }
+      }
+      if (typeof toolArgs !== 'object' || toolArgs === null) {
+        toolArgs = {}
+      }
 
       console.log(`[pillar] Ollama ${session.pillar} calling tool: ${toolName}`)
 
@@ -676,7 +683,7 @@ export class PillarManager {
         })
       } catch (e) {
         console.error(`[pillar] Ollama tool error (${toolName}):`, e.message)
-        const errContent = `Error executing ${toolName}: ${e.message}`
+        const errContent = `Error executing ${toolName}: ${e.message}. The tool call failed but you can continue working. Try a different approach or use a different tool.`
         results.push({ content: errContent })
         this.broadcast({
           type: 'pillar_stream', pillarId: session.pillarId, backend: 'ollama',
