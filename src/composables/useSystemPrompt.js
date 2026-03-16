@@ -63,5 +63,3 @@ export function buildOllamaSystemPrompt(phase, projectInstructions) {
   return prompt
 }
 
-// Enable HMR boundary
-if (import.meta.hot) import.meta.hot.accept()

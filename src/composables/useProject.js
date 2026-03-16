@@ -1,8 +1,6 @@
 import { ref, shallowRef, watch, computed } from 'vue'
 import db from '../services/db.js'
 
-const _saved = import.meta.hot ? window.__PALOMA_PROJECT__ : undefined
-
 // --- URL hash helpers ---
 
 function parseHash() {
@@ -33,8 +31,8 @@ function setHash(projectName, sessionId) {
 const hashState = parseHash()
 const STORAGE_KEY = 'paloma:projectName'
 
-let initialProjectName = _saved?.projectName ?? ''
-if (!initialProjectName && hashState.project) {
+let initialProjectName = ''
+if (hashState.project) {
   initialProjectName = hashState.project
 } else if (!initialProjectName) {
   try {
@@ -52,13 +50,13 @@ if (!initialProjectName) {
 }
 
 // Keep dirHandle for backward compat (Phase 2 migration — will be removed later)
-const dirHandle = shallowRef(_saved?.dirHandle ?? null)
+const dirHandle = shallowRef(null)
 const projectName = ref(initialProjectName)
-const projectRoot = ref(_saved?.projectRoot ?? null)
-const projectInstructions = ref(_saved?.projectInstructions ?? null)
-const activePlans = ref(_saved?.activePlans ?? [])
-const mcpConfig = ref(_saved?.mcpConfig ?? null)
-const roots = ref(_saved?.roots ?? [])
+const projectRoot = ref(null)
+const projectInstructions = ref(null)
+const activePlans = ref([])
+const mcpConfig = ref(null)
+const roots = ref([])
 const projectLoading = ref(false)
 
 const needsReconnect = computed(() => false) // No longer needed — MCP-based
@@ -75,22 +73,6 @@ watch(projectName, (name) => {
     // Ignore errors
   }
 }, { flush: 'sync' })
-
-if (import.meta.hot) {
-  const save = () => {
-    window.__PALOMA_PROJECT__ = {
-      dirHandle: dirHandle.value,
-      projectName: projectName.value,
-      projectRoot: projectRoot.value,
-      projectInstructions: projectInstructions.value,
-      activePlans: activePlans.value,
-      roots: roots.value,
-      mcpConfig: mcpConfig.value
-    }
-  }
-  save()
-  watch([dirHandle, projectName, projectRoot, projectInstructions, activePlans, roots, mcpConfig], save, { flush: 'sync' })
-}
 
 // --- MCP-based file reading helpers ---
 

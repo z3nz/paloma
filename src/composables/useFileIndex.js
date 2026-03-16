@@ -1,25 +1,11 @@
-import { ref, shallowRef, watch } from 'vue'
+import { ref, shallowRef } from 'vue'
 import Fuse from 'fuse.js'
 import ignore from 'ignore'
 import { walkDirectory, readGitignore, fileExists } from '../services/filesystem.js'
 
-const _saved = import.meta.hot ? window.__PALOMA_FILE_INDEX__ : undefined
-
-const files = ref(_saved?.files ?? [])
-const indexing = ref(_saved?.indexing ?? false)
-const fuse = shallowRef(_saved?.fuse ?? null)
-
-if (import.meta.hot) {
-  const save = () => {
-    window.__PALOMA_FILE_INDEX__ = {
-      files: files.value,
-      indexing: indexing.value,
-      fuse: fuse.value
-    }
-  }
-  save()
-  watch([files, indexing, fuse], save, { flush: 'sync' })
-}
+const files = ref([])
+const indexing = ref(false)
+const fuse = shallowRef(null)
 
 const FUSE_OPTIONS = {
   keys: ['name', 'path'],

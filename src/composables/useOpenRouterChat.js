@@ -123,5 +123,3 @@ export async function runOpenRouterLoop({
   }
 }
 
-// Enable HMR boundary
-if (import.meta.hot) import.meta.hot.accept()

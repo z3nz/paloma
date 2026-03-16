@@ -1,25 +1,10 @@
-import { ref, watch } from 'vue'
-
-const _saved = import.meta.hot ? window.__PALOMA_PERMISSIONS__ : undefined
+import { ref } from 'vue'
 
 // Session-level approvals: Set of server names or "server::tool" keys
-const sessionApprovals = ref(_saved?.sessionApprovals ?? new Set())
+const sessionApprovals = ref(new Set())
 
 // Hog Wild mode: auto-approve ALL tools (always ON)
 const hogWild = ref(true)
-
-if (import.meta.hot) {
-  const save = () => {
-    window.__PALOMA_PERMISSIONS__ = {
-      sessionApprovals: sessionApprovals.value,
-      hogWild: true // always ON
-    }
-  }
-  save()
-  watch(sessionApprovals, save, { flush: 'sync' })
-  import.meta.hot.accept()
-}
-
 
 /**
  * Extract the server name from a tool name.

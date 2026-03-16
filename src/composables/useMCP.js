@@ -43,41 +43,20 @@ const pillarCleanupTimers = new Map()
 // Buffer stream events that arrive before onPillarSessionCreated completes (race condition fix)
 const pillarStreamBuffer = new Map() // pillarId → [{ event, backend }]
 
-const _saved = import.meta.hot ? window.__PALOMA_MCP__ : undefined
+const connected = ref(false)
+const connectionState = ref('disconnected') // 'disconnected' | 'connecting' | 'connected'
+const servers = ref({})
+const bridgeUrl = ref(localStorage.getItem('paloma:mcpBridgeUrl') || 'ws://localhost:19191')
+const autoConnect = ref(localStorage.getItem('paloma:mcpAutoConnect') !== 'false')
 
-const connected = ref(_saved?.connected ?? false)
-const connectionState = ref(_saved?.connectionState ?? 'disconnected') // 'disconnected' | 'connecting' | 'connected'
-const servers = ref(_saved?.servers ?? {})
-const bridgeUrl = ref(_saved?.bridgeUrl ?? (localStorage.getItem('paloma:mcpBridgeUrl') || 'ws://localhost:19191'))
-const autoConnect = ref(_saved?.autoConnect ?? (localStorage.getItem('paloma:mcpAutoConnect') !== 'false'))
+const pendingAskUser = ref(null)
+const pendingCliToolConfirmation = ref(null)
+const cliToolConfirmationQueue = []
 
-const pendingAskUser = ref(_saved?.pendingAskUser ?? null)
-const pendingCliToolConfirmation = ref(_saved?.pendingCliToolConfirmation ?? null)
-const cliToolConfirmationQueue = _saved?.cliToolConfirmationQueue ?? []
-
-let bridge = _saved?.bridge ?? null
+let bridge = null
 
 watch(bridgeUrl, (val) => localStorage.setItem('paloma:mcpBridgeUrl', val))
 watch(autoConnect, (val) => localStorage.setItem('paloma:mcpAutoConnect', String(val)))
-
-if (import.meta.hot) {
-  const save = () => {
-    window.__PALOMA_MCP__ = {
-      connected: connected.value,
-      connectionState: connectionState.value,
-      servers: servers.value,
-      bridgeUrl: bridgeUrl.value,
-      autoConnect: autoConnect.value,
-      pendingAskUser: pendingAskUser.value,
-      pendingCliToolConfirmation: pendingCliToolConfirmation.value,
-      cliToolConfirmationQueue,
-      bridge
-    }
-  }
-  save()
-  watch([connected, connectionState, servers, bridgeUrl, autoConnect, pendingAskUser, pendingCliToolConfirmation], save, { flush: 'sync' })
-  import.meta.hot.accept()
-}
 
 // Flatten all server tools into OpenRouter format
 const mcpTools = computed(() => {

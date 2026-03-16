@@ -189,5 +189,3 @@ export function clearCliRequestId(sessionState) {
   sessionState.cliRequestId = null
 }
 
-// Enable HMR boundary
-if (import.meta.hot) import.meta.hot.accept()

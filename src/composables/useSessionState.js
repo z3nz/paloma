@@ -1,32 +1,15 @@
-import { ref, shallowReactive, watch } from 'vue'
-
-// --- HMR preservation ---
-const _saved = import.meta.hot ? window.__PALOMA_SESSION_STATE__ : undefined
+import { ref, shallowReactive } from 'vue'
 
 // MUST be shallowReactive — reactive(new Map()) would deep-convert values,
 // auto-unwrapping the refs inside session state objects and breaking .value access.
-// Never restore stateMap from HMR — old snapshots may use reactive() which corrupts refs.
-// Session state is transient; messages reload from IndexedDB on session switch.
 const stateMap = shallowReactive(new Map())
-const activeId = ref(_saved?.activeId ?? null)
-const lruOrder = ref(_saved?.lruOrder ?? [])
+const activeId = ref(null)
+const lruOrder = ref([])
 const MAX_LOADED_SESSIONS = 10
 
 // Fallback state for when no session is active — stable singleton to avoid
 // creating new refs on every computed evaluation.
 const _fallbackState = createSessionState()
-
-if (import.meta.hot) {
-  const save = () => {
-    window.__PALOMA_SESSION_STATE__ = {
-      activeId: activeId.value,
-      lruOrder: lruOrder.value
-    }
-  }
-  save()
-  watch([activeId, lruOrder], save, { flush: 'sync' })
-  import.meta.hot.accept()
-}
 
 function createSessionState() {
   return {

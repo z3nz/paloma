@@ -1,21 +1,8 @@
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import db from '../services/db.js'
 
-const _saved = import.meta.hot ? window.__PALOMA_SESSIONS__ : undefined
-
-const sessions = ref(_saved?.sessions ?? [])
-const activeSessionId = ref(_saved?.activeSessionId ?? (Number(sessionStorage.getItem('paloma:activeSessionId')) || null))
-
-if (import.meta.hot) {
-  const save = () => {
-    window.__PALOMA_SESSIONS__ = {
-      sessions: sessions.value,
-      activeSessionId: activeSessionId.value
-    }
-  }
-  save()
-  watch([sessions, activeSessionId], save, { flush: 'sync' })
-}
+const sessions = ref([])
+const activeSessionId = ref(Number(sessionStorage.getItem('paloma:activeSessionId')) || null)
 
 export function useSessions() {
   async function recoverOrphanedSessions(projectPath) {

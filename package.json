@@ -10,7 +10,6 @@
     "setup": "bash scripts/setup-mcp.sh",
     "postinstall": "bash scripts/setup-mcp.sh",
     "dev": "vite",
-    "dev:full": "concurrently -k -n vite,bridge -c cyan,magenta \"vite\" \"node bridge/run.js\"",
     "bridge": "node bridge/run.js",
     "bridge:direct": "node bridge/index.js",
     "build": "vite build",
@@ -39,7 +38,6 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.4",
-    "concurrently": "^9.2.1",
     "vite": "^5.4.21"
   }
 }
