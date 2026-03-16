@@ -28,6 +28,39 @@ case "$OS" in
 esac
 echo "==> Platform: $PLATFORM"
 
+# --- GitHub CLI (gh) ---
+if ! command -v gh &>/dev/null; then
+  echo "==> Installing GitHub CLI (gh)..."
+  case "$PLATFORM" in
+    macos)
+      if command -v brew &>/dev/null; then
+        brew install gh
+      else
+        echo "    [SKIP] Homebrew not found — install gh manually: https://cli.github.com"
+      fi
+      ;;
+    linux)
+      if command -v apt-get &>/dev/null; then
+        (type -p wget >/dev/null || sudo apt-get install wget -y) \
+          && sudo mkdir -p -m 755 /etc/apt/keyrings \
+          && wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+          && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+          && sudo apt-get update && sudo apt-get install gh -y
+      else
+        echo "    [SKIP] No supported package manager — install gh manually: https://cli.github.com"
+      fi
+      ;;
+    *)
+      echo "    [SKIP] Unknown platform — install gh manually: https://cli.github.com"
+      ;;
+  esac
+  if command -v gh &>/dev/null; then
+    echo "    gh $(gh --version | head -1 | awk '{print $3}') installed"
+  fi
+else
+  echo "==> GitHub CLI: $(gh --version | head -1 | awk '{print $3}')"
+fi
+
 # --- Python venv for voice/TTS ---
 PYTHON_CMD=""
 for cmd in python3.12 python3.11 python3.10 python3; do
