@@ -97,8 +97,9 @@ paloma-supervisor.js (PID 1 — never dies)
 
 #### WU-5: Remove noFullReload() plugin from vite
 - **Feature:** HMR Removal + Vite Cleanup
-- **Status:** pending
+- **Status:** complete
 - **Depends on:** WU-1, WU-2
 - **Files:** vite.config.js, package.json, src/composables/useMCP.js, src/composables/useProject.js, src/composables/usePermissions.js, src/composables/useFileIndex.js, src/composables/useKeyboardShortcuts.js, src/composables/useOpenRouter.js, src/composables/useSessions.js, src/composables/useSessionState.js, src/composables/useSettings.js, src/composables/useVoiceInput.js
 - **Scope:** Remove noFullReload() plugin from vite.config.js. Remove all window.__PALOMA_*__ HMR state preservation from the 10 composables. Remove HMR-specific server config from vite.config.js (keep build config). Update npm scripts: replace concurrently-based start with supervisor, remove dev/preview scripts or repurpose them. Remove concurrently from devDependencies. Add express to dependencies for static server.
 - **Acceptance:** No HMR code remains, vite.config.js is build-only, npm start uses supervisor, concurrently removed.
+- **Implementation Notes:** vite.config.js was already clean (noFullReload had been removed previously). Removed `window.__PALOMA_*__` HMR state preservation from 7 composables that had it: useMCP.js, useProject.js, usePermissions.js, useFileIndex.js, useSessions.js, useSessionState.js (state preservation blocks), plus useSystemPrompt.js, useOpenRouterChat.js, useCliChat.js (HMR boundary accepts). The other 3 composables listed (useOpenRouter.js, useSettings.js, useVoiceInput.js, useKeyboardShortcuts.js) had no HMR code. Replaced HMR-preserved refs with simple default initialization. Cleaned up unused `watch` imports in 4 files. Removed `concurrently` from devDependencies and `dev:full` script from package.json. `express` was already in dependencies. `npm start` already uses supervisor (from WU-2). Build verified passing.
