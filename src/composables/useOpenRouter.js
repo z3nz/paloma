@@ -1,25 +1,10 @@
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { fetchModels as fetchModelsApi, validateApiKey as validateApi } from '../services/openrouter.js'
 import { CLI_MODELS, isCliModel } from '../services/claudeStream.js'
 
-const _saved = import.meta.hot ? window.__PALOMA_OPENROUTER__ : undefined
-
-const models = ref(_saved?.models ?? [])
-const loadingModels = ref(_saved?.loadingModels ?? false)
-const modelsError = ref(_saved?.modelsError ?? null)
-
-if (import.meta.hot) {
-  const save = () => {
-    window.__PALOMA_OPENROUTER__ = {
-      models: models.value,
-      loadingModels: loadingModels.value,
-      modelsError: modelsError.value
-    }
-  }
-  save()
-  watch([models, loadingModels, modelsError], save, { flush: 'sync' })
-  import.meta.hot.accept()
-}
+const models = ref([])
+const loadingModels = ref(false)
+const modelsError = ref(null)
 
 // Curated popular models shown at top
 const POPULAR_MODEL_IDS = [

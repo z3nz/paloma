@@ -30,6 +30,8 @@ export function createMcpBridge() {
   let onEmailStream = null
   let onEmailDone = null
   let onEmailError = null
+  let onSupervisorRestart = null
+  let restartPending = false
 
   function getState() {
     if (!ws) return 'disconnected'
@@ -59,6 +61,7 @@ export function createMcpBridge() {
     onEmailStream = callbacks.onEmailStream || null
     onEmailDone = callbacks.onEmailDone || null
     onEmailError = callbacks.onEmailError || null
+    onSupervisorRestart = callbacks.onSupervisorRestart || null
     url = bridgeUrl
     intentionalClose = false
     _connect()
@@ -79,6 +82,12 @@ export function createMcpBridge() {
     ws.onopen = () => {
       reconnectAttempt = 0
       onStateChange?.('connected')
+      // If reconnecting after a supervisor restart, reload to get fresh build
+      if (restartPending) {
+        restartPending = false
+        window.location.reload()
+        return
+      }
       // Auto-discover tools on connect
       discover().catch((e) => {
         console.warn('[bridge] Auto-discover failed:', e.message)
@@ -265,6 +274,9 @@ export function createMcpBridge() {
         onFlowNotificationDone?.()
       } else if (msg.type === 'flow_notification_error') {
         onFlowNotificationError?.(msg.error)
+      } else if (msg.type === 'supervisor_restart') {
+        restartPending = true
+        onSupervisorRestart?.()
       } else if (msg.type === 'error' && msg.id) {
         const p = pending.get(msg.id)
         if (p) {

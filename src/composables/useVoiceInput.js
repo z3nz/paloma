@@ -1,17 +1,10 @@
 import { ref, computed } from 'vue'
 
-// --- HMR preservation ---
-const _saved = import.meta.hot ? window.__PALOMA_VOICE__ : undefined
-
-const voiceMode = _saved?.voiceMode ?? ref(false)
-const isListening = _saved?.isListening ?? ref(false)
-const interimTranscript = _saved?.interimTranscript ?? ref('')
-const pendingSend = _saved?.pendingSend ?? ref(null)
-const error = _saved?.error ?? ref(null)
-
-if (import.meta.hot) {
-  window.__PALOMA_VOICE__ = { voiceMode, isListening, interimTranscript, pendingSend, error }
-}
+const voiceMode = ref(false)
+const isListening = ref(false)
+const interimTranscript = ref('')
+const pendingSend = ref(null)
+const error = ref(null)
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
 const supported = computed(() => !!SpeechRecognition)

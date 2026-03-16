@@ -27,6 +27,9 @@ const emailUsageMap = new Map()          // requestId → { promptTokens, comple
 // Reactive: whether Flow is currently processing a callback notification
 const flowProcessingCallback = ref(false)
 
+// Reactive: supervisor restart pending — show overlay until reload
+const restartPending = ref(false)
+
 // pillarId → 'running' | 'streaming' | 'idle' | 'error' | 'stopped'
 const pillarStatuses = reactive(new Map())
 // pillarId → phase name ('scout', 'chart', 'forge', 'polish', 'ship')
@@ -602,6 +605,9 @@ export function useMCP() {
         state.streamingContent.value = ''
         emailSessionMap.delete(id)
         if (activeEmailDbSessionId === dbSessionId) activeEmailDbSessionId = null
+      },
+      onSupervisorRestart() {
+        restartPending.value = true
       }
     })
   }
@@ -844,7 +850,8 @@ export function useMCP() {
     pillarStatuses,
     pillarPhases,
     pillarParents,
-    pillarDbSessions
+    pillarDbSessions,
+    restartPending
   }
 }
 

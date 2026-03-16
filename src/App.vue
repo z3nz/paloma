@@ -65,6 +65,9 @@
     @close="showSettings = false"
   />
 
+  <!-- Supervisor restart overlay -->
+  <RestartOverlay />
+
   <!-- Full diff modal from Changes Panel -->
   <DiffPreview
     v-if="diffModalChange"
@@ -85,6 +88,7 @@ import ChatView from './components/chat/ChatView.vue'
 import SettingsModal from './components/settings/SettingsModal.vue'
 import ChangesPanel from './components/chat/ChangesPanel.vue'
 import DiffPreview from './components/chat/DiffPreview.vue'
+import RestartOverlay from './components/RestartOverlay.vue'
 import { useSettings } from './composables/useSettings.js'
 import { useProject } from './composables/useProject.js'
 import { useFileIndex } from './composables/useFileIndex.js'

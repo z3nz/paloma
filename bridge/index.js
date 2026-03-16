@@ -707,6 +707,25 @@ async function main() {
     shutdown(RESTART_CODE)
   })
 
+  // IPC from supervisor: idle check and prepare_restart
+  process.on('message', (msg) => {
+    if (msg?.type === 'idle_check') {
+      // Count active/streaming pillar sessions
+      let active = 0
+      if (pillarManager) {
+        for (const s of pillarManager.pillars.values()) {
+          if (s.status === 'running' || s.currentlyStreaming) active++
+        }
+      }
+      process.send({ type: 'idle_status', active })
+    } else if (msg?.type === 'prepare_restart') {
+      // Broadcast restart warning to all browser clients, then shutdown
+      console.log('[bridge] Supervisor requested restart — notifying browsers...')
+      broadcast({ type: 'supervisor_restart' })
+      setTimeout(() => shutdown(RESTART_CODE), 3000)
+    }
+  })
+
   // Expose restart to MCP proxy — graceful shutdown + exit code 75
   // (bridge/run.js wrapper catches code 75 and respawns)
   mcpProxy.restartBridge = () => shutdown(RESTART_CODE)

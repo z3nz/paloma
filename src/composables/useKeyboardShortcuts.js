@@ -1,12 +1,6 @@
 import { ref, watch } from 'vue'
 
-// Singleton state preserved across HMR
-const _saved = import.meta.hot ? window.__PALOMA_KEYBOARD__ : undefined
-const sidebarCollapsed = _saved?.sidebarCollapsed ?? ref(localStorage.getItem('paloma:sidebarCollapsed') === 'true')
-
-if (import.meta.hot) {
-  window.__PALOMA_KEYBOARD__ = { sidebarCollapsed }
-}
+const sidebarCollapsed = ref(localStorage.getItem('paloma:sidebarCollapsed') === 'true')
 
 watch(sidebarCollapsed, (v) => {
   localStorage.setItem('paloma:sidebarCollapsed', String(v))
