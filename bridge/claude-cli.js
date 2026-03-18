@@ -23,7 +23,16 @@ export class ClaudeCliManager {
       sessionId = randomUUID()
       args.push('--session-id', sessionId)
       if (model) args.push('--model', model)
-      if (systemPrompt) args.push('--append-system-prompt', systemPrompt)
+      if (systemPrompt) {
+        // Linux limits each execve argument to ~128KB (MAX_ARG_STRLEN = PAGE_SIZE * 32).
+        // Large system prompts with many active plans can exceed this, causing E2BIG.
+        const promptBytes = Buffer.byteLength(systemPrompt, 'utf-8')
+        const MAX_ARG_BYTES = 120000 // conservative threshold below 131072
+        if (promptBytes > MAX_ARG_BYTES) {
+          console.warn(`[cli] System prompt is ${(promptBytes / 1024).toFixed(0)}KB — approaching 128KB per-arg limit. Consider reducing active plans.`)
+        }
+        args.push('--append-system-prompt', systemPrompt)
+      }
       console.log(`[cli] New session, model=${model}`)
     }
 

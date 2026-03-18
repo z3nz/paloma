@@ -1,6 +1,8 @@
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000]
 const TOOL_CALL_TIMEOUT = 5 * 60 * 1000  // 5 minutes for tool calls
 const DEFAULT_TIMEOUT = 30 * 1000         // 30 seconds for simple requests
+const CHAT_ACK_TIMEOUT = 15 * 1000       // 15 seconds to receive chat ack
+const PING_INTERVAL = 15 * 1000          // 15 seconds between client pings
 
 export function createMcpBridge() {
   let ws = null
@@ -32,6 +34,8 @@ export function createMcpBridge() {
   let onEmailError = null
   let onSupervisorRestart = null
   let restartPending = false
+  let pingTimer = null
+  let lastPongTime = 0
 
   function getState() {
     if (!ws) return 'disconnected'
@@ -81,6 +85,7 @@ export function createMcpBridge() {
 
     ws.onopen = () => {
       reconnectAttempt = 0
+      lastPongTime = Date.now()
       onStateChange?.('connected')
       // If reconnecting after a supervisor restart, reload to get fresh build
       if (restartPending) {
@@ -92,9 +97,22 @@ export function createMcpBridge() {
       discover().catch((e) => {
         console.warn('[bridge] Auto-discover failed:', e.message)
       })
+      // Start client-side ping to detect dead connections
+      if (pingTimer) clearInterval(pingTimer)
+      pingTimer = setInterval(() => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return
+        // If we haven't received any message (including pong) in 2 ping intervals, connection is dead
+        if (Date.now() - lastPongTime > PING_INTERVAL * 3) {
+          console.warn('[bridge] Connection appears dead — forcing reconnect')
+          ws.close()
+          return
+        }
+        try { ws.send('ping') } catch { /* will trigger onclose */ }
+      }, PING_INTERVAL)
     }
 
     ws.onmessage = (event) => {
+      lastPongTime = Date.now() // Any message from server = connection alive
       let msg
       try {
         msg = JSON.parse(event.data)
@@ -288,6 +306,7 @@ export function createMcpBridge() {
 
     ws.onclose = () => {
       ws = null
+      if (pingTimer) { clearInterval(pingTimer); pingTimer = null }
       onStateChange?.('disconnected')
       // Reject all pending calls
       for (const [id, p] of pending) {
@@ -371,29 +390,46 @@ export function createMcpBridge() {
     return promise
   }
 
-  function sendClaudeChat(options, callbacks) {
-    const id = crypto.randomUUID()
+  /**
+   * Send a chat message and wait for ack. Rejects if ack doesn't arrive within timeout.
+   */
+  function _sendChatWithTimeout(type, id, options, callbacks) {
     streamListeners.set(id, {
       onStream: callbacks.onStream,
       onDone: callbacks.onDone,
       onError: callbacks.onError
     })
     return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject })
+      const timer = setTimeout(() => {
+        if (pending.has(id)) {
+          pending.delete(id)
+          streamListeners.delete(id)
+          reject(new Error('Bridge did not acknowledge message — connection may be stale. Try refreshing the page.'))
+        }
+      }, CHAT_ACK_TIMEOUT)
+      const wrappedResolve = (v) => { clearTimeout(timer); resolve(v) }
+      const wrappedReject = (e) => { clearTimeout(timer); streamListeners.delete(id); reject(e) }
+      pending.set(id, { resolve: wrappedResolve, reject: wrappedReject })
       _send({
-        type: 'claude_chat',
+        type,
         id,
         prompt: options.prompt,
         model: options.model,
         sessionId: options.sessionId,
         systemPrompt: options.systemPrompt,
-        cwd: options.cwd
+        cwd: options.cwd,
+        ...(options.enableTools !== undefined ? { enableTools: options.enableTools } : {})
       }).catch((e) => {
+        clearTimeout(timer)
         pending.delete(id)
         streamListeners.delete(id)
         reject(e)
       })
     })
+  }
+
+  function sendClaudeChat(options, callbacks) {
+    return _sendChatWithTimeout('claude_chat', crypto.randomUUID(), options, callbacks)
   }
 
   function stopClaudeChat(requestId) {
@@ -401,28 +437,7 @@ export function createMcpBridge() {
   }
 
   function sendCodexChat(options, callbacks) {
-    const id = crypto.randomUUID()
-    streamListeners.set(id, {
-      onStream: callbacks.onStream,
-      onDone: callbacks.onDone,
-      onError: callbacks.onError
-    })
-    return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject })
-      _send({
-        type: 'codex_chat',
-        id,
-        prompt: options.prompt,
-        model: options.model,
-        sessionId: options.sessionId,
-        systemPrompt: options.systemPrompt,
-        cwd: options.cwd
-      }).catch((e) => {
-        pending.delete(id)
-        streamListeners.delete(id)
-        reject(e)
-      })
-    })
+    return _sendChatWithTimeout('codex_chat', crypto.randomUUID(), options, callbacks)
   }
 
   function stopCodexChat(requestId) {
@@ -430,28 +445,7 @@ export function createMcpBridge() {
   }
 
   function sendCopilotChat(options, callbacks) {
-    const id = crypto.randomUUID()
-    streamListeners.set(id, {
-      onStream: callbacks.onStream,
-      onDone: callbacks.onDone,
-      onError: callbacks.onError
-    })
-    return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject })
-      _send({
-        type: 'copilot_chat',
-        id,
-        prompt: options.prompt,
-        model: options.model,
-        sessionId: options.sessionId,
-        systemPrompt: options.systemPrompt,
-        cwd: options.cwd
-      }).catch((e) => {
-        pending.delete(id)
-        streamListeners.delete(id)
-        reject(e)
-      })
-    })
+    return _sendChatWithTimeout('copilot_chat', crypto.randomUUID(), options, callbacks)
   }
 
   function stopCopilotChat(requestId) {
@@ -459,29 +453,7 @@ export function createMcpBridge() {
   }
 
   function sendOllamaChat(options, callbacks) {
-    const id = crypto.randomUUID()
-    streamListeners.set(id, {
-      onStream: callbacks.onStream,
-      onDone: callbacks.onDone,
-      onError: callbacks.onError
-    })
-    return new Promise((resolve, reject) => {
-      pending.set(id, { resolve, reject })
-      _send({
-        type: 'ollama_chat',
-        id,
-        prompt: options.prompt,
-        model: options.model,
-        sessionId: options.sessionId,
-        systemPrompt: options.systemPrompt,
-        cwd: options.cwd,
-        enableTools: options.enableTools || false
-      }).catch((e) => {
-        pending.delete(id)
-        streamListeners.delete(id)
-        reject(e)
-      })
-    })
+    return _sendChatWithTimeout('ollama_chat', crypto.randomUUID(), options, callbacks)
   }
 
   function stopOllamaChat(requestId) {

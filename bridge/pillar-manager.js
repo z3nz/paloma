@@ -1660,14 +1660,23 @@ This is informational — Adam is communicating directly with the pillar. Decide
     // Ollama sessions use the condensed prompt (fits smaller context windows)
     let prompt = backend === 'ollama' ? OLLAMA_INSTRUCTIONS : BASE_INSTRUCTIONS
 
-    // Read project instructions
-    const instructionsPath = join(this.projectRoot, '.paloma', 'instructions.md')
-    const instructions = await this._readFileSafe(instructionsPath)
-    if (instructions) {
-      prompt += '\n\n## Project Instructions\n\n' + instructions
+    // Claude CLI reads CLAUDE.md automatically, which includes instructions.md and roots
+    // via @ references. Including them again here would duplicate ~43KB of content and
+    // risk exceeding Linux's 128KB per-argument limit (MAX_ARG_STRLEN) when passed via
+    // --append-system-prompt. Other backends (Ollama, Codex, Copilot) don't read CLAUDE.md,
+    // so they still need this content in the system prompt.
+    const claudeBackend = !backend || backend === 'claude'
+
+    if (!claudeBackend) {
+      // Read project instructions (non-Claude backends only)
+      const instructionsPath = join(this.projectRoot, '.paloma', 'instructions.md')
+      const instructions = await this._readFileSafe(instructionsPath)
+      if (instructions) {
+        prompt += '\n\n## Project Instructions\n\n' + instructions
+      }
     }
 
-    // Read active plans
+    // Read active plans (always — CLAUDE.md does NOT include these)
     const plansDir = join(this.projectRoot, '.paloma', 'plans')
     let plans = await this._readActiveFiles(plansDir, 'active-')
     if (planFilter) {
@@ -1678,16 +1687,18 @@ This is informational — Adam is communicating directly with the pillar. Decide
       prompt += plans.map(p => `<plan name="${p.name}">\n${p.content}\n</plan>`).join('\n\n')
     }
 
-    // Read roots
-    const rootsDir = join(this.projectRoot, '.paloma', 'roots')
-    const roots = await this._readActiveFiles(rootsDir, 'root-')
-    if (roots.length > 0) {
-      prompt += '\n\n## Roots\n\n'
-      prompt += 'These are Paloma\'s foundational values. They inform all decisions and interactions.\n\n'
-      prompt += roots.map(r => {
-        const name = r.name.replace(/^root-/, '').replace(/\.md$/, '')
-        return `<root name="${name}">\n${r.content}\n</root>`
-      }).join('\n\n')
+    if (!claudeBackend) {
+      // Read roots (non-Claude backends only)
+      const rootsDir = join(this.projectRoot, '.paloma', 'roots')
+      const roots = await this._readActiveFiles(rootsDir, 'root-')
+      if (roots.length > 0) {
+        prompt += '\n\n## Roots\n\n'
+        prompt += 'These are Paloma\'s foundational values. They inform all decisions and interactions.\n\n'
+        prompt += roots.map(r => {
+          const name = r.name.replace(/^root-/, '').replace(/\.md$/, '')
+          return `<root name="${name}">\n${r.content}\n</root>`
+        }).join('\n\n')
+      }
     }
 
     // Add phase instructions

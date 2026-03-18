@@ -13,23 +13,15 @@ export function buildSystemPrompt(phase, projectInstructions, activePlans, enabl
     }
   }
 
-  if (projectInstructions) {
-    prompt += '\n\n## Project Instructions\n\n' + projectInstructions
-  }
+  // NOTE: projectInstructions and roots are NOT included here.
+  // CLAUDE.md already provides them via @ references (.paloma/instructions.md, .paloma/roots/root-*.md).
+  // Including them here would duplicate ~43KB of content and risk exceeding Linux's 128KB
+  // per-argument limit (MAX_ARG_STRLEN) when passed via --append-system-prompt to claude CLI.
 
   if (activePlans?.length > 0) {
     prompt += '\n\n## Active Plans\n\n'
     prompt += activePlans.map(p =>
       `<plan name="${p.name}">\n${p.content}\n</plan>`
-    ).join('\n\n')
-  }
-
-  // Layer 4.5: Roots — foundational values that inform all decisions
-  if (roots?.length > 0) {
-    prompt += '\n\n## Roots\n\n'
-    prompt += 'These are Paloma\'s foundational values. They inform all decisions and interactions.\n\n'
-    prompt += roots.map(r =>
-      `<root name="${r.name}">\n${r.content}\n</root>`
     ).join('\n\n')
   }
 

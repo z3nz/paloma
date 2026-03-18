@@ -13,7 +13,7 @@ const app = express();
 app.use(express.static(distPath));
 
 // SPA fallback — any non-file request returns index.html
-app.get('*', (req, res) => {
+app.get('/{*splat}', (req, res) => {
   res.sendFile(join(distPath, 'index.html'));
 });
 

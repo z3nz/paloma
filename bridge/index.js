@@ -248,12 +248,22 @@ async function main() {
     ws.on('pong', () => { ws._pongReceived = true })
 
     ws.on('message', async (data) => {
+      const raw = data.toString()
+      // Client-side keepalive ping — respond with pong
+      if (raw === 'ping') {
+        try { ws.send('pong') } catch { /* client gone */ }
+        return
+      }
       let msg
       try {
-        msg = JSON.parse(data.toString())
+        msg = JSON.parse(raw)
       } catch {
         ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' }))
         return
+      }
+      // Log all incoming messages for debugging
+      if (msg.type !== 'discover') {
+        console.log(`[bridge] ← ${msg.type}${msg.id ? ' id=' + msg.id.slice(0, 8) : ''}`)
       }
 
       if (msg.type === 'discover') {
