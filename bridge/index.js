@@ -14,7 +14,7 @@ import { CodexCliManager } from './codex-cli.js'
 import { CopilotCliManager } from './copilot-cli.js'
 import { OllamaManager } from './ollama-manager.js'
 import { McpProxyServer } from './mcp-proxy-server.js'
-import { PillarManager } from './pillar-manager.js'
+import { PillarManager, OLLAMA_ALLOWED_SERVERS } from './pillar-manager.js'
 import { BackendHealth } from './backend-health.js'
 import { EmailWatcher } from './email-watcher.js'
 import { printBanner, stepOk, stepFail, stepInfo, printSummary, printShutdown } from './startup.js'
@@ -470,10 +470,6 @@ async function main() {
         try {
           // Convert MCP tools to Ollama's tool format (only if requested)
           // Filter to essential servers only — local models have limited context
-          const OLLAMA_ALLOWED_SERVERS = new Set([
-            'filesystem', 'git', 'shell', 'web', 'brave-search',
-            'voice', 'memory', 'fs-extra'
-          ])
           const ollamaTools = []
           const toolRouteMap = new Map() // ollamaName → { server, tool }
           if (msg.enableTools) {

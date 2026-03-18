@@ -8,7 +8,7 @@ const MAX_RUNTIME_MS = 30 * 60 * 1000 // 30 minutes
 const MAX_NOTIFICATION_QUEUE = 50
 const MAX_CONCURRENT_OLLAMA = 4
 const MAX_OLLAMA_TOOL_ROUNDS = 50 // Higher than browser's 20 — recursive spawning needs room
-const OLLAMA_ALLOWED_SERVERS = new Set([
+export const OLLAMA_ALLOWED_SERVERS = new Set([
   'filesystem', 'git', 'shell', 'web', 'brave-search',
   'voice', 'memory', 'fs-extra'
 ])
