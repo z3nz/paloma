@@ -2,7 +2,7 @@
 
 > **Read this when you need to reason about bridge internals, session management, MCP routing, or data flows.** This is an on-demand reference, NOT auto-loaded into prompts. For the abstract mental model, see `root-architecture.md`. For quick orientation, see MEMORY.md.
 >
-> Last updated: 2026-03-14
+> Last updated: 2026-03-18
 
 ---
 
@@ -21,7 +21,7 @@
 │  WebSocket server — message routing hub (15+ message types)  │
 │  MCP Proxy — SSE + Streamable HTTP server (port 19192)       │
 │  PillarManager — spawns/tracks pillar CLI sessions           │
-│  ClaudeCliManager, CodexCliManager, OllamaManager            │
+│  ClaudeCliManager, CodexCliManager, CopilotCliManager, Ollama │
 │  EmailWatcher — Gmail polling + daily continuity journal      │
 │  Heartbeat (30s), auto-reject stale requests (5 min)         │
 │  Graceful shutdown, PID file, SIGUSR1 restart (exit code 75) │
@@ -296,6 +296,12 @@ Classifies tool results for UI rendering: `code`, `diff`, `file_list`, `director
 | `fs-extra.js` | 2 tools | `delete`, `copy` (fills gaps in standard FS server) |
 | `exec.js` | 1 tool | `bash_exec` with safety guardrails |
 | `ollama.js` | 5 tools | Local LLM inference, embeddings, model management |
+
+### Project MCP Servers (`projects/`)
+
+| Server | Tools | Purpose |
+|--------|-------|---------|
+| `social-poster/server.js` | 4 tools | Cross-platform social posting via Postiz (`social_post`, `social_schedule`, `social_list_accounts`, `social_analytics`) |
 
 ### External (npm packages)
 

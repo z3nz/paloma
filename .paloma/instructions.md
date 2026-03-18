@@ -82,6 +82,17 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Collections:** Separate memory namespaces (default: "default"). Use for multi-agent/multi-project memory isolation.
 - **Tools:** `memory_store`, `memory_recall`, `memory_list`, `memory_forget`, `memory_update`, `memory_stats`
 
+### Social Poster (Cross-Platform Social Media)
+- **MCP Server:** `projects/social-poster/server.js` — 4 tools for cross-platform social media posting via Postiz
+- **Backend:** Self-hosted Postiz instance (`docker compose up` in `projects/social-poster/`)
+- **Tools:** `social_post` (immediate posting), `social_schedule` (future-dated), `social_list_accounts` (connected platforms), `social_analytics` (post history)
+- **API Client:** `projects/social-poster/postiz-client.js` — direct REST against Postiz public API v1 (SDK dropped due to CJS/ESM incompatibility)
+- **Auth:** `POSTIZ_API_KEY` env var in `~/.paloma/mcp-settings.json` — generated from Postiz UI Settings > Team > API Key
+- **Docker Stack:** Postiz app + PostgreSQL 17 + Redis 7.2 + Temporal (6 containers total) at `http://localhost:4007`
+- **Manual platforms (Adam posts directly):** YouTube, X/Twitter, Facebook, Instagram
+- **Automated platforms (Paloma via Postiz):** Discord, Telegram, Bluesky, Mastodon, LinkedIn, Reddit, Threads, Medium, Dev.to
+- **Separate repo:** `projects/social-poster/` has its own git history, per project separation convention
+
 ### HTML Email Styling Rules
 When sending HTML emails (via `email_send` or `email_reply` with `isHtml: true`), follow these rules strictly:
 - **ALL body text must be `#ffffff` (pure white).** This is NON-NEGOTIABLE. No gray, no light-blue, no muted tones for body copy.

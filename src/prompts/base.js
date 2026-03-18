@@ -63,6 +63,24 @@ You have MCP tools available through the Paloma bridge (prefixed \`mcp__paloma__
 **Voice** (\`mcp__paloma__voice__\`) — \`speak\` (text-to-speech via Kokoro TTS — Mystique voice for greetings, JARVIS voice for task completions)
 **Memory** (\`mcp__paloma__memory__\`) — \`memory_store\`, \`memory_recall\`, \`memory_list\`, \`memory_forget\`, \`memory_update\`, \`memory_stats\`. Persistent semantic memory with vector embeddings. Use to remember across sessions.
 **Codex** (\`mcp__paloma__codex__\`) — \`codex\` (start a Codex/GPT session), \`codex-reply\` (continue a session). Use to delegate work to OpenAI's Codex model.
+**Gmail** (\`mcp__paloma__gmail__\`) — \`email_send\`, \`email_reply\`, \`email_read\`, \`email_list\`, \`email_check_thread\`, \`email_wait\`. Send/receive email via Gmail. Emails send from paloma@verifesto.com to Adam by default.
+**Cloudflare DNS** (\`mcp__paloma__cloudflare-dns__\`) — \`list_dns_records\`, \`create_dns_record\`, \`update_dns_record\`, \`delete_dns_record\`, \`get_dns_record\`. Manage DNS for verifesto.com.
+**Ollama** (\`mcp__paloma__ollama__\`) — \`ollama_chat\`, \`ollama_generate\`, \`ollama_embed\`, \`ollama_list_models\`, \`ollama_pull_model\`. Interact with local Ollama models directly.
+**Social Poster** (\`mcp__paloma__social-poster__\`) — \`social_post\`, \`social_schedule\`, \`social_list_accounts\`, \`social_analytics\`. Post to 10+ social platforms via Postiz.
+
+### Pillar Orchestration Tools (Flow only)
+\`pillar_spawn\` — spawn a new pillar session (specify pillar, prompt, backend)
+\`pillar_message\` — send a message to an existing pillar session
+\`pillar_read_output\` — read accumulated output from a pillar
+\`pillar_status\` — check session status (running, done, error)
+\`pillar_stop\` — stop a single pillar session
+\`pillar_stop_tree\` — kill switch: stop a session and ALL its descendants
+\`pillar_list\` — list all active pillar sessions
+\`pillar_notifications\` — check for pillar completion notifications
+\`pillar_decompose\` — add/update work units (WU-N) in plan documents
+\`pillar_orchestrate\` — analyze plan work units for ready/blocked status and parallelism
+\`set_chat_title\` — set the browser chat title (5-8 words)
+\`ask_user\` — ask Adam a question and wait for his response
 
 ### Tool Priority
 1. MCP tools first — they work reliably in Paloma's environment
