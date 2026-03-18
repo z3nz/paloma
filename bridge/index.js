@@ -507,12 +507,16 @@ async function main() {
           // Event handler that intercepts tool_call events and executes them
           const handleOllamaEvent = async (event) => {
             if (ws.readyState !== 1) return
+            // Safe send — WebSocket may close during async tool execution
+            const safeSend = (data) => {
+              try { if (ws.readyState === 1) ws.send(JSON.stringify(data)) } catch (_) { /* client disconnected */ }
+            }
 
             if (event.type === 'ollama_tool_call') {
               toolRounds++
               if (toolRounds > MAX_TOOL_ROUNDS) {
                 console.warn(`[ollama] Hit max tool rounds (${MAX_TOOL_ROUNDS}), stopping`)
-                ws.send(JSON.stringify({ type: 'ollama_done', id: msg.id, requestId: event.requestId, sessionId: event.sessionId, exitCode: 0 }))
+                safeSend({ type: 'ollama_done', id: msg.id, requestId: event.requestId, sessionId: event.sessionId, exitCode: 0 })
                 cliRequestToWs.delete(event.requestId)
                 return
               }
@@ -529,10 +533,10 @@ async function main() {
                 const route = toolRouteMap.get(toolName)
 
                 // Emit tool_use event to frontend
-                ws.send(JSON.stringify({
+                safeSend({
                   type: 'ollama_stream', id: msg.id,
                   event: { type: 'tool_use', tool_use: { id: toolId, name: toolName, input: toolArgs } }
-                }))
+                })
 
                 // Pillar tools — route through MCP proxy's pillar handler
                 if (route?._pillar) {
@@ -541,18 +545,18 @@ async function main() {
                     const result = await mcpProxy._handlePillarTool(toolName, toolArgs, null)
                     const content = result.content?.map(c => c.text || JSON.stringify(c)).join('\n') || ''
                     results.push({ content })
-                    ws.send(JSON.stringify({
+                    safeSend({
                       type: 'ollama_stream', id: msg.id,
                       event: { type: 'tool_result', toolUseId: toolId, content }
-                    }))
+                    })
                   } catch (e) {
                     console.error(`[ollama] Pillar tool error (${toolName}):`, e.message)
                     const errContent = `Error executing ${toolName}: ${e.message}`
                     results.push({ content: errContent })
-                    ws.send(JSON.stringify({
+                    safeSend({
                       type: 'ollama_stream', id: msg.id,
                       event: { type: 'tool_result', toolUseId: toolId, content: errContent }
-                    }))
+                    })
                   }
                   continue
                 }
@@ -561,10 +565,10 @@ async function main() {
                   console.warn(`[ollama] Unknown tool: ${toolName}`)
                   const errContent = `Error: Unknown tool "${toolName}"`
                   results.push({ content: errContent })
-                  ws.send(JSON.stringify({
+                  safeSend({
                     type: 'ollama_stream', id: msg.id,
                     event: { type: 'tool_result', toolUseId: toolId, content: errContent }
-                  }))
+                  })
                   continue
                 }
 
@@ -573,18 +577,18 @@ async function main() {
                   const result = await manager.callTool(route.server, route.tool, toolArgs)
                   const content = result.content?.map(c => c.text || JSON.stringify(c)).join('\n') || ''
                   results.push({ content })
-                  ws.send(JSON.stringify({
+                  safeSend({
                     type: 'ollama_stream', id: msg.id,
                     event: { type: 'tool_result', toolUseId: toolId, content }
-                  }))
+                  })
                 } catch (e) {
                   console.error(`[ollama] Tool error (${toolName}):`, e.message)
                   const errContent = `Error executing ${toolName}: ${e.message}`
                   results.push({ content: errContent })
-                  ws.send(JSON.stringify({
+                  safeSend({
                     type: 'ollama_stream', id: msg.id,
                     event: { type: 'tool_result', toolUseId: toolId, content: errContent }
-                  }))
+                  })
                 }
               }
 
@@ -597,7 +601,7 @@ async function main() {
                 )
               } catch (e) {
                 console.error('[bridge] Failed to continue Ollama tool loop:', e.message)
-                ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
+                safeSend({ type: 'ollama_error', id: msg.id, error: e.message })
               }
               return
             }
