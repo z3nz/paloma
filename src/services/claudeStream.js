@@ -1,17 +1,27 @@
+// Pricing: per-token rates matching OpenRouter format (string).
+// Claude models use Anthropic's published API rates for reference cost tracking.
+// Ollama is free (local). Codex/Copilot are subscription — shown as $0.
+const ANTHROPIC_PRICING = {
+  opus:   { prompt: '0.000015',  completion: '0.000075' },   // $15/$75 per M tokens
+  sonnet: { prompt: '0.000003',  completion: '0.000015' },   // $3/$15 per M tokens
+  haiku:  { prompt: '0.0000008', completion: '0.000004' },   // $0.80/$4 per M tokens
+}
+const FREE_PRICING = { prompt: '0', completion: '0' }
+
 export const CLI_MODELS = [
-  { id: 'claude-cli:opus', name: 'Claude Opus (CLI)', context_length: 200000, direct: false },
-  { id: 'claude-cli:sonnet', name: 'Claude Sonnet (CLI)', context_length: 200000, direct: false },
-  { id: 'claude-cli:haiku', name: 'Claude Haiku (CLI)', context_length: 200000, direct: false },
-  { id: 'claude-cli-direct:opus', name: 'Claude Opus (CLI Direct)', context_length: 200000, direct: true },
-  { id: 'claude-cli-direct:sonnet', name: 'Claude Sonnet (CLI Direct)', context_length: 200000, direct: true },
-  { id: 'claude-cli-direct:haiku', name: 'Claude Haiku (CLI Direct)', context_length: 200000, direct: true },
-  { id: 'codex-cli:codex-max', name: 'GPT-5.1 Codex Max', context_length: 1000000, codex: true },
-  { id: 'copilot-cli:claude-sonnet-4.6', name: 'Claude Sonnet 4.6 (Copilot)', context_length: 200000, copilot: true },
-  { id: 'copilot-cli:claude-opus-4.6', name: 'Claude Opus 4.6 (Copilot)', context_length: 200000, copilot: true },
-  { id: 'copilot-cli:gpt-5.4', name: 'GPT-5.4 (Copilot)', context_length: 200000, copilot: true },
-  { id: 'copilot-cli:gemini-3-pro-preview', name: 'Gemini 3 Pro (Copilot)', context_length: 200000, copilot: true },
-  { id: 'ollama:qwen2.5-coder:32b', name: 'Qwen 2.5 Coder 32B', context_length: 32768, ollama: true },
-  { id: 'ollama:qwen2.5-coder:7b', name: 'Qwen 2.5 Coder 7B', context_length: 32768, ollama: true }
+  { id: 'claude-cli:opus', name: 'Claude Opus (CLI)', context_length: 200000, direct: false, pricing: ANTHROPIC_PRICING.opus },
+  { id: 'claude-cli:sonnet', name: 'Claude Sonnet (CLI)', context_length: 200000, direct: false, pricing: ANTHROPIC_PRICING.sonnet },
+  { id: 'claude-cli:haiku', name: 'Claude Haiku (CLI)', context_length: 200000, direct: false, pricing: ANTHROPIC_PRICING.haiku },
+  { id: 'claude-cli-direct:opus', name: 'Claude Opus (CLI Direct)', context_length: 200000, direct: true, pricing: ANTHROPIC_PRICING.opus },
+  { id: 'claude-cli-direct:sonnet', name: 'Claude Sonnet (CLI Direct)', context_length: 200000, direct: true, pricing: ANTHROPIC_PRICING.sonnet },
+  { id: 'claude-cli-direct:haiku', name: 'Claude Haiku (CLI Direct)', context_length: 200000, direct: true, pricing: ANTHROPIC_PRICING.haiku },
+  { id: 'codex-cli:codex-max', name: 'GPT-5.1 Codex Max', context_length: 1000000, codex: true, pricing: FREE_PRICING },
+  { id: 'copilot-cli:claude-sonnet-4.6', name: 'Claude Sonnet 4.6 (Copilot)', context_length: 200000, copilot: true, pricing: ANTHROPIC_PRICING.sonnet },
+  { id: 'copilot-cli:claude-opus-4.6', name: 'Claude Opus 4.6 (Copilot)', context_length: 200000, copilot: true, pricing: ANTHROPIC_PRICING.opus },
+  { id: 'copilot-cli:gpt-5.4', name: 'GPT-5.4 (Copilot)', context_length: 200000, copilot: true, pricing: FREE_PRICING },
+  { id: 'copilot-cli:gemini-3-pro-preview', name: 'Gemini 3 Pro (Copilot)', context_length: 200000, copilot: true, pricing: FREE_PRICING },
+  { id: 'ollama:qwen2.5-coder:32b', name: 'Qwen 2.5 Coder 32B', context_length: 32768, ollama: true, pricing: FREE_PRICING },
+  { id: 'ollama:qwen2.5-coder:7b', name: 'Qwen 2.5 Coder 7B', context_length: 32768, ollama: true, pricing: FREE_PRICING }
 ]
 
 export function isCliModel(modelId) {

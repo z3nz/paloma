@@ -17,9 +17,11 @@ export function useKeyboardShortcuts() {
  * Shortcuts:
  *   Ctrl+/  — toggle sidebar
  *   Ctrl+N  — new chat
+ *   Ctrl+K  — command palette
+ *   Ctrl+M  — toggle voice mode
  *   Escape  — close modals, then stop streaming
  */
-export function registerKeyboardShortcuts({ onNewChat, onStopStreaming, onCloseModals, onToggleVoice }) {
+export function registerKeyboardShortcuts({ onNewChat, onStopStreaming, onCloseModals, onToggleVoice, onCommandPalette }) {
   function handleKeyDown(e) {
     // Escape — always available, even in inputs
     if (e.key === 'Escape') {
@@ -40,6 +42,12 @@ export function registerKeyboardShortcuts({ onNewChat, onStopStreaming, onCloseM
       if (e.key === 'n') {
         e.preventDefault()
         onNewChat?.()
+        return
+      }
+
+      if (e.key === 'k') {
+        e.preventDefault()
+        onCommandPalette?.()
         return
       }
 

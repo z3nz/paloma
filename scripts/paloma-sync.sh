@@ -1,16 +1,41 @@
 #!/usr/bin/env bash
 #
-# paloma-sync.sh — Smart git sync with auto merge-conflict resolution.
+# paloma-sync.sh — Git sync for Paloma repository.
 #
-# Tries to pull from origin. If merge conflicts arise, spawns a Claude
-# CLI session to resolve them automatically. Used by both `npm start`
-# and the Claude Code SessionStart hook.
+# Fetches from origin and fast-forwards if possible.
+# If conflicts arise, reports them and exits — NEVER spawns AI agents.
+#
+# SAFETY: This script is called from Claude Code SessionStart hooks.
+# Spawning `claude` from here would trigger the hook recursively,
+# creating an infinite process bomb. This lesson was learned the hard
+# way on 2026-03-18 when recursive Claude spawns exhausted system
+# resources. See .paloma/lessons/architecture.md for details.
 #
 
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_DIR"
+
+# ── Recursion guard ─────────────────────────────────────────────────
+# Prevent recursive execution if called from within a Claude subprocess
+if [ "${PALOMA_SYNC_RUNNING:-}" = "1" ]; then
+  exit 0
+fi
+export PALOMA_SYNC_RUNNING=1
+
+# Lock file to prevent concurrent runs
+LOCK_FILE="/tmp/paloma-sync.lock"
+if [ -f "$LOCK_FILE" ]; then
+  # Check if the lock is stale (older than 60 seconds)
+  if [ "$(find "$LOCK_FILE" -mmin +1 2>/dev/null)" ]; then
+    rm -f "$LOCK_FILE"
+  else
+    exit 0
+  fi
+fi
+trap 'rm -f "$LOCK_FILE"' EXIT
+echo $$ > "$LOCK_FILE"
 
 # ── Colors ──────────────────────────────────────────────────────────
 R='\033[31m' G='\033[32m' Y='\033[33m' C='\033[36m' M='\033[95m' D='\033[2m' B='\033[1m' X='\033[0m'
@@ -24,88 +49,31 @@ fail() { echo -e "  ${R}✖${X} $*"; }
 unmerged=$(git diff --name-only --diff-filter=U 2>/dev/null || true)
 
 if [ -n "$unmerged" ]; then
-  warn "Unmerged files detected from a previous merge:"
+  warn "Unmerged files detected — resolve manually before syncing:"
   echo "$unmerged" | while read -r f; do echo "     $f"; done
-  resolve_needed=true
-else
-  # ── Fetch + pull ────────────────────────────────────────────────
-  log "Fetching from origin..."
-  git fetch origin 2>/dev/null || { warn "Fetch failed (offline?)"; exit 0; }
-
-  # Check if we're behind
-  LOCAL=$(git rev-parse HEAD 2>/dev/null)
-  REMOTE=$(git rev-parse origin/main 2>/dev/null || echo "$LOCAL")
-
-  if [ "$LOCAL" = "$REMOTE" ]; then
-    ok "Already up to date"
-    exit 0
-  fi
-
-  # Try fast-forward first
-  if git merge --ff-only origin/main 2>/dev/null; then
-    ok "Fast-forwarded to origin/main"
-    exit 0
-  fi
-
-  # Fast-forward failed — try regular merge
-  log "Branches diverged, attempting merge..."
-  if git merge origin/main --no-edit 2>/dev/null; then
-    ok "Merged origin/main successfully"
-    exit 0
-  fi
-
-  # Merge created conflicts
-  unmerged=$(git diff --name-only --diff-filter=U 2>/dev/null || true)
-  if [ -z "$unmerged" ]; then
-    fail "Merge failed for unknown reason"
-    exit 1
-  fi
-
-  warn "Merge conflicts in:"
-  echo "$unmerged" | while read -r f; do echo "     $f"; done
-  resolve_needed=true
+  exit 1
 fi
 
-# ── Auto-resolve via Claude CLI ─────────────────────────────────────
-if [ "${resolve_needed:-false}" = "true" ]; then
-  # Check if claude CLI is available
-  if ! command -v claude &>/dev/null; then
-    fail "Claude CLI not found — resolve conflicts manually"
-    exit 1
-  fi
+# ── Fetch + pull ────────────────────────────────────────────────────
+log "Fetching from origin..."
+git fetch origin 2>/dev/null || { warn "Fetch failed (offline?)"; exit 0; }
 
-  log "Spawning Claude to resolve merge conflicts..."
+# Check if we're behind
+LOCAL=$(git rev-parse HEAD 2>/dev/null)
+REMOTE=$(git rev-parse origin/main 2>/dev/null || echo "$LOCAL")
 
-  # Build the file list for the prompt
-  file_list=$(git diff --name-only --diff-filter=U 2>/dev/null | tr '\n' ', ' | sed 's/,$//')
-
-  claude -p --model sonnet "$(cat <<PROMPT
-You are resolving git merge conflicts in the Paloma repository.
-
-The following files have merge conflicts: ${file_list}
-
-For each conflicted file:
-1. Read the file to see the conflict markers (<<<<<<< HEAD, =======, >>>>>>>)
-2. Understand what BOTH sides changed — HEAD is the local work, the other side is from origin/main
-3. Resolve the conflict by keeping the best of both sides. If one side has newer features/fixes that the other doesn't, keep those. If both sides changed the same thing differently, merge them intelligently.
-4. Remove ALL conflict markers (<<<<<<< HEAD, =======, >>>>>>>) — the file must be valid after resolution
-5. Write the resolved file
-
-After resolving ALL files, run these git commands:
-- git add each resolved file
-- git commit with message "chore: auto-resolve merge conflicts (paloma-sync)"
-
-Be thorough — check that no conflict markers remain in any file.
-PROMPT
-)"
-
-  # Verify resolution
-  remaining=$(git diff --name-only --diff-filter=U 2>/dev/null || true)
-  if [ -n "$remaining" ]; then
-    fail "Claude couldn't resolve all conflicts. Remaining:"
-    echo "$remaining" | while read -r f; do echo "     $f"; done
-    exit 1
-  fi
-
-  ok "Merge conflicts resolved automatically"
+if [ "$LOCAL" = "$REMOTE" ]; then
+  ok "Already up to date"
+  exit 0
 fi
+
+# Try fast-forward only — never create merge commits automatically
+if git merge --ff-only origin/main 2>/dev/null; then
+  ok "Fast-forwarded to origin/main"
+  exit 0
+fi
+
+# Branches diverged — report but do NOT attempt merge
+warn "Local branch has diverged from origin/main"
+warn "Run 'git merge origin/main' or 'git rebase origin/main' manually"
+exit 0

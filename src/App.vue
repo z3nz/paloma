@@ -68,6 +68,15 @@
   <!-- Supervisor restart overlay -->
   <RestartOverlay />
 
+  <!-- Command palette -->
+  <CommandPalette
+    v-if="showCommandPalette"
+    @close="showCommandPalette = false"
+    @select-session="(id) => { showCommandPalette = false; handleSelectSession(id) }"
+    @new-chat="() => { showCommandPalette = false; handleNewChat() }"
+    @settings="() => { showCommandPalette = false; showSettings = true }"
+  />
+
   <!-- Full diff modal from Changes Panel -->
   <DiffPreview
     v-if="diffModalChange"
@@ -89,6 +98,7 @@ import SettingsModal from './components/settings/SettingsModal.vue'
 import ChangesPanel from './components/chat/ChangesPanel.vue'
 import DiffPreview from './components/chat/DiffPreview.vue'
 import RestartOverlay from './components/RestartOverlay.vue'
+import CommandPalette from './components/CommandPalette.vue'
 import { useSettings } from './composables/useSettings.js'
 import { useProject } from './composables/useProject.js'
 import { useFileIndex } from './composables/useFileIndex.js'
@@ -120,6 +130,7 @@ const { toggleVoiceMode, isListening, stopListening } = useVoiceInput()
 
 const showSplash = ref(true)
 const showSettings = ref(false)
+const showCommandPalette = ref(false)
 const diffModalChange = ref(null)
 
 // Global keyboard shortcuts (Ctrl+/, Ctrl+N, Escape)
@@ -127,12 +138,14 @@ const cleanupShortcuts = registerKeyboardShortcuts({
   onNewChat: () => { if (bridgeConnected.value) handleNewChat() },
   onStopStreaming: () => { if (streaming.value) stopStreaming() },
   onCloseModals: () => {
+    if (showCommandPalette.value) { showCommandPalette.value = false; return true }
     if (diffModalChange.value) { diffModalChange.value = null; return true }
     if (showSettings.value) { showSettings.value = false; return true }
     if (isListening.value) { stopListening(); return true }
     return false
   },
-  onToggleVoice: () => toggleVoiceMode()
+  onToggleVoice: () => toggleVoiceMode(),
+  onCommandPalette: () => { showCommandPalette.value = !showCommandPalette.value }
 })
 onBeforeUnmount(cleanupShortcuts)
 
