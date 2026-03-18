@@ -38,5 +38,8 @@ mlx-base/
 fused-*/
 llama.cpp/
 
+# Vite temp files
+vite.config.js.timestamp-*
+
 # Per-machine local context (not shared across machines)
 .paloma/local-machine.md
