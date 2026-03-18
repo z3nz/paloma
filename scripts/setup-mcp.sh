@@ -134,6 +134,13 @@ if [ -f "$SETTINGS_FILE" ]; then
 fi
 GMAIL_RECIPIENT="${GMAIL_RECIPIENT:-adamlynchmob@gmail.com}"
 
+# Extract existing Postiz key
+POSTIZ_KEY=""
+if [ -f "$SETTINGS_FILE" ]; then
+  POSTIZ_KEY="$(grep -o '"POSTIZ_API_KEY"[[:space:]]*:[[:space:]]*"[^"]*"' "$SETTINGS_FILE" | head -1 | sed 's/.*"POSTIZ_API_KEY"[[:space:]]*:[[:space:]]*"\([^"]*\)"/\1/' || true)"
+fi
+POSTIZ_KEY="${POSTIZ_KEY:-CONFIGURE_AFTER_DOCKER_SETUP}"
+
 # Check if codex CLI is available
 CODEX_BLOCK=""
 if command -v codex &>/dev/null; then
@@ -205,6 +212,14 @@ cat > "$SETTINGS_FILE" <<ENDJSON
         "GMAIL_RECIPIENT": "$GMAIL_RECIPIENT",
         "GMAIL_SENDER": "paloma@verifesto.com"
       }
+    },
+    "social-poster": {
+      "command": "node",
+      "args": ["$PALOMA_DIR/projects/social-poster/server.js"],
+      "env": {
+        "POSTIZ_API_URL": "http://localhost:4007",
+        "POSTIZ_API_KEY": "$POSTIZ_KEY"
+      }
     }$CODEX_BLOCK
   }
 }
@@ -271,6 +286,7 @@ echo "      - brave-search (web search)"
 echo "      - ollama (local AI models)"
 echo "      - cloudflare-dns (DNS management)"
 echo "      - gmail (email send/receive)"
+echo "      - social-poster (cross-platform social media)"
 if command -v codex &>/dev/null; then
   echo "      - codex (OpenAI Codex MCP)"
 fi

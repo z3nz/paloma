@@ -9,7 +9,8 @@
     "codex",
     "voice",
     "memory",
-    "gmail"
+    "gmail",
+    "social-poster"
   ],
   "autoExecute": [
     "brave-search",
@@ -78,6 +79,7 @@
         "email_wait",
         "email_reply"
       ]
-    }
+    },
+    "social-poster"
   ]
 }
