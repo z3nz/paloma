@@ -7,7 +7,7 @@
 ## Queue
 
 1. MCP file editing in Changes Panel
-2. Keyboard shortcuts
+2. ~~Keyboard shortcuts~~ ✅ Complete
 3. Undo/rollback system
 4. Message editing and regeneration
 5. Model switching context transfer
@@ -30,14 +30,14 @@ Use MCP filesystem's `edit_file` tool with the Changes Panel workflow. Currently
 
 ---
 
-### 2. Keyboard shortcuts
+### 2. Keyboard shortcuts ✅ Complete
 
-**Mostly complete.** Already implemented in `useKeyboardShortcuts.js`:
+**Complete.** Implemented in `useKeyboardShortcuts.js` and `CommandPalette.vue`:
 - ✅ `Ctrl+/` — toggle sidebar
 - ✅ `Ctrl+N` — new chat
 - ✅ `Ctrl+M` — toggle voice input
 - ✅ `Escape` — close modals / cancel streaming
-- ⬜ `Ctrl+K` — command palette / quick actions (needs new component)
+- ✅ `Ctrl+K` — full command palette with Navigation, Plans, Pillars, Power, Sessions categories, prefix filtering, plan management, and pillar spawning
 
 ---
 
