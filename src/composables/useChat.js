@@ -326,6 +326,7 @@ export function useChat() {
         console.log('[chat] Stream aborted by user')
         completed = true // stopStreaming already saved partial content
       } else {
+        const isBridgeDisconnect = e.message === 'Bridge connection lost'
         console.error(`[chat] error:`, e.message)
         s.error.value = e.message
 
@@ -342,6 +343,15 @@ export function useChat() {
           } catch (saveErr) {
             console.error('[chat] Failed to save partial content:', saveErr.message)
           }
+        }
+
+        // Mark session for auto-resume if this was a bridge disconnect (restart).
+        // The next reconnect will automatically re-send the last user message.
+        if (isBridgeDisconnect && sessionId && isCliModel(model)) {
+          try {
+            await db.sessions.update(sessionId, { pendingResume: true })
+            console.log('[chat] Marked session for auto-resume after bridge reconnect')
+          } catch { /* best-effort */ }
         }
       }
     } finally {
