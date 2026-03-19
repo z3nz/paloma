@@ -95,12 +95,15 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
         // Backend changed — store new session ID and backend
         await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId, cliBackend: currentBackend })
       }
-      // Register Flow sessions for pillar auto-callback notifications (Claude only)
-      if (phase === 'flow' && !useCodex && !useCopilot && !useOllama) {
+      // Register Flow sessions for pillar auto-callback notifications and parent association.
+      // All backends need registration so pillar children are correctly parented to
+      // the spawning chat (not the last-active Claude session).
+      if (phase === 'flow') {
         const cliSessionIdToRegister = chunk.sessionId || existingCliSession
         if (cliSessionIdToRegister) {
           const { registerFlowSession } = useMCP()
-          registerFlowSession(cliSessionIdToRegister, getCliModelName(model), cliOptions.cwd, sessionId)
+          const resolvedModelName = useOllama ? getOllamaModelName(model) : useCopilot ? getCopilotModelName(model) : useCodex ? getCodexModelName(model) : getCliModelName(model)
+          registerFlowSession(cliSessionIdToRegister, resolvedModelName, cliOptions.cwd, sessionId)
         }
       }
     } else if (chunk.type === 'tool_use') {

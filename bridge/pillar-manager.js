@@ -43,6 +43,22 @@ export class PillarManager {
   }
 
   /**
+   * Resolve a CLI session ID from a CLI request ID by checking all backend process maps.
+   * This allows us to find which CLI session spawned a pillar, regardless of backend.
+   */
+  _resolveCliSessionIdFromRequest(requestId) {
+    if (!requestId) return null
+    for (const backend of Object.values(this.backends)) {
+      if (backend?.processes?.has(requestId)) {
+        const entry = backend.processes.get(requestId)
+        // Claude/Copilot use .sessionId, Codex uses .threadId
+        return entry.sessionId || entry.threadId || null
+      }
+    }
+    return null
+  }
+
+  /**
    * Spawn a new pillar CLI session.
    * Returns immediately with pillarId and metadata.
    */
@@ -132,6 +148,11 @@ export class PillarManager {
     }
 
     // Notify browser to create the session in IndexedDB
+    // Resolve flowCliSessionId from the actual spawning session (via request ID → CLI session ID),
+    // falling back to the globally registered Flow session for backward compat.
+    const resolvedFlowCliSessionId = this._resolveCliSessionIdFromRequest(flowRequestId)
+      || this.flowSession?.cliSessionId
+      || null
     const modelLabel = resolvedBackend === 'ollama' ? `ollama:${resolvedModel}` : resolvedBackend === 'codex' ? `codex:${resolvedModel}` : resolvedBackend === 'copilot' ? `copilot:${resolvedModel}` : `claude-cli:${resolvedModel}`
     this.broadcast({
       type: 'pillar_session_created',
@@ -140,7 +161,7 @@ export class PillarManager {
       model: modelLabel,
       backend: resolvedBackend,
       flowRequestId,
-      flowCliSessionId: session.flowCliSessionId || this.flowSession?.cliSessionId || null,
+      flowCliSessionId: resolvedFlowCliSessionId,
       prompt: fullPrompt
     })
 

@@ -26,13 +26,17 @@ export class CopilotCliManager {
       // Resume existing session
       args.push('--resume', sessionId)
       args.push('-p', fullPrompt)
+      // These flags are needed for both new and resumed sessions since
+      // stdin is set to 'ignore' — without them, Copilot may hang waiting
+      // for interactive input and exit with an error.
+      args.push('--allow-all')
+      args.push('--no-ask-user')
       console.log(`[copilot] Resuming session ${sessionId}`)
     } else {
       // New session — generate a session ID for tracking
       sessionId = randomUUID()
       args.push('--resume', sessionId) // Copilot accepts UUID for new sessions too
       args.push('-p', fullPrompt)
-      // Allow all tools and paths for non-interactive operation
       args.push('--allow-all')
       args.push('--no-ask-user')
       if (model) args.push('--model', model)
