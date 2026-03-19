@@ -23,9 +23,11 @@
     <ChatView
       v-if="activeSession"
       :session="activeSession"
+      :injected-message="injectedMessage"
       @update-session="handleUpdateSession"
       @transition-phase="handlePhaseTransition"
       @navigate-to-pillar="handleSelectSession"
+      @clear-injected="injectedMessage = null"
     />
     <div v-else class="h-full flex items-center justify-center">
       <div class="text-center">
@@ -74,7 +76,10 @@
     @close="showCommandPalette = false"
     @select-session="(id) => { showCommandPalette = false; handleSelectSession(id) }"
     @new-chat="() => { showCommandPalette = false; handleNewChat() }"
-    @settings="() => { showCommandPalette = false; showSettings = true }"
+    @open-settings="() => { showCommandPalette = false; showSettings = true }"
+    @spawn-pillar="handleCommandPaletteSpawnPillar"
+    @inject-message="handleInjectMessage"
+    @toggle-sidebar="() => { showCommandPalette = false; sidebarCollapsed = !sidebarCollapsed }"
   />
 
   <!-- Full diff modal from Changes Panel -->
@@ -132,6 +137,7 @@ const showSplash = ref(true)
 const showSettings = ref(false)
 const showCommandPalette = ref(false)
 const diffModalChange = ref(null)
+const injectedMessage = ref(null)
 
 // Global keyboard shortcuts (Ctrl+/, Ctrl+N, Escape)
 const cleanupShortcuts = registerKeyboardShortcuts({
@@ -333,5 +339,19 @@ async function handleDiffModalApply() {
   if (!diffModalChange.value) return
   await handleApplyChange(diffModalChange.value._index)
   diffModalChange.value = null
+}
+
+function handleCommandPaletteSpawnPillar(phase) {
+  showCommandPalette.value = false
+  handlePhaseTransition({
+    phase,
+    fromPhase: activeSession.value?.phase || 'flow',
+    sessionId: activeSessionId.value
+  })
+}
+
+function handleInjectMessage(msg) {
+  showCommandPalette.value = false
+  injectedMessage.value = msg
 }
 </script>

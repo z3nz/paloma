@@ -71,10 +71,11 @@ import { handleSlashCommand } from '../../services/slashCommands.js'
 import db from '../../services/db.js'
 
 const props = defineProps({
-  session: { type: Object, default: null }
+  session: { type: Object, default: null },
+  injectedMessage: { type: String, default: null }
 })
 
-const emit = defineEmits(['update-session', 'transition-phase', 'navigate-to-pillar'])
+const emit = defineEmits(['update-session', 'transition-phase', 'navigate-to-pillar', 'clear-injected'])
 
 const {
   messages, streaming, streamingContent, toolActivity, error,
@@ -157,6 +158,14 @@ watch(streaming, (newVal, oldVal) => {
     if (voiceMode.value && !isListening.value) {
       setTimeout(() => startListening(), 300)
     }
+  }
+})
+
+// Watch for injected messages from command palette
+watch(() => props.injectedMessage, (msg) => {
+  if (msg) {
+    handleSend({ content: msg, files: [] })
+    emit('clear-injected')
   }
 })
 
