@@ -209,3 +209,23 @@
 - **Insight:** Express 5 uses `path-to-regexp` v8+ which requires named parameters for wildcards. The old `'*'` syntax is no longer valid. Use `'/{*splat}'` instead (named wildcard parameter). This applies to any Express route using `*` — check all routes when upgrading Express.
 - **Action:** Replace `app.get('*', ...)` with `app.get('/{*splat}', ...)` in any Express 5+ app.
 - **Applied:** YES — fixed in `scripts/static-server.js`.
+
+---
+
+### Lesson: Per-session temp directory pattern for backends that lack --mcp-config
+- **Context:** Gemini CLI has no `--mcp-config` flag (unlike Claude/Copilot). MCP config must live in `.gemini/settings.json` relative to the process cwd. Gemini also uses `GEMINI_SYSTEM_MD` env var pointing to a file path — not an inline string flag — for its system prompt. Both constraints require writable temp files per session.
+- **Insight:** Bundle BOTH temp needs into a single per-session directory: `/tmp/paloma-gemini-{requestId}/` containing `.gemini/settings.json` (MCP config) and `system-prompt.md` (system prompt). Use that directory as the process `cwd`. Point `--include-directories` at the actual project root so Gemini still has workspace file context. Cleanup: `rmSync(sessionDir, { recursive: true, force: true })` in close/stop/error handlers. One `rm -rf` covers everything. This pattern will apply to any future CLI backend that stores config in cwd-relative files rather than accepting flags.
+- **Action:** Applied in `bridge/gemini-cli.js`. Reuse this pattern for any CLI backend that requires cwd-relative config files instead of explicit flag paths.
+- **Applied:** YES — committed as f19bee1
+
+### Lesson: GEMINI_SYSTEM_MD replaces the system prompt — not appends — design accordingly
+- **Context:** Claude CLI's `--append-system-prompt` adds to the built-in system prompt. Gemini's `GEMINI_SYSTEM_MD` env var fully REPLACES it. Gemini's built-in prompt includes interactive terminal conventions that conflict with Paloma's pillar behavior.
+- **Insight:** When a CLI backend replaces rather than appends the system prompt, you lose the model's baseline defaults but gain a clean slate. For Paloma this is an advantage — include only Paloma pillar instructions, no need to prepend Gemini's defaults. The model is capable of tool calling without them. If behavior is broken, prepend extracted defaults (`GEMINI_WRITE_SYSTEM_MD=1 gemini` exports them). Default to clean-slate; add base prompt only if needed.
+- **Action:** For any new CLI backend: check whether its system prompt mechanism replaces or appends, then decide whether to include the model's defaults. Start simple.
+- **Applied:** YES — established as design decision AD-2. `bridge/gemini-cli.js` uses GEMINI_SYSTEM_MD pointing to Paloma instructions only.
+
+### Lesson: CLI session IDs may be pre-generated, async-event, or done-event — design for whichever
+- **Context:** Claude CLI accepts `--session-id` (pre-generated UUID). Codex assigns a thread ID server-side, emitted via `thread.started` JSONL. Gemini assigns its own session ID returned in an `init` JSONL event. Three different patterns across three backends.
+- **Insight:** Don't assume you control session ID assignment. When a CLI assigns its own IDs: start with `null` sessionId in the process map, watch for the init event, update in-place, include in the `done` payload so PillarManager can store it for `--resume`. The general rule: document which pattern a CLI uses before writing the manager. The three patterns are: (1) sync pre-generated (Claude), (2) async init event (Gemini), (3) async done event (Codex).
+- **Action:** Pattern captured in `bridge/gemini-cli.js` (async init event). When adding future CLI backends, identify which pattern applies first.
+- **Applied:** YES — committed as f19bee1
