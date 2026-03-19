@@ -30,6 +30,10 @@ const flowProcessingCallback = ref(false)
 // Reactive: supervisor restart pending — show overlay until reload
 const restartPending = ref(false)
 
+// Reactive: session that should auto-resume after bridge reconnect
+// { sessionId, model, phase } or null
+const pendingAutoResume = ref(null)
+
 // pillarId → 'running' | 'streaming' | 'idle' | 'error' | 'stopped'
 const pillarStatuses = reactive(new Map())
 // pillarId → phase name ('scout', 'chart', 'forge', 'polish', 'ship')
@@ -92,7 +96,7 @@ function getAutoExecuteServers(mcpConfig) {
 
 // Shared helper: accumulate text from a pillar stream event into session state
 function _accumulatePillarStream(state, event, backend) {
-  if (backend === 'codex' || backend === 'copilot') {
+  if (backend === 'codex' || backend === 'copilot' || backend === 'gemini') {
     if (event.type === 'agent_message' && event.text) {
       state.streamingContent.value += event.text
     }
@@ -129,6 +133,12 @@ export function useMCP() {
             await _reconcilePillarSessions()
           } catch (e) {
             console.warn('[pillar] Failed to reconcile pillar sessions on reconnect:', e)
+          }
+          // Re-register Flow sessions and check for pending auto-resume
+          try {
+            await _reregisterFlowSessions()
+          } catch (e) {
+            console.warn('[flow] Failed to re-register Flow sessions on reconnect:', e)
           }
         }
       },
@@ -653,6 +663,15 @@ export function useMCP() {
     if (bridge) bridge.stopCopilotChat(requestId)
   }
 
+  function sendGeminiChat(options, callbacks) {
+    if (!bridge || !connected.value) throw new Error('Bridge not connected')
+    return bridge.sendGeminiChat(options, callbacks)
+  }
+
+  function stopGeminiChat(requestId) {
+    if (bridge) bridge.stopGeminiChat(requestId)
+  }
+
   function sendOllamaChat(options, callbacks) {
     if (!bridge || !connected.value) throw new Error('Bridge not connected')
     return bridge.sendOllamaChat(options, callbacks)
@@ -744,6 +763,40 @@ export function useMCP() {
     }
   }
 
+  /**
+   * After bridge reconnect, re-register Flow sessions so pillar callbacks work,
+   * and check for sessions that need auto-resume (interrupted by bridge restart).
+   */
+  async function _reregisterFlowSessions() {
+    if (!bridge) return
+    const allSessions = await db.sessions.toArray()
+    const { activeSessionId } = useSessions()
+
+    for (const session of allSessions) {
+      // Re-register Flow sessions that have a cliSessionId
+      if (session.phase === 'flow' && session.cliSessionId && !session.pillarId) {
+        const backend = session.cliBackend || 'claude'
+        const modelName = session.model || 'claude-sonnet-4-20250514'
+        flowDbSessionMap.set(session.cliSessionId, session.id)
+        activeFlowDbSessionId = session.id
+        bridge.registerFlowSession(session.cliSessionId, modelName, session.projectPath || undefined)
+        console.log(`[flow] Re-registered Flow session ${session.cliSessionId?.slice(0, 8)} → db session ${session.id}`)
+      }
+
+      // Check for sessions that need auto-resume after bridge restart
+      if (session.pendingResume && session.id === activeSessionId.value) {
+        console.log(`[flow] Session ${session.id} marked for auto-resume`)
+        pendingAutoResume.value = {
+          sessionId: session.id,
+          model: session.model,
+          phase: session.phase || 'flow'
+        }
+        // Clear the flag immediately so we don't auto-resume again on next reconnect
+        await db.sessions.update(session.id, { pendingResume: false })
+      }
+    }
+  }
+
   async function resolveProjectPath(name) {
     if (!bridge || !connected.value) return null
     try {
@@ -814,6 +867,8 @@ export function useMCP() {
     stopCodexChat,
     sendCopilotChat,
     stopCopilotChat,
+    sendGeminiChat,
+    stopGeminiChat,
     sendOllamaChat,
     stopOllamaChat,
     respondToAskUser,
@@ -830,7 +885,8 @@ export function useMCP() {
     pillarPhases,
     pillarParents,
     pillarDbSessions,
-    restartPending
+    restartPending,
+    pendingAutoResume
   }
 }
 

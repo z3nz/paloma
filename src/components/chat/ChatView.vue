@@ -86,7 +86,7 @@ const { voiceMode, isListening, startListening } = useVoiceInput()
 const { apiKey } = useSettings()
 const { dirHandle, projectRoot, projectInstructions, activePlans, roots, mcpConfig, refreshActivePlans } = useProject()
 const { search: searchFiles } = useFileIndex()
-const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool } = useMCP()
+const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool, pendingAutoResume } = useMCP()
 const { isAutoApproved, approveForSession, approveToolForSession } = usePermissions()
 
 // Unified: show ToolConfirmation for either OpenRouter or CLI tool calls
@@ -157,6 +157,46 @@ watch(streaming, (newVal, oldVal) => {
     if (voiceMode.value && !isListening.value) {
       setTimeout(() => startListening(), 300)
     }
+  }
+})
+
+// Auto-resume: when bridge reconnects after a restart that interrupted streaming,
+// automatically re-send the last user message to continue the conversation.
+watch(pendingAutoResume, async (resume) => {
+  if (!resume) return
+  if (!props.session || resume.sessionId !== props.session.id) return
+  if (streaming.value) return
+
+  // Clear the flag immediately to prevent re-triggering
+  pendingAutoResume.value = null
+
+  // Small delay to let the UI settle after reconnect
+  await new Promise(r => setTimeout(r, 1000))
+
+  // Find the last user message to replay
+  const lastUserMsg = messages.value.findLast(m => m.role === 'user')
+  if (!lastUserMsg?.content) {
+    console.warn('[auto-resume] No user message found to resume')
+    return
+  }
+
+  console.log('[auto-resume] Resuming conversation after bridge restart')
+  const title = await sendMessage(
+    props.session.id,
+    'Please continue where you left off.',
+    [],
+    apiKey.value,
+    resume.model || props.session.model,
+    dirHandle.value,
+    resume.phase || props.session.phase,
+    projectInstructions.value,
+    activePlans.value,
+    searchFiles,
+    mcpConfig.value,
+    roots.value
+  )
+  if (title) {
+    emit('update-session', props.session.id, { title })
   }
 })
 
