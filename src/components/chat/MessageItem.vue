@@ -148,6 +148,7 @@ const shortModelName = computed(() => {
   const m = props.message.model
   if (!m) return null
   if (m.startsWith('ollama:')) return m.replace('ollama:', '').split(':')[0]
+  if (m.startsWith('gemini-cli:')) return 'Gemini ' + m.replace('gemini-cli:', '').charAt(0).toUpperCase() + m.replace('gemini-cli:', '').slice(1)
   if (m.startsWith('copilot-cli:')) return m.replace('copilot-cli:', '')
   if (m.startsWith('codex-cli:')) return 'Codex'
   if (m.includes(':')) return m.split(':')[1]

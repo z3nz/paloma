@@ -1380,9 +1380,9 @@ This is informational — Adam is communicating directly with the pillar. Decide
       return
     }
 
-    const isStream = event.type === 'claude_stream' || event.type === 'codex_stream' || event.type === 'copilot_stream' || event.type === 'ollama_stream'
-    const isDone = event.type === 'claude_done' || event.type === 'codex_done' || event.type === 'copilot_done' || event.type === 'ollama_done'
-    const isError = event.type === 'claude_error' || event.type === 'codex_error' || event.type === 'copilot_error' || event.type === 'ollama_error'
+    const isStream = event.type === 'claude_stream' || event.type === 'codex_stream' || event.type === 'copilot_stream' || event.type === 'gemini_stream' || event.type === 'ollama_stream'
+    const isDone = event.type === 'claude_done' || event.type === 'codex_done' || event.type === 'copilot_done' || event.type === 'gemini_done' || event.type === 'ollama_done'
+    const isError = event.type === 'claude_error' || event.type === 'codex_error' || event.type === 'copilot_error' || event.type === 'gemini_error' || event.type === 'ollama_error'
 
     if (isStream) {
       const cliEvent = event.event
@@ -1396,7 +1396,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
       })
 
       // Accumulate text content — backend-specific extraction
-      if (session.backend === 'codex' || session.backend === 'copilot') {
+      if (session.backend === 'codex' || session.backend === 'copilot' || session.backend === 'gemini') {
         if (cliEvent.type === 'agent_message' && cliEvent.text) {
           this._appendOutput(session, cliEvent.text)
         }
@@ -1642,6 +1642,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
     }
     if (backend === 'codex') return 'gpt-5.1-codex-max'
     if (backend === 'copilot') return 'claude-sonnet-4.6'
+    if (backend === 'gemini') return 'flash'
     // PHASE_MODEL_SUGGESTIONS values are like 'claude-cli:opus' — extract just the model name
     const suggestion = PHASE_MODEL_SUGGESTIONS[pillar] || 'claude-cli:sonnet'
     return suggestion.split(':')[1] || 'sonnet'

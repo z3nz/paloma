@@ -220,6 +220,30 @@ export function createMcpBridge() {
           streamListeners.delete(msg.id)
           listener.onError?.(msg.error)
         }
+      } else if (msg.type === 'gemini_ack' && msg.id) {
+        const p = pending.get(msg.id)
+        if (p) {
+          pending.delete(msg.id)
+          p.resolve({ requestId: msg.requestId, sessionId: msg.sessionId })
+        }
+      } else if (msg.type === 'gemini_stream' && msg.id) {
+        const listener = streamListeners.get(msg.id)
+        if (listener) {
+          listener.onStream?.(msg.event)
+        }
+      } else if (msg.type === 'gemini_done' && msg.id) {
+        const listener = streamListeners.get(msg.id)
+        if (listener) {
+          streamListeners.delete(msg.id)
+          listener.onDone?.(msg.sessionId, msg.exitCode)
+        }
+      } else if (msg.type === 'gemini_error' && msg.id) {
+        console.error(`[gemini] error:`, msg.error)
+        const listener = streamListeners.get(msg.id)
+        if (listener) {
+          streamListeners.delete(msg.id)
+          listener.onError?.(msg.error)
+        }
       } else if (msg.type === 'ollama_ack' && msg.id) {
         const p = pending.get(msg.id)
         if (p) {
@@ -452,6 +476,14 @@ export function createMcpBridge() {
     _send({ type: 'copilot_stop', requestId })
   }
 
+  function sendGeminiChat(options, callbacks) {
+    return _sendChatWithTimeout('gemini_chat', crypto.randomUUID(), options, callbacks)
+  }
+
+  function stopGeminiChat(requestId) {
+    _send({ type: 'gemini_stop', requestId })
+  }
+
   function sendOllamaChat(options, callbacks) {
     return _sendChatWithTimeout('ollama_chat', crypto.randomUUID(), options, callbacks)
   }
@@ -511,7 +543,7 @@ export function createMcpBridge() {
     _send({ type: 'pillar_user_message', pillarId, message })
   }
 
-  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendOllamaChat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, sendPillarUserMessage, getState }
+  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendGeminiChat, stopGeminiChat, sendOllamaChat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, sendPillarUserMessage, getState }
 }
 
 // Enable HMR boundary — errors here don't cascade to full reload

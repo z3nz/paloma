@@ -20,12 +20,14 @@ export const CLI_MODELS = [
   { id: 'copilot-cli:claude-opus-4.6', name: 'Claude Opus 4.6 (Copilot)', context_length: 200000, copilot: true, pricing: ANTHROPIC_PRICING.opus },
   { id: 'copilot-cli:gpt-5.4', name: 'GPT-5.4 (Copilot)', context_length: 200000, copilot: true, pricing: FREE_PRICING },
   { id: 'copilot-cli:gemini-3-pro-preview', name: 'Gemini 3 Pro (Copilot)', context_length: 200000, copilot: true, pricing: FREE_PRICING },
+  { id: 'gemini-cli:flash', name: 'Gemini Flash (CLI)', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
+  { id: 'gemini-cli:pro', name: 'Gemini Pro (CLI)', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
   { id: 'ollama:qwen2.5-coder:32b', name: 'Qwen 2.5 Coder 32B', context_length: 32768, ollama: true, pricing: FREE_PRICING },
   { id: 'ollama:qwen2.5-coder:7b', name: 'Qwen 2.5 Coder 7B', context_length: 32768, ollama: true, pricing: FREE_PRICING }
 ]
 
 export function isCliModel(modelId) {
-  return modelId?.startsWith('claude-cli:') || modelId?.startsWith('claude-cli-direct:') || modelId?.startsWith('codex-cli:') || modelId?.startsWith('copilot-cli:') || modelId?.startsWith('ollama:')
+  return modelId?.startsWith('claude-cli:') || modelId?.startsWith('claude-cli-direct:') || modelId?.startsWith('codex-cli:') || modelId?.startsWith('copilot-cli:') || modelId?.startsWith('gemini-cli:') || modelId?.startsWith('ollama:')
 }
 
 export function isCodexModel(modelId) {
@@ -34,6 +36,14 @@ export function isCodexModel(modelId) {
 
 export function isCopilotModel(modelId) {
   return modelId?.startsWith('copilot-cli:')
+}
+
+export function isGeminiModel(modelId) {
+  return modelId?.startsWith('gemini-cli:')
+}
+
+export function getGeminiModelName(modelId) {
+  return modelId?.split(':')[1] || 'flash'
 }
 
 export function isOllamaModel(modelId) {
@@ -372,6 +382,69 @@ export async function* streamOllamaChat(sendFn, options) {
         yield { type: 'tool_use', id: tu.id, name: tu.name, input: tu.input || {} }
       } else if (event.type === 'tool_result') {
         // Bridge emits tool_result after executing the tool
+        yield { type: 'tool_result', toolUseId: event.toolUseId, content: event.content }
+      } else if (event.type === 'result' && event.subtype === 'done') {
+        continue
+      }
+    }
+  }
+}
+
+/**
+ * Async generator for Gemini CLI events. Same agent_message format as Codex/Copilot.
+ * Yields: { type: 'content', text } | { type: 'session_id', sessionId }
+ */
+export async function* streamGeminiChat(sendFn, options) {
+  const queue = []
+  let resolve = null
+  let done = false
+  let streamError = null
+
+  function push(item) {
+    queue.push(item)
+    if (resolve) {
+      resolve()
+      resolve = null
+    }
+  }
+
+  function waitForItem() {
+    if (queue.length > 0 || done) return Promise.resolve()
+    return new Promise(r => { resolve = r })
+  }
+
+  const { requestId, sessionId } = await sendFn(options, {
+    onStream(event) {
+      push(event)
+    },
+    onDone(sid, exitCode) {
+      push({ type: 'result', subtype: 'done', sessionId: sid, exitCode })
+      done = true
+      if (resolve) { resolve(); resolve = null }
+    },
+    onError(err) {
+      console.error(`[gemini] stream error:`, err)
+      streamError = err
+      done = true
+      if (resolve) { resolve(); resolve = null }
+    }
+  })
+
+  yield { type: 'session_id', sessionId, requestId }
+
+  while (!done || queue.length > 0) {
+    await waitForItem()
+    if (streamError) throw new Error(streamError)
+
+    while (queue.length > 0) {
+      const event = queue.shift()
+
+      if (event.type === 'agent_message' && event.text) {
+        yield { type: 'content', text: event.text }
+      } else if (event.type === 'tool_use') {
+        const tu = event.tool_use || {}
+        yield { type: 'tool_use', id: tu.id, name: tu.name, input: tu.input || {} }
+      } else if (event.type === 'tool_result') {
         yield { type: 'tool_result', toolUseId: event.toolUseId, content: event.content }
       } else if (event.type === 'result' && event.subtype === 'done') {
         continue

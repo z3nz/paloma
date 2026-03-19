@@ -1,4 +1,4 @@
-import { isDirectCliModel, isCodexModel, isCopilotModel, isOllamaModel, getCliModelName, getCodexModelName, getCopilotModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamCopilotChat, streamOllamaChat } from '../services/claudeStream.js'
+import { isDirectCliModel, isCodexModel, isCopilotModel, isGeminiModel, isOllamaModel, getCliModelName, getCodexModelName, getCopilotModelName, getGeminiModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamCopilotChat, streamGeminiChat, streamOllamaChat } from '../services/claudeStream.js'
 import { useMCP } from './useMCP.js'
 import { useProject } from './useProject.js'
 import { useToolExecution } from './useToolExecution.js'
@@ -23,17 +23,18 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     sessionState = activeState()
   }
 
-  const { sendClaudeChat, sendCodexChat, sendCopilotChat, sendOllamaChat } = useMCP()
+  const { sendClaudeChat, sendCodexChat, sendCopilotChat, sendGeminiChat, sendOllamaChat } = useMCP()
   const { addActivity, markActivityDone, toolActivity } = useToolExecution(sessionState)
 
   const useCodex = isCodexModel(model)
   const useCopilot = isCopilotModel(model)
+  const useGemini = isGeminiModel(model)
   const useOllama = isOllamaModel(model)
   const session = await db.sessions.get(sessionId)
 
   // If backend changed from previous session, start fresh
   const existingBackend = session?.cliBackend || 'claude'
-  const currentBackend = useOllama ? 'ollama' : useCopilot ? 'copilot' : useCodex ? 'codex' : 'claude'
+  const currentBackend = useOllama ? 'ollama' : useGemini ? 'gemini' : useCopilot ? 'copilot' : useCodex ? 'codex' : 'claude'
   const existingCliSession = (existingBackend === currentBackend) ? (session?.cliSessionId || null) : null
   console.log(`[cli] ${existingCliSession ? 'Resuming' : 'New'} ${currentBackend} session, model=${model}`)
 
@@ -53,7 +54,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     }
   }
 
-  const resolvedModel = useOllama ? getOllamaModelName(model) : useCopilot ? getCopilotModelName(model) : useCodex ? getCodexModelName(model) : getCliModelName(model)
+  const resolvedModel = useOllama ? getOllamaModelName(model) : useGemini ? getGeminiModelName(model) : useCopilot ? getCopilotModelName(model) : useCodex ? getCodexModelName(model) : getCliModelName(model)
   const cliOptions = {
     prompt,
     model: resolvedModel,
@@ -74,12 +75,14 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
 
   const sendFn = useOllama
     ? (opts, cbs) => sendOllamaChat(opts, cbs)
-    : useCopilot
-      ? (opts, cbs) => sendCopilotChat(opts, cbs)
-      : useCodex
-        ? (opts, cbs) => sendCodexChat(opts, cbs)
-        : (opts, cbs) => sendClaudeChat(opts, cbs)
-  const streamGenerator = useOllama ? streamOllamaChat : useCopilot ? streamCopilotChat : useCodex ? streamCodexChat : streamClaudeChat
+    : useGemini
+      ? (opts, cbs) => sendGeminiChat(opts, cbs)
+      : useCopilot
+        ? (opts, cbs) => sendCopilotChat(opts, cbs)
+        : useCodex
+          ? (opts, cbs) => sendCodexChat(opts, cbs)
+          : (opts, cbs) => sendClaudeChat(opts, cbs)
+  const streamGenerator = useOllama ? streamOllamaChat : useGemini ? streamGeminiChat : useCopilot ? streamCopilotChat : useCodex ? streamCodexChat : streamClaudeChat
 
   for await (const chunk of streamGenerator(sendFn, cliOptions)) {
     if (chunk.type === 'content') {
@@ -102,7 +105,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
         const cliSessionIdToRegister = chunk.sessionId || existingCliSession
         if (cliSessionIdToRegister) {
           const { registerFlowSession } = useMCP()
-          const resolvedModelName = useOllama ? getOllamaModelName(model) : useCopilot ? getCopilotModelName(model) : useCodex ? getCodexModelName(model) : getCliModelName(model)
+          const resolvedModelName = useOllama ? getOllamaModelName(model) : useGemini ? getGeminiModelName(model) : useCopilot ? getCopilotModelName(model) : useCodex ? getCodexModelName(model) : getCliModelName(model)
           registerFlowSession(cliSessionIdToRegister, resolvedModelName, cliOptions.cwd, sessionId)
         }
       }
@@ -170,9 +173,11 @@ export function stopCli(sessionState, model) {
     sessionState = activeState()
   }
   if (sessionState.cliRequestId) {
-    const { stopClaudeChat, stopCodexChat, stopCopilotChat, stopOllamaChat } = useMCP()
+    const { stopClaudeChat, stopCodexChat, stopCopilotChat, stopGeminiChat, stopOllamaChat } = useMCP()
     if (model && isOllamaModel(model)) {
       stopOllamaChat(sessionState.cliRequestId)
+    } else if (model && isGeminiModel(model)) {
+      stopGeminiChat(sessionState.cliRequestId)
     } else if (model && isCopilotModel(model)) {
       stopCopilotChat(sessionState.cliRequestId)
     } else if (model && isCodexModel(model)) {

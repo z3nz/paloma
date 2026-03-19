@@ -9,22 +9,23 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Bridge:** Node.js WebSocket + HTTP server (`bridge/`) on port 19191 — serves both WebSocket API and built frontend
 - **MCP Proxy:** SSE + Streamable HTTP (`bridge/mcp-proxy-server.js`) on port 19192
 - **Custom MCP Servers:** `mcp-servers/` (version-controlled, travel with git clone)
-- **AI Backends:** Claude CLI (`bridge/claude-cli.js`), Codex CLI (`bridge/codex-cli.js`), Copilot CLI (`bridge/copilot-cli.js`), and Ollama (`bridge/ollama-manager.js`) as subprocess/API-managed sessions
+- **AI Backends:** Claude CLI (`bridge/claude-cli.js`), Codex CLI (`bridge/codex-cli.js`), Copilot CLI (`bridge/copilot-cli.js`), Gemini CLI (`bridge/gemini-cli.js`), and Ollama (`bridge/ollama-manager.js`) as subprocess/API-managed sessions
 - **Production serving:** `npm start` builds frontend via Vite, then serves `dist/` from bridge HTTP server on port 19191. Access at `http://localhost:19191`
 - **Development:** `npm run dev:full` runs Vite HMR (port 5173) + bridge (port 19191) concurrently
-- **Backend resilience:** BackendHealth module (`bridge/backend-health.js`) probes all backends at startup; PillarManager auto-falls back through chain: claude → copilot → codex → ollama
+- **Backend resilience:** BackendHealth module (`bridge/backend-health.js`) probes all backends at startup; PillarManager auto-falls back through chain: claude → copilot → gemini → codex → ollama
 - **Email:** Gmail polling + session spawning (`bridge/email-watcher.js`), daily continuity journal at 11 PM
 - **Deep reference:** `.paloma/docs/architecture-reference.md` — every file, data flow, schema, and pattern documented
 
 ### Multi-Backend Architecture
-- PillarManager accepts a `backends` map: `{ claude: ClaudeCliManager, codex: CodexCliManager, copilot: CopilotCliManager, ollama: OllamaManager }`
+- PillarManager accepts a `backends` map: `{ claude: ClaudeCliManager, codex: CodexCliManager, copilot: CopilotCliManager, gemini: GeminiCliManager, ollama: OllamaManager }`
 - Each pillar session has a `backend` field — selected via `pillar_spawn({ backend: 'copilot' })`
 - Flow always runs on Claude (needs MCP tool loop for pillar orchestration)
-- Claude emits `claude_stream`/`claude_done`/`claude_error`; Codex emits `codex_stream`/`codex_done`/`codex_error`; Copilot emits `copilot_stream`/`copilot_done`/`copilot_error`
+- Claude emits `claude_stream`/`claude_done`/`claude_error`; Codex emits `codex_stream`/`codex_done`/`codex_error`; Copilot emits `copilot_stream`/`copilot_done`/`copilot_error`; Gemini emits `gemini_stream`/`gemini_done`/`gemini_error`
 - All event types handled in `_handleCliEvent` with backend-specific text extraction
 - Browser receives `backend` field in `pillar_stream` events for format-aware rendering
 - Codex also available as MCP tool (`codex`/`codex-reply`) for Claude pillars to call
 - **Copilot CLI** (`bridge/copilot-cli.js`): GitHub Copilot CLI v1.0.5+ standalone binary. Supports Claude, GPT-5.x, and Gemini models. Has built-in GitHub MCP server, `--output-format json` (JSONL), `--resume`, `--allow-all`/`--yolo` permissions. Auth via `GH_TOKEN` from `gh auth`.
+- **Gemini CLI** (`bridge/gemini-cli.js`): Google's Gemini CLI. System prompt via `GEMINI_SYSTEM_MD` env var (replaces, not appends). MCP config via per-session temp dir `.gemini/settings.json` (no `--mcp-config` flag). Session ID captured from `init` event, used for `--resume`. Auth via `GEMINI_API_KEY`. Free tier: Flash only, 250 req/day.
 - `AGENTS.md` = Codex's project instruction file (equivalent of `CLAUDE.md`)
 - ChatGPT login restricts Codex to GPT-5.1-Codex family. API key auth needed for o3/o4-mini.
 

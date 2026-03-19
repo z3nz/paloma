@@ -12,6 +12,7 @@ import { McpManager } from './mcp-manager.js'
 import { ClaudeCliManager } from './claude-cli.js'
 import { CodexCliManager } from './codex-cli.js'
 import { CopilotCliManager } from './copilot-cli.js'
+import { GeminiCliManager } from './gemini-cli.js'
 import { OllamaManager } from './ollama-manager.js'
 import { McpProxyServer } from './mcp-proxy-server.js'
 import { PillarManager, OLLAMA_ALLOWED_SERVERS } from './pillar-manager.js'
@@ -26,6 +27,7 @@ const manager = new McpManager()
 const cliManager = new ClaudeCliManager()
 const codexManager = new CodexCliManager()
 const copilotManager = new CopilotCliManager()
+const geminiManager = new GeminiCliManager()
 const ollamaManager = new OllamaManager()
 let mcpProxy = null
 let pillarManager = null
@@ -192,9 +194,10 @@ async function main() {
   cliManager.mcpProxyPort = proxyPort
   codexManager.mcpProxyPort = proxyPort
   copilotManager.mcpProxyPort = proxyPort
+  geminiManager.mcpProxyPort = proxyPort
 
   // Wire PillarManager with multi-backend support
-  const backends = { claude: cliManager, codex: codexManager, copilot: copilotManager, ollama: ollamaManager }
+  const backends = { claude: cliManager, codex: codexManager, copilot: copilotManager, gemini: geminiManager, ollama: ollamaManager }
   pillarManager = new PillarManager(backends, {
     projectRoot: process.cwd(),
     broadcast,
@@ -466,6 +469,29 @@ async function main() {
         } catch (e) {
           ws.send(JSON.stringify({ type: 'copilot_error', id: msg.id, error: e.message }))
         }
+      } else if (msg.type === 'gemini_chat') {
+        try {
+          const { requestId, sessionId } = geminiManager.chat(
+            {
+              prompt: msg.prompt,
+              model: msg.model,
+              sessionId: msg.sessionId,
+              systemPrompt: msg.systemPrompt,
+              cwd: msg.cwd
+            },
+            (event) => {
+              if (ws.readyState !== 1) return
+              ws.send(JSON.stringify({ ...event, id: msg.id }))
+              if (event.type === 'gemini_done' || event.type === 'gemini_error') {
+                cliRequestToWs.delete(requestId)
+              }
+            }
+          )
+          cliRequestToWs.set(requestId, ws)
+          ws.send(JSON.stringify({ type: 'gemini_ack', id: msg.id, requestId, sessionId }))
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'gemini_error', id: msg.id, error: e.message }))
+        }
       } else if (msg.type === 'ollama_chat') {
         try {
           // Convert MCP tools to Ollama's tool format (only if requested)
@@ -638,6 +664,9 @@ async function main() {
       } else if (msg.type === 'copilot_stop') {
         cliRequestToWs.delete(msg.requestId)
         copilotManager.stop(msg.requestId)
+      } else if (msg.type === 'gemini_stop') {
+        cliRequestToWs.delete(msg.requestId)
+        geminiManager.stop(msg.requestId)
       } else if (msg.type === 'ollama_stop') {
         cliRequestToWs.delete(msg.requestId)
         ollamaManager.stop(msg.requestId)
@@ -700,6 +729,7 @@ async function main() {
     if (pillarManager) pillarManager.shutdown()
     cliManager.shutdown()
     codexManager.shutdown()
+    geminiManager.shutdown()
     ollamaManager.shutdown()
     if (mcpProxy) await mcpProxy.shutdown()
     await manager.shutdown()

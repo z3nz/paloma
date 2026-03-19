@@ -3,7 +3,7 @@ import { promisify } from 'util'
 
 const execFileAsync = promisify(execFile)
 
-const FALLBACK_CHAIN = ['claude', 'copilot', 'codex', 'ollama']
+const FALLBACK_CHAIN = ['claude', 'copilot', 'gemini', 'codex', 'ollama']
 
 /**
  * Probes each AI backend's readiness at bridge startup and caches results.
@@ -18,6 +18,7 @@ export class BackendHealth {
       claude:  { available: false, reason: 'not checked', lastCheck: null },
       codex:   { available: false, reason: 'not checked', lastCheck: null },
       copilot: { available: false, reason: 'not checked', lastCheck: null },
+      gemini:  { available: false, reason: 'not checked', lastCheck: null },
       ollama:  { available: false, reason: 'not checked', lastCheck: null, models: [] }
     }
   }
@@ -31,6 +32,7 @@ export class BackendHealth {
       this.checkClaude(),
       this.checkCodex(),
       this.checkCopilot(),
+      this.checkGemini(),
       this.checkOllama()
     ])
 
@@ -94,6 +96,22 @@ export class BackendHealth {
         ? 'binary not found'
         : `gh auth failed: ${e.message}`
       this.status.copilot = { available: false, reason, lastCheck: now }
+    }
+  }
+
+  async checkGemini() {
+    const now = new Date().toISOString()
+    try {
+      await execFileAsync('which', ['gemini'])
+
+      // Gemini CLI needs GEMINI_API_KEY env var for subprocess use
+      if (process.env.GEMINI_API_KEY) {
+        this.status.gemini = { available: true, reason: 'API key set', lastCheck: now }
+      } else {
+        this.status.gemini = { available: false, reason: 'GEMINI_API_KEY not set', lastCheck: now }
+      }
+    } catch {
+      this.status.gemini = { available: false, reason: 'binary not found', lastCheck: now }
     }
   }
 
