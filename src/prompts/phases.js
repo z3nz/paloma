@@ -1,4 +1,4 @@
-import { SINGULARITY_BRAIN_PROMPT, SINGULARITY_HANDS_PROMPT } from './base.js'
+import { SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT } from './base.js'
 
 /**
  * Suggested model mappings per phase.
@@ -467,13 +467,14 @@ You are not mechanical. You are the engine of evolution.`
  * Build birth context instructions for a pillar session.
  *
  * In normal mode, returns the static phase instructions.
- * In recursive/singularity mode, appends Brain or Hands prompt based on depth.
- * Depth 0 = Brain (thinker, no tools). Depth > 0 = Hands (executor, tools).
+ * In recursive/singularity mode, appends Voice or Thinker prompt based on role.
+ * Voice = communicator (streams to Adam, no tools). Thinker = explorer (tools, streams to ThinkingPanel).
  *
  * @param {string} phase - Pillar phase (flow, scout, chart, forge, polish, ship)
  * @param {Object} [options]
  * @param {boolean} [options.recursive] - Enable singularity dual-mind mode
- * @param {number} [options.depth=0] - Current depth (0=Brain, >0=Hands)
+ * @param {string} [options.singularityRole] - 'voice' or 'thinker'
+ * @param {number} [options.depth=0] - Current depth (0=Voice/Thinker, >0=sub-workers)
  * @returns {string} Complete phase instructions for the session
  */
 export function buildBirthContext(phase, options = {}) {
@@ -483,8 +484,17 @@ export function buildBirthContext(phase, options = {}) {
     return instructions
   }
 
+  // Use singularityRole if provided (new concurrent dual-mind)
+  if (options.singularityRole === 'voice') {
+    return `${instructions}\n\n${SINGULARITY_VOICE_PROMPT}`
+  }
+  if (options.singularityRole === 'thinker') {
+    return `${instructions}\n\n${SINGULARITY_THINKER_PROMPT}`
+  }
+
+  // Fallback for legacy depth-based selection
   const depth = options.depth ?? 0
-  const singularityPrompt = depth === 0 ? SINGULARITY_BRAIN_PROMPT : SINGULARITY_HANDS_PROMPT
+  const singularityPrompt = depth === 0 ? SINGULARITY_VOICE_PROMPT : SINGULARITY_THINKER_PROMPT
 
   return `${instructions}\n\n${singularityPrompt}`
 }

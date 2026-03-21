@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
-import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_BRAIN_PROMPT, SINGULARITY_HANDS_PROMPT } from '../src/prompts/base.js'
+import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT } from '../src/prompts/base.js'
 import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
 
 const MAX_RUNTIME_MS = 30 * 60 * 1000 // 30 minutes
@@ -37,6 +37,7 @@ export class PillarManager {
     this.notificationWindowStart = Date.now()
     this._pendingChildCompletions = new Map() // childPillarId → resolve function
     this._pendingNotifications = [] // queued notifications for non-browser Flow (Copilot/Codex CLI)
+    this._singularityGroups = new Map() // singularityGroupId → { voicePillarId, thinkerPillarId, voiceReady, thinkerReady, ... }
 
     // Periodic cleanup of terminal sessions (every 5 min)
     this._cleanupInterval = setInterval(() => this._cleanupTerminalSessions(), 5 * 60 * 1000)
@@ -62,32 +63,38 @@ export class PillarManager {
    * Spawn a new pillar CLI session.
    * Returns immediately with pillarId and metadata.
    */
-  async spawn({ pillar, prompt, model, flowRequestId, planFile, backend, parentPillarId, recursive, depth }) {
+  async spawn({ pillar, prompt, model, flowRequestId, planFile, backend, parentPillarId, recursive, depth, singularityRole }) {
+    // Singularity dual-mind: spawn Voice + Thinker concurrently
+    const resolvedBackend = backend || 'claude'
+    if (recursive && (depth || 0) === 0 && resolvedBackend === 'ollama' && !singularityRole) {
+      return this._spawnSingularityGroup({ pillar, prompt, model, flowRequestId, planFile, backend: resolvedBackend, parentPillarId })
+    }
+
     const pillarId = randomUUID()
     const cliSessionId = randomUUID()
-    let resolvedBackend = backend || 'claude'
+    let finalBackend = resolvedBackend
 
     // Layer 1: Pre-spawn health gate — check if requested backend is available
     let fallbackFrom = null
-    if (this.health && !this.health.isAvailable(resolvedBackend)) {
-      const fallbackBackend = this.health.getFallback(resolvedBackend)
+    if (this.health && !this.health.isAvailable(finalBackend)) {
+      const fallbackBackend = this.health.getFallback(finalBackend)
       if (fallbackBackend) {
-        console.warn(`[pillar] Backend ${resolvedBackend} unavailable (${this.health.status[resolvedBackend]?.reason}) — falling back to ${fallbackBackend}`)
-        fallbackFrom = resolvedBackend
-        resolvedBackend = fallbackBackend
+        console.warn(`[pillar] Backend ${finalBackend} unavailable (${this.health.status[finalBackend]?.reason}) — falling back to ${fallbackBackend}`)
+        fallbackFrom = finalBackend
+        finalBackend = fallbackBackend
       } else {
-        console.error(`[pillar] Backend ${resolvedBackend} unavailable and no fallback available`)
+        console.error(`[pillar] Backend ${finalBackend} unavailable and no fallback available`)
         return {
           pillarId: null,
           pillar,
           status: 'error',
-          message: `Backend ${resolvedBackend} is unavailable (${this.health.status[resolvedBackend]?.reason}) and no fallback backends are available.`
+          message: `Backend ${finalBackend} is unavailable (${this.health.status[finalBackend]?.reason}) and no fallback backends are available.`
         }
       }
     }
 
     // Concurrency warning for Ollama
-    if (resolvedBackend === 'ollama') {
+    if (finalBackend === 'ollama') {
       const activeOllama = this._countActiveOllamaSessions()
       if (activeOllama >= MAX_CONCURRENT_OLLAMA) {
         console.warn(`[pillar] ⚠ Ollama concurrency at ${activeOllama}/${MAX_CONCURRENT_OLLAMA} — spawning anyway but memory pressure may occur`)
@@ -96,10 +103,10 @@ export class PillarManager {
 
     // Resolve model: use provided, or phase suggestion, or default
     // Recursive children automatically get the small fast model (7B)
-    const resolvedModel = model || this._defaultModel(pillar, resolvedBackend, { recursive, depth })
+    const resolvedModel = model || this._defaultModel(pillar, finalBackend, { recursive, depth, singularityRole })
 
     // Build system prompt from disk (Ollama gets condensed prompt)
-    const systemPrompt = await this._buildSystemPrompt(pillar, { planFilter: planFile, recursive, depth, backend: resolvedBackend })
+    const systemPrompt = await this._buildSystemPrompt(pillar, { planFilter: planFile, recursive, depth, singularityRole, backend: finalBackend })
 
     // Compose the full first message with birth protocol
     const fullPrompt = `${BIRTH_MESSAGE}\n\n${prompt}`
@@ -110,7 +117,7 @@ export class PillarManager {
       cliSessionId,
       pillar,
       model: resolvedModel,
-      backend: resolvedBackend,
+      backend: finalBackend,
       status: 'running',       // running | idle | completed | error | stopped
       currentlyStreaming: true,
       turnCount: 1,
@@ -130,7 +137,11 @@ export class PillarManager {
       _toolRounds: 0,          // Ollama tool call round counter
       _originalPrompt: fullPrompt,  // saved for fallback replay
       _planFile: planFile || null,  // saved for fallback system prompt rebuild
-      _fallbackAttempted: false     // prevents infinite retry loops
+      _fallbackAttempted: false,    // prevents infinite retry loops
+      // Singularity dual-mind fields
+      singularityGroupId: null,     // UUID linking Voice ↔ Thinker
+      singularityRole: singularityRole || null,  // 'voice' | 'thinker' | null
+      _voiceStreamBuffer: ''        // Voice only: buffer for <to-thinker> tag detection
     }
 
     this.pillars.set(pillarId, session)
@@ -142,7 +153,7 @@ export class PillarManager {
         type: 'pillar_fallback',
         pillarId,
         from: fallbackFrom,
-        to: resolvedBackend,
+        to: finalBackend,
         reason: this.health.status[fallbackFrom]?.reason || 'unavailable'
       })
     }
@@ -153,13 +164,13 @@ export class PillarManager {
     const resolvedFlowCliSessionId = this._resolveCliSessionIdFromRequest(flowRequestId)
       || this.flowSession?.cliSessionId
       || null
-    const modelLabel = resolvedBackend === 'ollama' ? `ollama:${resolvedModel}` : resolvedBackend === 'codex' ? `codex:${resolvedModel}` : resolvedBackend === 'copilot' ? `copilot:${resolvedModel}` : `claude-cli:${resolvedModel}`
+    const modelLabel = finalBackend === 'ollama' ? `ollama:${resolvedModel}` : finalBackend === 'codex' ? `codex:${resolvedModel}` : finalBackend === 'copilot' ? `copilot:${resolvedModel}` : `claude-cli:${resolvedModel}`
     this.broadcast({
       type: 'pillar_session_created',
       pillarId,
       pillar,
       model: modelLabel,
-      backend: resolvedBackend,
+      backend: finalBackend,
       flowRequestId,
       flowCliSessionId: resolvedFlowCliSessionId,
       prompt: fullPrompt
@@ -311,8 +322,15 @@ export class PillarManager {
       return { pillarId, status: 'not_found', message: `No pillar session found with id ${pillarId}` }
     }
 
-    // If this is a Brain waiting for Hands, use stopTree to kill the whole family
-    if (session._waitingForHands) {
+    // If this is a Voice in a singularity group, use stopTree to kill both Voice + Thinker
+    if (session.singularityGroupId && session.singularityRole === 'voice') {
+      // Clean up the singularity group
+      const group = this._singularityGroups.get(session.singularityGroupId)
+      if (group) {
+        clearTimeout(group.completionTimeout)
+        for (const timer of group._idleNudgeTimers.values()) clearTimeout(timer)
+        this._singularityGroups.delete(session.singularityGroupId)
+      }
       return this.stopTree({ pillarId })
     }
 
@@ -329,7 +347,6 @@ export class PillarManager {
 
     session.status = 'stopped'
     session.currentlyStreaming = false
-    session._waitingForHands = false
     session.lastActivity = new Date().toISOString()
     session.messageQueue = [] // clear queued messages to prevent memory leak
 
@@ -369,8 +386,15 @@ export class PillarManager {
       return { pillarId, status: 'not_found', message: `No pillar session found with id ${pillarId}` }
     }
 
-    // Clear waiting flag FIRST to prevent stop() → stopTree() recursion
-    session._waitingForHands = false
+    // Clear singularity group FIRST to prevent stop() → stopTree() recursion
+    if (session.singularityGroupId) {
+      const group = this._singularityGroups.get(session.singularityGroupId)
+      if (group) {
+        clearTimeout(group.completionTimeout)
+        for (const timer of group._idleNudgeTimers.values()) clearTimeout(timer)
+        this._singularityGroups.delete(session.singularityGroupId)
+      }
+    }
 
     const descendants = this._getDescendants(pillarId)
     const stopped = []
@@ -419,8 +443,8 @@ export class PillarManager {
     let count = 0
     for (const [, session] of this.pillars) {
       if (session.backend === 'ollama' && (session.status === 'running' || session.currentlyStreaming)) {
-        // Exclude Brain sessions waiting for Hands — they're not actively using GPU
-        if (session._waitingForHands) continue
+        // Exclude idle singularity sessions waiting for partner messages
+        if (session.singularityRole && session.status === 'idle') continue
         count++
       }
     }
@@ -721,98 +745,279 @@ export class PillarManager {
     )
   }
 
+  // =============================================
+  // SINGULARITY DUAL-MIND SYSTEM
+  // =============================================
+
   /**
-   * Extract <delegate>...</delegate> tags from Brain's output text.
-   * Returns array of task description strings.
+   * Spawn a Singularity group: Voice + Thinker running concurrently.
+   * Voice streams to Adam (no tools). Thinker explores with tools (visible in ThinkingPanel).
+   * Both communicate bidirectionally. Both must go <ready/> to complete.
    */
-  _extractDelegations(text) {
-    const delegations = []
-    const regex = /<delegate>([\s\S]*?)<\/delegate>/g
-    let match
-    while ((match = regex.exec(text)) !== null) {
-      const task = match[1].trim()
-      if (task) delegations.push(task)
+  async _spawnSingularityGroup({ pillar, prompt, model, flowRequestId, planFile, backend, parentPillarId }) {
+    const singularityGroupId = randomUUID()
+    console.log(`[singularity] Spawning dual-mind group ${singularityGroupId.slice(0, 8)}`)
+
+    // Spawn Voice first (primary session — its pillarId is returned to caller)
+    const voiceResult = await this.spawn({
+      pillar,
+      prompt,
+      model: model || 'qwen3-coder:30b',
+      flowRequestId,
+      planFile,
+      backend,
+      parentPillarId,
+      recursive: true,
+      depth: 0,
+      singularityRole: 'voice'
+    })
+
+    if (!voiceResult.pillarId) {
+      return voiceResult // spawn failed
     }
-    return delegations
+
+    // Spawn Thinker (child of Voice so stopTree kills both)
+    const thinkerResult = await this.spawn({
+      pillar,
+      prompt: `Adam asks: ${prompt}\n\nBegin exploring. Use your tools to research this question, then send your findings to Voice.`,
+      model: model || 'qwen3-coder:30b',
+      flowRequestId,
+      planFile,
+      backend,
+      parentPillarId: voiceResult.pillarId, // Thinker is child of Voice
+      recursive: true,
+      depth: 1,
+      singularityRole: 'thinker'
+    })
+
+    if (!thinkerResult.pillarId) {
+      console.error(`[singularity] Thinker spawn failed — stopping Voice`)
+      this.stop({ pillarId: voiceResult.pillarId })
+      return thinkerResult
+    }
+
+    // Link both sessions to the group
+    const voiceSession = this.pillars.get(voiceResult.pillarId)
+    const thinkerSession = this.pillars.get(thinkerResult.pillarId)
+    voiceSession.singularityGroupId = singularityGroupId
+    thinkerSession.singularityGroupId = singularityGroupId
+
+    // Replace VOICE_PILLAR_ID placeholder in Thinker's prompt (for pillar_message)
+    // The prompt is already sent, but we store it for reference
+    thinkerSession._voicePartnerPillarId = voiceResult.pillarId
+
+    // Create the group tracker
+    this._singularityGroups.set(singularityGroupId, {
+      singularityGroupId,
+      voicePillarId: voiceResult.pillarId,
+      thinkerPillarId: thinkerResult.pillarId,
+      voiceReady: false,
+      thinkerReady: false,
+      completionTimeout: null,
+      _idleNudgeTimers: new Map() // pillarId → timer
+    })
+
+    // Broadcast singularity group creation to frontend
+    this.broadcast({
+      type: 'singularity_created',
+      groupId: singularityGroupId,
+      voicePillarId: voiceResult.pillarId,
+      thinkerPillarId: thinkerResult.pillarId
+    })
+
+    // Send Thinker a system message with Voice's pillarId so it knows where to send findings
+    // Queue it so it arrives after the first turn starts
+    setTimeout(() => {
+      this.sendMessage({
+        pillarId: thinkerResult.pillarId,
+        message: `[SYSTEM]: Your Voice partner's pillarId is "${voiceResult.pillarId}". Use pillar_message({ pillarId: "${voiceResult.pillarId}", message: "..." }) to send findings.`
+      })
+    }, 100)
+
+    console.log(`[singularity] Group ${singularityGroupId.slice(0, 8)} created: Voice=${voiceResult.pillarId.slice(0, 8)}, Thinker=${thinkerResult.pillarId.slice(0, 8)}`)
+
+    // Return Voice's result as the primary session
+    return {
+      ...voiceResult,
+      singularityGroupId,
+      thinkerPillarId: thinkerResult.pillarId,
+      message: `Singularity dual-mind spawned: Voice + Thinker running concurrently.`
+    }
   }
 
   /**
-   * Handle singularity delegations — spawn Hands instances for each task
-   * IN PARALLEL, wait for all to complete, then feed results back to Brain.
+   * Filter Voice's stream output to strip <to-thinker> tags.
+   * Tags are extracted and routed to the Thinker session.
+   * Returns the text safe to stream to Adam.
    */
-  async _handleSingularityDelegations(session, delegations) {
-    const HANDS_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes per Hands instance
+  _filterVoiceStream(session, text) {
+    session._voiceStreamBuffer = (session._voiceStreamBuffer || '') + text
 
-    // Mark Brain as waiting so it doesn't count against concurrency
-    session._waitingForHands = true
-    session.status = 'waiting'
-    this.broadcast({ type: 'pillar_status', pillarId: session.pillarId, status: 'waiting' })
-
-    // Spawn all Hands instances in parallel
-    const spawnAndWait = async (task, index) => {
-      console.log(`[singularity] Spawning Hands #${index + 1}: ${task.slice(0, 80)}...`)
-
-      const child = await this.spawn({
-        pillar: 'forge',
-        prompt: task,
-        backend: 'ollama',
-        parentPillarId: session.pillarId,
-        recursive: true,
-        depth: (session.depth || 0) + 1
-      })
-
-      if (!child.pillarId) {
-        return `[Hands error: ${child.message}]`
+    // Extract complete <to-thinker> tags
+    const tagRegex = /<to-thinker>([\s\S]*?)<\/to-thinker>/g
+    let match
+    while ((match = tagRegex.exec(session._voiceStreamBuffer)) !== null) {
+      const message = match[1].trim()
+      if (message) {
+        this._queueSingularityMessage(session.singularityGroupId, 'thinker', message)
       }
-
-      // Wait for Hands with timeout protection
-      const output = await new Promise((resolve) => {
-        this._pendingChildCompletions.set(child.pillarId, resolve)
-
-        setTimeout(() => {
-          if (this._pendingChildCompletions.has(child.pillarId)) {
-            this._pendingChildCompletions.delete(child.pillarId)
-            console.warn(`[singularity] Hands ${child.pillarId.slice(0, 8)} timed out after ${HANDS_TIMEOUT_MS / 1000}s`)
-            this.stop({ pillarId: child.pillarId })
-            resolve('[Hands timed out]')
-          }
-        }, HANDS_TIMEOUT_MS)
-      })
-
-      console.log(`[singularity] Hands #${index + 1} completed — ${(output || '').length} chars`)
-      return output || '(Hands produced no output)'
+      session._voiceStreamBuffer = session._voiceStreamBuffer.slice(0, match.index)
+        + session._voiceStreamBuffer.slice(match.index + match[0].length)
+      tagRegex.lastIndex = 0 // reset after mutation
     }
 
-    const results = await Promise.all(delegations.map((task, i) => spawnAndWait(task, i)))
+    // Find safe-to-stream portion (everything before a potential partial tag)
+    const partialTagIdx = session._voiceStreamBuffer.indexOf('<to-thinker')
+    if (partialTagIdx === -1) {
+      // No potential tag — flush entire buffer
+      const toStream = session._voiceStreamBuffer
+      session._voiceStreamBuffer = ''
+      return toStream
+    } else {
+      // Stream everything before the potential tag start
+      const toStream = session._voiceStreamBuffer.slice(0, partialTagIdx)
+      session._voiceStreamBuffer = session._voiceStreamBuffer.slice(partialTagIdx)
+      return toStream
+    }
+  }
 
-    // Clear waiting state
-    session._waitingForHands = false
+  /**
+   * Route a message from one Singularity partner to the other.
+   */
+  _queueSingularityMessage(groupId, targetRole, message) {
+    const group = this._singularityGroups.get(groupId)
+    if (!group) return
 
-    // If Brain was stopped/killed while waiting, don't try to resume it
-    if (session.status === 'stopped' || session.status === 'error') {
-      console.log(`[singularity] Brain was stopped while waiting for Hands — discarding results`)
-      return
+    const targetPillarId = targetRole === 'voice' ? group.voicePillarId : group.thinkerPillarId
+    const prefix = targetRole === 'voice' ? '[THINKER]' : '[VOICE]'
+    const formattedMessage = `${prefix}: ${message}`
+
+    // Use existing sendMessage mechanism — handles queuing if busy
+    this.sendMessage({ pillarId: targetPillarId, message: formattedMessage })
+  }
+
+  /**
+   * Check if a Singularity session's output contains <ready/>.
+   * Manages the agreement state machine: both must go ready to complete.
+   */
+  _checkSingularityReady(session, completedOutput) {
+    if (!session.singularityGroupId) return false
+
+    const hasReady = /<ready\s*\/?>/.test(completedOutput)
+    if (!hasReady) return false
+
+    const group = this._singularityGroups.get(session.singularityGroupId)
+    if (!group) return false
+
+    // Mark this role as ready
+    if (session.singularityRole === 'voice') {
+      group.voiceReady = true
+      console.log(`[singularity] Voice is ready (group ${session.singularityGroupId.slice(0, 8)})`)
+    } else {
+      group.thinkerReady = true
+      console.log(`[singularity] Thinker is ready (group ${session.singularityGroupId.slice(0, 8)})`)
     }
 
-    // Feed results back to Brain as a follow-up message
-    const resultMessage = delegations.length === 1
-      ? `Your Hands completed the task. Here is the result:\n\n${results[0]}`
-      : `Your Hands completed ${delegations.length} tasks. Here are the results:\n\n${results.map((r, i) => `### Task ${i + 1}\n${r}`).join('\n\n---\n\n')}`
-
-    // Broadcast the results as a user message to the Brain's chat
+    // Broadcast ready state to frontend
     this.broadcast({
-      type: 'pillar_message_saved',
-      pillarId: session.pillarId,
-      role: 'user',
-      content: resultMessage
+      type: 'singularity_ready',
+      groupId: session.singularityGroupId,
+      role: session.singularityRole,
+      voiceReady: group.voiceReady,
+      thinkerReady: group.thinkerReady
     })
 
-    // Continue Brain with the results
-    session.turnCount++
-    session.status = 'running'
-    session.currentlyStreaming = true
-    session.lastActivity = new Date().toISOString()
-    this._startCliTurn(session, resultMessage, null, true)
+    // Check for agreement
+    if (group.voiceReady && group.thinkerReady) {
+      console.log(`[singularity] Both ready — completing group ${session.singularityGroupId.slice(0, 8)}`)
+      this._completeSingularityGroup(group)
+      return true
+    }
+
+    // First ready — start timeout for the other
+    if (!group.completionTimeout) {
+      group.completionTimeout = setTimeout(() => {
+        console.warn(`[singularity] Agreement timeout — forcing completion for group ${group.singularityGroupId.slice(0, 8)}`)
+        this._completeSingularityGroup(group)
+      }, 3 * 60 * 1000) // 3 minutes
+    }
+
+    return true
+  }
+
+  /**
+   * Complete a Singularity group: stop both sessions, broadcast done, clean up.
+   */
+  _completeSingularityGroup(group) {
+    clearTimeout(group.completionTimeout)
+
+    // Clear any idle nudge timers
+    for (const timer of group._idleNudgeTimers.values()) {
+      clearTimeout(timer)
+    }
+
+    const voiceSession = this.pillars.get(group.voicePillarId)
+    const thinkerSession = this.pillars.get(group.thinkerPillarId)
+
+    // Stop Thinker
+    if (thinkerSession && thinkerSession.status !== 'stopped') {
+      this.stop({ pillarId: group.thinkerPillarId })
+    }
+
+    // Mark Voice as idle (not stopped — it's the primary session)
+    if (voiceSession) {
+      voiceSession.status = 'idle'
+      voiceSession.currentlyStreaming = false
+    }
+
+    // Broadcast completion to frontend
+    this.broadcast({
+      type: 'singularity_complete',
+      groupId: group.singularityGroupId,
+      voicePillarId: group.voicePillarId,
+      thinkerPillarId: group.thinkerPillarId
+    })
+
+    // Emit pillar_done for the Voice session (the primary session)
+    this.broadcast({
+      type: 'pillar_done',
+      pillarId: group.voicePillarId,
+      status: 'idle',
+      pillar: voiceSession?.pillar || 'flow'
+    })
+
+    // Cleanup
+    this._singularityGroups.delete(group.singularityGroupId)
+    console.log(`[singularity] Group ${group.singularityGroupId.slice(0, 8)} completed and cleaned up`)
+  }
+
+  /**
+   * Nudge an idle Singularity session to prevent deadlock.
+   * Called when a session's turn completes with no <ready/> and no queued partner messages.
+   */
+  _nudgeSingularityIdle(session) {
+    const group = this._singularityGroups.get(session.singularityGroupId)
+    if (!group) return
+
+    // Clear any existing nudge timer for this session
+    const existingTimer = group._idleNudgeTimers.get(session.pillarId)
+    if (existingTimer) clearTimeout(existingTimer)
+
+    const timer = setTimeout(() => {
+      // Only nudge if session is still idle and group still exists
+      const currentGroup = this._singularityGroups.get(session.singularityGroupId)
+      if (!currentGroup) return
+      if (session.status !== 'idle') return
+
+      const nudgeMessage = session.singularityRole === 'voice'
+        ? '[SYSTEM]: Your Thinker partner is waiting. Do you have everything you need to complete your response? If yes, include <ready/> in your response. If not, ask Thinker for what you need via <to-thinker> tags.'
+        : `[SYSTEM]: Voice is waiting for your findings. Send what you have via pillar_message({ pillarId: "${group.voicePillarId}", message: "..." }), then include <ready/> when done.`
+
+      console.log(`[singularity] Nudging idle ${session.singularityRole} (${session.pillarId.slice(0, 8)})`)
+      this.sendMessage({ pillarId: session.pillarId, message: nudgeMessage })
+    }, 30 * 1000) // 30 seconds
+
+    group._idleNudgeTimers.set(session.pillarId, timer)
   }
 
   /**
@@ -1348,9 +1553,9 @@ This is informational — Adam is communicating directly with the pillar. Decide
     }
 
     // For Ollama, pass tools so the model can call them
-    // Brain (depth 0 + recursive) gets NO tools — it delegates via <delegate> tags
-    const isSingularityBrain = session.recursive && (session.depth || 0) === 0
-    if (session.backend === 'ollama' && this.mcpManager && !isSingularityBrain) {
+    // Voice gets NO tools — it communicates via <to-thinker> tags
+    const isSingularityVoice = session.singularityRole === 'voice'
+    if (session.backend === 'ollama' && this.mcpManager && !isSingularityVoice) {
       chatOptions.tools = this._buildOllamaTools(session)
     }
 
@@ -1387,13 +1592,49 @@ This is informational — Adam is communicating directly with the pillar. Decide
     if (isStream) {
       const cliEvent = event.event
 
-      // Stream events to browser for live rendering
-      this.broadcast({
-        type: 'pillar_stream',
-        pillarId: session.pillarId,
-        backend: session.backend,
-        event: cliEvent
-      })
+      // Singularity stream routing: Voice filtered, both tagged with role
+      if (session.singularityRole === 'voice') {
+        // Extract text from event for Voice stream filtering
+        let rawText = ''
+        if (session.backend === 'ollama' && (cliEvent.text || cliEvent.content)) {
+          rawText = cliEvent.text || cliEvent.content || ''
+        } else if (cliEvent.type === 'content_block_delta' && cliEvent.delta?.text) {
+          rawText = cliEvent.delta.text
+        } else if (cliEvent.type === 'agent_message' && cliEvent.text) {
+          rawText = cliEvent.text
+        }
+
+        // Filter <to-thinker> tags out of Voice's stream
+        const filtered = rawText ? this._filterVoiceStream(session, rawText) : ''
+        if (filtered) {
+          this.broadcast({
+            type: 'pillar_stream',
+            pillarId: session.pillarId,
+            backend: session.backend,
+            singularityRole: 'voice',
+            singularityGroupId: session.singularityGroupId,
+            event: { ...cliEvent, text: filtered, content: filtered }
+          })
+        }
+      } else if (session.singularityRole === 'thinker') {
+        // Thinker: stream to ThinkingPanel (same event type, role-tagged)
+        this.broadcast({
+          type: 'pillar_stream',
+          pillarId: session.pillarId,
+          backend: session.backend,
+          singularityRole: 'thinker',
+          singularityGroupId: session.singularityGroupId,
+          event: cliEvent
+        })
+      } else {
+        // Normal (non-Singularity) session — broadcast as-is
+        this.broadcast({
+          type: 'pillar_stream',
+          pillarId: session.pillarId,
+          backend: session.backend,
+          event: cliEvent
+        })
+      }
 
       // Accumulate text content — backend-specific extraction
       if (session.backend === 'codex' || session.backend === 'copilot' || session.backend === 'gemini') {
@@ -1458,27 +1699,28 @@ This is informational — Adam is communicating directly with the pillar. Decide
         content: completedOutput
       })
 
-      // SINGULARITY: Check for <delegate> tags in Brain output
-      const isSingularityBrain = session.recursive && (session.depth || 0) === 0 && session.backend === 'ollama'
-      if (isSingularityBrain && completedOutput) {
-        const delegations = this._extractDelegations(completedOutput)
-        if (delegations.length > 0) {
-          console.log(`[singularity] Brain delegated ${delegations.length} task(s)`)
-          this._handleSingularityDelegations(session, delegations).catch(err => {
-            console.error(`[singularity] Delegation failed:`, err)
-            session._waitingForHands = false
-            session.status = 'idle'
-            session.currentlyStreaming = false
+      // SINGULARITY: Check for <ready/> agreement protocol
+      if (session.singularityRole && completedOutput) {
+        // Flush Voice's stream buffer on turn complete
+        if (session.singularityRole === 'voice' && session._voiceStreamBuffer) {
+          const remainder = session._voiceStreamBuffer
+          session._voiceStreamBuffer = ''
+          if (remainder.trim()) {
             this.broadcast({
-              type: 'pillar_done',
+              type: 'pillar_stream',
               pillarId: session.pillarId,
-              status: 'idle',
-              pillar: session.pillar,
-              error: `Singularity delegation failed: ${err.message}`
+              backend: session.backend,
+              singularityRole: 'voice',
+              singularityGroupId: session.singularityGroupId,
+              event: { text: remainder, content: remainder }
             })
-          })
-          return // Don't complete — waiting for Hands
+          }
         }
+
+        // Check for <ready/> and manage agreement
+        const isReady = this._checkSingularityReady(session, completedOutput)
+        // Don't fall through to normal completion for singularity sessions
+        // They either continue via queued messages or get nudged
       }
 
       // Check for queued messages
@@ -1499,6 +1741,12 @@ This is informational — Adam is communicating directly with the pillar. Decide
         this._startCliTurn(session, nextMessage, null, true)
       } else {
         session.status = 'idle'
+
+        // Singularity: nudge idle sessions to prevent deadlock
+        if (session.singularityRole && session.singularityGroupId) {
+          this._nudgeSingularityIdle(session)
+        }
+
         this.broadcast({
           type: 'pillar_done',
           pillarId: session.pillarId,
@@ -1634,10 +1882,12 @@ This is informational — Adam is communicating directly with the pillar. Decide
     this.stop({ pillarId })
   }
 
-  _defaultModel(pillar, backend = 'claude', { recursive, depth } = {}) {
+  _defaultModel(pillar, backend = 'claude', { recursive, depth, singularityRole } = {}) {
     if (backend === 'ollama') {
-      // Recursive children use the small fast model — big brain delegates, small hands act
-      if (recursive && depth > 0) return 'qwen2.5-coder:7b'
+      // Singularity: both Voice and Thinker use the big model
+      if (singularityRole === 'voice' || singularityRole === 'thinker') return 'qwen3-coder:30b'
+      // Recursive sub-workers (depth > 1) use the small fast model
+      if (recursive && depth > 1) return 'qwen2.5-coder:7b'
       return 'qwen3-coder:30b'
     }
     if (backend === 'codex') return 'gpt-5.1-codex-max'
@@ -1678,7 +1928,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
    * Build the system prompt for a pillar session by reading .paloma/ files from disk.
    * Mirrors the frontend's buildSystemPrompt() but uses fs instead of MCP/browser APIs.
    */
-  async _buildSystemPrompt(pillar, { planFilter, recursive, depth, backend } = {}) {
+  async _buildSystemPrompt(pillar, { planFilter, recursive, depth, singularityRole, backend } = {}) {
     // Ollama sessions use the condensed prompt (fits smaller context windows)
     let prompt = backend === 'ollama' ? OLLAMA_INSTRUCTIONS : BASE_INSTRUCTIONS
 
@@ -1728,15 +1978,15 @@ This is informational — Adam is communicating directly with the pillar. Decide
     prompt += '\n\n## Current Pillar: ' + this._capitalize(activePillar) + '\n\n'
     prompt += PHASE_INSTRUCTIONS[activePillar] || PHASE_INSTRUCTIONS.flow
 
-    // Inject singularity prompts in recursive/singularity mode
-    if (recursive) {
-      if (depth === 0) {
-        // Brain instance — the thinker (no tools, delegates via <delegate> tags)
-        prompt += '\n\n' + SINGULARITY_BRAIN_PROMPT
-      } else {
-        // Hands instance — the executor (has tools, receives tasks from Brain)
-        prompt += '\n\n' + SINGULARITY_HANDS_PROMPT
-      }
+    // Inject singularity prompts based on role
+    if (singularityRole === 'voice') {
+      prompt += '\n\n' + SINGULARITY_VOICE_PROMPT
+    } else if (singularityRole === 'thinker') {
+      prompt += '\n\n' + SINGULARITY_THINKER_PROMPT
+    } else if (recursive) {
+      // Legacy fallback: depth-based selection
+      const singularityPrompt = (depth || 0) === 0 ? SINGULARITY_VOICE_PROMPT : SINGULARITY_THINKER_PROMPT
+      prompt += '\n\n' + singularityPrompt
     }
 
     return prompt

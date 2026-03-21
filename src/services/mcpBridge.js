@@ -301,11 +301,17 @@ export function createMcpBridge() {
       } else if (msg.type === 'pillar_cli_session') {
         onPillarCliSession?.(msg)
       } else if (msg.type === 'pillar_stream') {
-        onPillarStream?.(msg.pillarId, msg.event, msg.backend)
+        onPillarStream?.(msg.pillarId, msg.event, msg.backend, msg.singularityRole, msg.singularityGroupId)
       } else if (msg.type === 'pillar_message_saved') {
         onPillarMessageSaved?.(msg)
       } else if (msg.type === 'pillar_done') {
         onPillarDone?.(msg)
+      } else if (msg.type === 'singularity_created') {
+        onSingularityCreated?.(msg)
+      } else if (msg.type === 'singularity_ready') {
+        onSingularityReady?.(msg)
+      } else if (msg.type === 'singularity_complete') {
+        onSingularityComplete?.(msg)
       } else if (msg.type === 'pillar_fallback') {
         onPillarFallback?.(msg)
       } else if (msg.type === 'flow_notification_start') {

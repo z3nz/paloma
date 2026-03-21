@@ -1,5 +1,7 @@
 <template>
-  <div class="flex flex-col h-full">
+  <div class="flex h-full">
+    <!-- Main chat column -->
+    <div class="flex flex-col flex-1 min-w-0 h-full">
     <MessageList
       :messages="messages"
       :streaming="streaming"
@@ -48,6 +50,10 @@
       :ask-user="pendingAskUser"
       @respond="handleAskUserRespond"
     />
+    </div>
+
+    <!-- Singularity Thinking Panel -->
+    <ThinkingPanel :group-id="activeSingularityGroupId" />
   </div>
 </template>
 
@@ -58,6 +64,7 @@ import PromptBuilder from '../prompt/PromptBuilder.vue'
 import DiffPreview from './DiffPreview.vue'
 import ToolConfirmation from './ToolConfirmation.vue'
 import AskUserDialog from './AskUserDialog.vue'
+import ThinkingPanel from './ThinkingPanel.vue'
 import { useChat } from '../../composables/useChat.js'
 import { useChanges } from '../../composables/useChanges.js'
 import { useVoiceInput } from '../../composables/useVoiceInput.js'
@@ -87,7 +94,16 @@ const { voiceMode, isListening, startListening } = useVoiceInput()
 const { apiKey } = useSettings()
 const { dirHandle, projectRoot, projectInstructions, activePlans, roots, mcpConfig, refreshActivePlans } = useProject()
 const { search: searchFiles } = useFileIndex()
-const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool, pendingAutoResume } = useMCP()
+const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool, pendingAutoResume, singularityGroups } = useMCP()
+
+// Find the active singularity group (v1: show the most recent one)
+const activeSingularityGroupId = computed(() => {
+  let lastGroupId = null
+  for (const [groupId] of singularityGroups) {
+    lastGroupId = groupId
+  }
+  return lastGroupId
+})
 const { isAutoApproved, approveForSession, approveToolForSession } = usePermissions()
 
 // Unified: show ToolConfirmation for either OpenRouter or CLI tool calls

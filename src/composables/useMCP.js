@@ -47,6 +47,10 @@ const pillarCleanupTimers = new Map()
 // Buffer stream events that arrive before onPillarSessionCreated completes (race condition fix)
 const pillarStreamBuffer = new Map() // pillarId → [{ event, backend }]
 
+// Singularity dual-mind state
+const singularityGroups = reactive(new Map()) // groupId → { voicePillarId, thinkerPillarId, voiceReady, thinkerReady }
+const singularityThinkerContent = reactive(new Map()) // groupId → accumulated thinker text
+
 const connected = ref(false)
 const connectionState = ref('disconnected') // 'disconnected' | 'connecting' | 'connected'
 const servers = ref({})
@@ -212,7 +216,17 @@ export function useMCP() {
           await updateSession(dbSessionId, { cliSessionId: msg.cliSessionId })
         }
       },
-      onPillarStream(pillarId, event, backend) {
+      onPillarStream(pillarId, event, backend, singularityRole, singularityGroupId) {
+        // Singularity Thinker: route to separate ThinkingPanel content
+        if (singularityRole === 'thinker' && singularityGroupId) {
+          const text = event.text || event.content || ''
+          if (text) {
+            const current = singularityThinkerContent.get(singularityGroupId) || ''
+            singularityThinkerContent.set(singularityGroupId, current + text)
+          }
+          return
+        }
+
         const dbSessionId = pillarSessionMap.get(pillarId)
         if (!dbSessionId) {
           // Session creation still in progress — buffer the event
@@ -255,6 +269,30 @@ export function useMCP() {
         // Update session timestamp
         const { updateSession } = useSessions()
         await updateSession(dbSessionId, {})
+      },
+      onSingularityCreated(msg) {
+        singularityGroups.set(msg.groupId, {
+          voicePillarId: msg.voicePillarId,
+          thinkerPillarId: msg.thinkerPillarId,
+          voiceReady: false,
+          thinkerReady: false
+        })
+        singularityThinkerContent.set(msg.groupId, '')
+      },
+      onSingularityReady(msg) {
+        const group = singularityGroups.get(msg.groupId)
+        if (group) {
+          group.voiceReady = msg.voiceReady
+          group.thinkerReady = msg.thinkerReady
+        }
+      },
+      onSingularityComplete(msg) {
+        const group = singularityGroups.get(msg.groupId)
+        if (group) {
+          group.voiceReady = true
+          group.thinkerReady = true
+        }
+        // Keep group data for display but mark as complete
       },
       async onPillarFallback(msg) {
         const dbSessionId = pillarSessionMap.get(msg.pillarId)
@@ -886,7 +924,9 @@ export function useMCP() {
     pillarParents,
     pillarDbSessions,
     restartPending,
-    pendingAutoResume
+    pendingAutoResume,
+    singularityGroups,
+    singularityThinkerContent
   }
 }
 
