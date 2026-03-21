@@ -132,7 +132,7 @@ const props = defineProps({
 
 const emit = defineEmits(['apply-code'])
 
-const HTML_CACHE_MAX = 100
+const HTML_CACHE_MAX = 300
 const htmlCache = new Map()
 
 const expanded = ref(false)

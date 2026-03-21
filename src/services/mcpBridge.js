@@ -358,7 +358,10 @@ export function createMcpBridge() {
 
   function _scheduleReconnect() {
     if (intentionalClose) return
-    const delay = RECONNECT_DELAYS[Math.min(reconnectAttempt, RECONNECT_DELAYS.length - 1)]
+    const baseDelay = RECONNECT_DELAYS[Math.min(reconnectAttempt, RECONNECT_DELAYS.length - 1)]
+    // Add random jitter (0-50% of base delay) to prevent thundering herd on bridge restart
+    const jitter = Math.floor(Math.random() * baseDelay * 0.5)
+    const delay = baseDelay + jitter
     reconnectAttempt++
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null

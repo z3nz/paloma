@@ -164,6 +164,10 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     }
   }
 
+  // Clean up Maps to prevent leaks if tool_result events were missed
+  toolUseToActivity.clear()
+  toolUseMeta.clear()
+
   return { content: accumulatedContent, usage }
 }
 

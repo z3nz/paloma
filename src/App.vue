@@ -6,8 +6,8 @@
   <WelcomeScreen v-if="!showSplash && !bridgeConnected" />
 
   <!-- Main App -->
+  <ErrorBoundary v-if="!showSplash && bridgeConnected">
   <AppLayout
-    v-else-if="!showSplash"
     :project-name="projectName"
     :sessions="sessions"
     :active-session-id="activeSessionId"
@@ -59,6 +59,7 @@
       />
     </template>
   </AppLayout>
+  </ErrorBoundary>
 
   <!-- Settings modal -->
   <SettingsModal
@@ -104,6 +105,7 @@ import ChangesPanel from './components/chat/ChangesPanel.vue'
 import DiffPreview from './components/chat/DiffPreview.vue'
 import RestartOverlay from './components/RestartOverlay.vue'
 import CommandPalette from './components/CommandPalette.vue'
+import ErrorBoundary from './components/ErrorBoundary.vue'
 import { useSettings } from './composables/useSettings.js'
 import { useProject } from './composables/useProject.js'
 import { useFileIndex } from './composables/useFileIndex.js'

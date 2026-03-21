@@ -14,11 +14,16 @@
         <polyline points="9 6 15 12 9 18"/>
       </svg>
 
-      <!-- Status dot -->
-      <span
-        class="tool-call-group__dot"
-        :class="runningCount > 0 ? 'tool-call-group__dot--running' : 'tool-call-group__dot--done'"
-      />
+      <!-- Status dot + icon -->
+      <span class="flex items-center gap-1">
+        <span
+          class="tool-call-group__dot"
+          :class="runningCount > 0 ? 'tool-call-group__dot--running' : errorCount > 0 ? 'tool-call-group__dot--error' : 'tool-call-group__dot--done'"
+        />
+        <span v-if="runningCount > 0" class="text-[10px] text-accent" aria-label="Running">...</span>
+        <span v-else-if="errorCount > 0" class="text-[10px] text-error" aria-label="Error">×</span>
+        <span v-else class="text-[10px] text-success" aria-label="Done">✓</span>
+      </span>
 
       <!-- Summary text -->
       <span class="tool-call-group__summary">
@@ -78,6 +83,10 @@ const userToggled = ref(false)  // Track if user manually toggled — respect th
 const runningCount = computed(() => {
   if (!props.live) return 0
   return props.activities.filter(a => a.status === 'running').length
+})
+
+const errorCount = computed(() => {
+  return props.activities.filter(a => a.status === 'error').length
 })
 
 const totalDuration = computed(() => {

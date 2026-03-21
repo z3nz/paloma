@@ -13,6 +13,8 @@
         @click="$emit('toggle-sidebar')"
         class="w-8 bg-bg-secondary border-r border-border flex flex-col items-center justify-center hover:bg-bg-hover transition-colors shrink-0 group"
         title="Expand sidebar (Ctrl+/)"
+        aria-label="Expand sidebar"
+        aria-expanded="false"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="text-text-muted group-hover:text-text-primary transition-colors">
           <polyline points="9 18 15 12 9 6" />

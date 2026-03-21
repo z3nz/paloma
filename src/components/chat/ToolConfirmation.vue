@@ -45,6 +45,7 @@
         <button
           @click="$emit('deny')"
           class="px-4 py-2 text-sm text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors flex items-center gap-1.5"
+          aria-label="Deny tool execution (N)"
         >
           Deny
           <kbd class="text-[10px] text-text-muted bg-bg-primary border border-border rounded px-1 py-0.5 font-mono">N</kbd>
@@ -102,6 +103,7 @@
               ? 'bg-danger/90 hover:bg-danger'
               : isExternalTool ? 'bg-purple-600/90 hover:bg-purple-600'
               : 'bg-success/90 hover:bg-success'"
+            aria-label="Allow tool execution (Y)"
           >
             Allow
             <kbd class="text-[10px] bg-white/10 border border-white/20 rounded px-1 py-0.5 font-mono">Y</kbd>

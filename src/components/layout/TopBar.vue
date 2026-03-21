@@ -4,6 +4,16 @@
       <span class="text-accent font-semibold text-sm tracking-wide">PALOMA</span>
       <span v-if="projectName" class="text-text-muted text-sm">/</span>
       <span v-if="projectName" class="text-text-secondary text-sm">{{ projectName }}</span>
+
+      <!-- Connection status (only shown when not connected) -->
+      <div v-if="connectionState === 'connecting'" class="flex items-center gap-1.5 ml-3">
+        <span class="w-2 h-2 rounded-full bg-warning animate-pulse" />
+        <span class="text-warning text-xs">Reconnecting...</span>
+      </div>
+      <div v-else-if="connectionState === 'disconnected'" class="flex items-center gap-1.5 ml-3">
+        <span class="w-2 h-2 rounded-full bg-error" />
+        <span class="text-error text-xs">Disconnected</span>
+      </div>
     </div>
 
     <!-- Center: cost & token display -->
@@ -138,7 +148,7 @@ const props = defineProps({
   activeModel: { type: String, default: '' }
 })
 const { sessionCost, sessionTokens, getContextUsage, formatCost, formatTokens } = useCostTracking()
-const { connected: mcpConnected, servers: mcpServers, autoConnect: mcpAutoConnect, callMcpTool, resolveProjectPath } = useMCP()
+const { connected: mcpConnected, connectionState, servers: mcpServers, autoConnect: mcpAutoConnect, callMcpTool, resolveProjectPath } = useMCP()
 const { projectName: currentProjectName, projectRoot, switchProject, listProjects, detachProject } = useProject()
 const { hogWild, toggleHogWild } = usePermissions()
 
