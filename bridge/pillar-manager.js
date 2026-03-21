@@ -141,6 +141,7 @@ export class PillarManager {
       // Singularity dual-mind fields
       singularityGroupId: null,     // UUID linking Voice ↔ Thinker
       singularityRole: singularityRole || null,  // 'voice' | 'thinker' | null
+      numCtx: singularityRole ? 65536 : null,  // Singularity sessions get 64K context
       _voiceStreamBuffer: ''        // Voice only: buffer for <to-thinker> tag detection
     }
 
@@ -1559,6 +1560,11 @@ This is informational — Adam is communicating directly with the pillar. Decide
       chatOptions.tools = this._buildOllamaTools(session)
     }
 
+    // Pass per-session num_ctx for Ollama (singularity sessions get 64K)
+    if (session.backend === 'ollama' && session.numCtx) {
+      chatOptions.numCtx = session.numCtx
+    }
+
     if (isResume) {
       // Resume: use --resume with existing CLI session ID
       chatOptions.sessionId = session.cliSessionId
@@ -1932,6 +1938,11 @@ This is informational — Adam is communicating directly with the pillar. Decide
     // Ollama sessions use the condensed prompt (fits smaller context windows)
     let prompt = backend === 'ollama' ? OLLAMA_INSTRUCTIONS : BASE_INSTRUCTIONS
 
+    // Singularity sessions (Voice/Thinker) get a drastically stripped system prompt:
+    // OLLAMA_INSTRUCTIONS + project instructions + role prompt ONLY.
+    // No plans, no roots, no phase instructions — saves ~25K tokens of context budget.
+    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker'
+
     // Claude CLI reads CLAUDE.md automatically, which includes instructions.md and roots
     // via @ references. Including them again here would duplicate ~43KB of content and
     // risk exceeding Linux's 128KB per-argument limit (MAX_ARG_STRLEN) when passed via
@@ -1948,19 +1959,21 @@ This is informational — Adam is communicating directly with the pillar. Decide
       }
     }
 
-    // Read active plans (always — CLAUDE.md does NOT include these)
-    const plansDir = join(this.projectRoot, '.paloma', 'plans')
-    let plans = await this._readActiveFiles(plansDir, 'active-')
-    if (planFilter) {
-      plans = plans.filter(p => p.name === planFilter)
-    }
-    if (plans.length > 0) {
-      prompt += '\n\n## Active Plans\n\n'
-      prompt += plans.map(p => `<plan name="${p.name}">\n${p.content}\n</plan>`).join('\n\n')
+    if (!isSingularity) {
+      // Read active plans (skip for singularity — plans are irrelevant to Voice/Thinker roles)
+      const plansDir = join(this.projectRoot, '.paloma', 'plans')
+      let plans = await this._readActiveFiles(plansDir, 'active-')
+      if (planFilter) {
+        plans = plans.filter(p => p.name === planFilter)
+      }
+      if (plans.length > 0) {
+        prompt += '\n\n## Active Plans\n\n'
+        prompt += plans.map(p => `<plan name="${p.name}">\n${p.content}\n</plan>`).join('\n\n')
+      }
     }
 
-    if (!claudeBackend) {
-      // Read roots (non-Claude backends only)
+    if (!claudeBackend && !isSingularity) {
+      // Read roots (skip for singularity — saves ~5.5K tokens)
       const rootsDir = join(this.projectRoot, '.paloma', 'roots')
       const roots = await this._readActiveFiles(rootsDir, 'root-')
       if (roots.length > 0) {
@@ -1973,10 +1986,12 @@ This is informational — Adam is communicating directly with the pillar. Decide
       }
     }
 
-    // Add phase instructions
-    const activePillar = pillar || 'flow'
-    prompt += '\n\n## Current Pillar: ' + this._capitalize(activePillar) + '\n\n'
-    prompt += PHASE_INSTRUCTIONS[activePillar] || PHASE_INSTRUCTIONS.flow
+    if (!isSingularity) {
+      // Add phase instructions (skip for singularity — Voice/Thinker have their own identity)
+      const activePillar = pillar || 'flow'
+      prompt += '\n\n## Current Pillar: ' + this._capitalize(activePillar) + '\n\n'
+      prompt += PHASE_INSTRUCTIONS[activePillar] || PHASE_INSTRUCTIONS.flow
+    }
 
     // Inject singularity prompts based on role
     if (singularityRole === 'voice') {
