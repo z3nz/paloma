@@ -3,33 +3,35 @@ import { useChat } from './useChat.js'
 import { useOpenRouter } from './useOpenRouter.js'
 import db from '../services/db.js'
 
-export function useCostTracking() {
-  const { messages } = useChat()
-  const { getModelInfo } = useOpenRouter()
+// Singleton state — computed once, shared across all callers
+const { messages } = useChat()
+const { getModelInfo } = useOpenRouter()
 
-  function calculateMessageCost(msg) {
-    if (!msg.usage || !msg.model) return 0
-    const model = getModelInfo(msg.model)
-    if (!model?.pricing) return 0
-    const promptPrice = parseFloat(model.pricing.prompt) || 0
-    const completionPrice = parseFloat(model.pricing.completion) || 0
-    return (msg.usage.promptTokens * promptPrice) + (msg.usage.completionTokens * completionPrice)
+function calculateMessageCost(msg) {
+  if (!msg.usage || !msg.model) return 0
+  const model = getModelInfo(msg.model)
+  if (!model?.pricing) return 0
+  const promptPrice = parseFloat(model.pricing.prompt) || 0
+  const completionPrice = parseFloat(model.pricing.completion) || 0
+  return (msg.usage.promptTokens * promptPrice) + (msg.usage.completionTokens * completionPrice)
+}
+
+const sessionCost = computed(() =>
+  messages.value
+    .filter(m => m.role === 'assistant' && m.usage)
+    .reduce((sum, m) => sum + calculateMessageCost(m), 0)
+)
+
+const sessionTokens = computed(() => {
+  const msgs = messages.value.filter(m => m.role === 'assistant' && m.usage)
+  return {
+    prompt: msgs.reduce((s, m) => s + (m.usage.promptTokens || 0), 0),
+    completion: msgs.reduce((s, m) => s + (m.usage.completionTokens || 0), 0),
+    total: msgs.reduce((s, m) => s + (m.usage.totalTokens || 0), 0)
   }
+})
 
-  const sessionCost = computed(() =>
-    messages.value
-      .filter(m => m.role === 'assistant' && m.usage)
-      .reduce((sum, m) => sum + calculateMessageCost(m), 0)
-  )
-
-  const sessionTokens = computed(() => {
-    const msgs = messages.value.filter(m => m.role === 'assistant' && m.usage)
-    return {
-      prompt: msgs.reduce((s, m) => s + (m.usage.promptTokens || 0), 0),
-      completion: msgs.reduce((s, m) => s + (m.usage.completionTokens || 0), 0),
-      total: msgs.reduce((s, m) => s + (m.usage.totalTokens || 0), 0)
-    }
-  })
+export function useCostTracking() {
 
   function getContextUsage(modelId) {
     const model = getModelInfo(modelId)

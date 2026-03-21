@@ -18,7 +18,8 @@ import { homedir } from 'node:os'
 const ALLOWED_ROOT = resolve(homedir())
 
 function isAllowed(filePath) {
-  return resolve(filePath).startsWith(ALLOWED_ROOT)
+  const resolved = resolve(filePath)
+  return resolved === ALLOWED_ROOT || resolved.startsWith(ALLOWED_ROOT + '/')
 }
 
 const server = new Server(

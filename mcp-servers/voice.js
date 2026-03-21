@@ -124,7 +124,7 @@ function runTTS(text, voice, speed) {
       '--lang', voice.startsWith('a') ? 'a' : 'b'
     ], {
       cwd: PROJECT_ROOT,
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['pipe', 'ignore', 'pipe'],
       timeout: timeoutMs
     })
 

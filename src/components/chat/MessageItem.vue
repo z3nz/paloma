@@ -120,7 +120,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { marked } from 'marked'
-import hljs from 'highlight.js'
+import hljs from '../../utils/highlight.js'
 import { useCostTracking } from '../../composables/useCostTracking.js'
 import ToolCallGroup from './ToolCallGroup.vue'
 import CallbackBadge from './CallbackBadge.vue'
@@ -134,8 +134,6 @@ const emit = defineEmits(['apply-code'])
 
 const HTML_CACHE_MAX = 100
 const htmlCache = new Map()
-
-const expanded = ref(false)
 
 const { formatCost, formatTokens, formatTokenBreakdown, calculateMessageCost } = useCostTracking()
 const messageCost = computed(() => calculateMessageCost(props.message))
@@ -153,26 +151,6 @@ const shortModelName = computed(() => {
   if (m.startsWith('codex-cli:')) return 'Codex'
   if (m.includes(':')) return m.split(':')[1]
   return m.split('/').pop()
-})
-
-// Format tool args for compact display (legacy tool messages)
-const formatArgs = computed(() => {
-  if (props.message.role !== 'tool') return ''
-  const args = props.message.toolArgs
-  if (!args) return ''
-  const values = Object.values(args)
-  if (values.length === 1) return JSON.stringify(values[0])
-  return Object.entries(args).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')
-})
-
-// Truncate tool result for display (legacy tool messages)
-const truncatedResult = computed(() => {
-  if (props.message.role !== 'tool') return ''
-  const content = props.message.content || ''
-  if (content.length > 2000) {
-    return content.slice(0, 2000) + '\n\n[Truncated...]'
-  }
-  return content
 })
 
 // For user messages, strip <file> tags from display

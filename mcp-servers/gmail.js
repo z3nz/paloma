@@ -64,6 +64,9 @@ function createOAuth2Client () {
   return new google.auth.OAuth2(clientId, clientSecret, REDIRECT_URI)
 }
 
+// Cache the Gmail client — token is read once, refreshes persist automatically
+let _cachedGmailClient = null
+
 function createGmailClient () {
   const oauth2Client = createOAuth2Client()
 
@@ -94,7 +97,10 @@ function createGmailClient () {
 }
 
 function ensureAuth () {
-  return createGmailClient()
+  if (!_cachedGmailClient) {
+    _cachedGmailClient = createGmailClient()
+  }
+  return _cachedGmailClient
 }
 
 async function runAuthFlow () {

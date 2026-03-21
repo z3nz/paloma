@@ -67,7 +67,7 @@
 <script setup>
 import { ref, computed, onBeforeUnmount } from 'vue'
 import ToolResult from './ToolResult.vue'
-import { parseToolName, getServerColor, getToolSummary, classifyResult, getResultSize } from '../../utils/toolClassifier.js'
+import { parseToolName, getServerColor, getToolSummary, classifyResult, getResultSize, formatDuration } from '../../utils/toolClassifier.js'
 
 const props = defineProps({
   activity: { type: Object, required: true },
@@ -109,12 +109,6 @@ const resultSize = computed(() => {
 
 function toggleExpanded() {
   if (hasResult.value) expanded.value = !expanded.value
-}
-
-function formatDuration(ms) {
-  if (ms < 1000) return `${ms}ms`
-  if (ms < 10000) return `${(ms / 1000).toFixed(1)}s`
-  return `${Math.round(ms / 1000)}s`
 }
 
 async function copyResult() {
