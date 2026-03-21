@@ -259,6 +259,8 @@ export async function* streamCodexChat(sendFn, options) {
 
       if (event.type === 'agent_message' && event.text) {
         yield { type: 'content', text: event.text }
+      } else if (event.type === 'session_id') {
+        yield { type: 'session_id', sessionId: event.sessionId, requestId }
       } else if (event.type === 'command_execution') {
         // Surface command executions as content so user sees what Codex did
         let text = ''
@@ -456,6 +458,8 @@ export async function* streamGeminiChat(sendFn, options) {
 
       if (event.type === 'agent_message' && event.text) {
         yield { type: 'content', text: event.text }
+      } else if (event.type === 'session_id') {
+        yield { type: 'session_id', sessionId: event.sessionId, requestId }
       } else if (event.type === 'tool_use') {
         const tu = event.tool_use || {}
         yield { type: 'tool_use', id: tu.id, name: tu.name, input: tu.input || {} }

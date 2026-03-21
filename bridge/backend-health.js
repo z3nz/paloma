@@ -1,5 +1,8 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+import { readFile } from 'fs/promises'
+import { join } from 'path'
+import { homedir } from 'os'
 
 const execFileAsync = promisify(execFile)
 
@@ -72,11 +75,25 @@ export class BackendHealth {
     try {
       await execFileAsync('which', ['codex'])
 
-      // Codex needs OPENAI_API_KEY env var
-      if (process.env.OPENAI_API_KEY) {
-        this.status.codex = { available: true, reason: 'API key set', lastCheck: now }
-      } else {
-        this.status.codex = { available: false, reason: 'OPENAI_API_KEY not set', lastCheck: now }
+      // Check CLI auth status — same pattern as Claude's auth check
+      // Note: codex prints status to stderr, not stdout
+      try {
+        const { stdout, stderr } = await execFileAsync('codex', ['login', 'status'], { timeout: 10000 })
+        const output = (stdout + ' ' + stderr).trim().toLowerCase()
+        if (output.includes('logged in')) {
+          this.status.codex = { available: true, reason: 'CLI authenticated', lastCheck: now }
+        } else if (process.env.OPENAI_API_KEY) {
+          this.status.codex = { available: true, reason: 'API key set', lastCheck: now }
+        } else {
+          this.status.codex = { available: false, reason: 'not authenticated (run: codex login)', lastCheck: now }
+        }
+      } catch {
+        // login status command failed — check env var as fallback
+        if (process.env.OPENAI_API_KEY) {
+          this.status.codex = { available: true, reason: 'API key set', lastCheck: now }
+        } else {
+          this.status.codex = { available: false, reason: 'auth check failed (run: codex login)', lastCheck: now }
+        }
       }
     } catch {
       this.status.codex = { available: false, reason: 'binary not found', lastCheck: now }
@@ -88,14 +105,29 @@ export class BackendHealth {
     try {
       await execFileAsync('which', ['copilot'])
 
-      // Check GitHub auth (Copilot uses gh auth)
-      await execFileAsync('gh', ['auth', 'status'], { timeout: 10000 })
-      this.status.copilot = { available: true, reason: 'gh authenticated', lastCheck: now }
-    } catch (e) {
-      const reason = e.code === 'ENOENT' || e.message?.includes('not found')
-        ? 'binary not found'
-        : `gh auth failed: ${e.message}`
-      this.status.copilot = { available: false, reason, lastCheck: now }
+      // Check Copilot's own auth — it stores credentials in ~/.copilot/config.json
+      // (copilot login — separate from gh auth)
+      try {
+        const configPath = join(homedir(), '.copilot', 'config.json')
+        const config = JSON.parse(await readFile(configPath, 'utf-8'))
+        if (config.logged_in_users?.length > 0) {
+          const user = config.logged_in_users[0].login || 'unknown'
+          this.status.copilot = { available: true, reason: `CLI authenticated (${user})`, lastCheck: now }
+        } else if (process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN) {
+          this.status.copilot = { available: true, reason: 'token env var set', lastCheck: now }
+        } else {
+          this.status.copilot = { available: false, reason: 'not authenticated (run: copilot login)', lastCheck: now }
+        }
+      } catch {
+        // Config file not found or unreadable — check env var fallback
+        if (process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN) {
+          this.status.copilot = { available: true, reason: 'token env var set', lastCheck: now }
+        } else {
+          this.status.copilot = { available: false, reason: 'auth check failed (run: copilot login)', lastCheck: now }
+        }
+      }
+    } catch {
+      this.status.copilot = { available: false, reason: 'binary not found', lastCheck: now }
     }
   }
 
@@ -104,11 +136,25 @@ export class BackendHealth {
     try {
       await execFileAsync('which', ['gemini'])
 
-      // Gemini CLI needs GEMINI_API_KEY env var for subprocess use
-      if (process.env.GEMINI_API_KEY) {
-        this.status.gemini = { available: true, reason: 'API key set', lastCheck: now }
-      } else {
-        this.status.gemini = { available: false, reason: 'GEMINI_API_KEY not set', lastCheck: now }
+      // Check Gemini's own OAuth credentials — stored in ~/.gemini/
+      // (gemini CLI authenticates via Google OAuth, not API key)
+      try {
+        const accountsPath = join(homedir(), '.gemini', 'google_accounts.json')
+        const accounts = JSON.parse(await readFile(accountsPath, 'utf-8'))
+        if (accounts.active) {
+          this.status.gemini = { available: true, reason: `CLI authenticated (${accounts.active})`, lastCheck: now }
+        } else if (process.env.GEMINI_API_KEY) {
+          this.status.gemini = { available: true, reason: 'API key set', lastCheck: now }
+        } else {
+          this.status.gemini = { available: false, reason: 'not authenticated (run: gemini)', lastCheck: now }
+        }
+      } catch {
+        // OAuth files not found — check env var fallback
+        if (process.env.GEMINI_API_KEY) {
+          this.status.gemini = { available: true, reason: 'API key set', lastCheck: now }
+        } else {
+          this.status.gemini = { available: false, reason: 'auth check failed (run: gemini to authenticate)', lastCheck: now }
+        }
       }
     } catch {
       this.status.gemini = { available: false, reason: 'binary not found', lastCheck: now }

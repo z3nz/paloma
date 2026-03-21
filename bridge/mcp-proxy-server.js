@@ -144,7 +144,7 @@ export class McpProxyServer {
             prompt: { type: 'string', description: 'The initial message/task for the pillar' },
             model: { type: 'string', description: 'Optional model override (e.g., "opus", "sonnet" for Claude; "gpt-5.1-codex-max" for Codex). Defaults to phase suggestion.' },
             planFile: { type: 'string', description: 'Optional: only load this specific plan file into the pillar system prompt (e.g., "active-20260301-verifesto-saas.md")' },
-            backend: { type: 'string', enum: ['claude', 'codex', 'copilot', 'ollama'], description: 'AI backend for this pillar session (default: claude). Use copilot for GitHub Copilot CLI, ollama for local Qwen model.' },
+            backend: { type: 'string', enum: ['claude', 'codex', 'copilot', 'gemini', 'ollama'], description: 'AI backend for this pillar session (defaults to your current backend). Use copilot for GitHub Copilot CLI, ollama for local Qwen model, gemini for Google models.' },
             recursive: { type: 'boolean', description: 'Enable recursive mode — sub-instance MUST delegate to further sub-instances. Default: false.' },
             depth: { type: 'number', description: 'Current recursion depth (set automatically by parent). Default: 0.' },
             parentPillarId: { type: 'string', description: 'Parent pillar ID (set automatically for recursive spawns).' }

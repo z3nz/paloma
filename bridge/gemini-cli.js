@@ -151,6 +151,13 @@ export class GeminiCliManager {
         const entry = this.processes.get(requestId)
         if (entry) entry.sessionId = event.session_id
         console.log(`[gemini] Session ID: ${event.session_id}`)
+        
+        // Emit session_id early so frontend can associate pillar spawns
+        onEvent({
+          type: 'gemini_stream',
+          requestId,
+          event: { type: 'session_id', sessionId: event.session_id }
+        })
       }
       return // Don't forward init events
     }

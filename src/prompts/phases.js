@@ -5,12 +5,12 @@ import { SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT } from './base.js'
  * Not enforced — just recommended defaults.
  */
 export const PHASE_MODEL_SUGGESTIONS = {
-  flow: 'claude-cli:opus',     // orchestrator needs deep reasoning
-  scout: 'claude-cli:sonnet',  // fast research, good reasoning
-  chart: 'claude-cli:opus',    // deep planning needs strong reasoning
-  forge: 'claude-cli:opus',    // complex coding benefits from Opus
-  polish: 'claude-cli:sonnet', // review is balanced work
-  ship: 'claude-cli:sonnet'    // evolution + lessons require real reasoning
+  flow: 'gemini',     // orchestrator needs deep reasoning
+  scout: 'gemini',    // fast research, good reasoning
+  chart: 'gemini',    // deep planning needs strong reasoning
+  forge: 'gemini',    // complex coding benefits from Opus
+  polish: 'gemini', // review is balanced work
+  ship: 'gemini'    // evolution + lessons require real reasoning
 }
 
 export const PHASE_INSTRUCTIONS = {
@@ -66,7 +66,7 @@ Each pillar session is born with purpose — it receives Paloma's full identity,
 
 ## Pillar Tools
 
-- \`pillar_spawn({ pillar, prompt, model?, planFile?, backend? })\` — Spawn a new session. Returns pillarId. Use \`planFile\` to scope the session to only a specific plan file. \`backend\`: "claude" (default), "codex", "copilot", or "ollama". Codex is good for focused coding and structured output. Copilot (GitHub Copilot CLI) supports Claude/GPT/Gemini models with built-in GitHub MCP tools. Claude is better for research, MCP-intensive tasks, and deep architectural reasoning. Ollama runs local Qwen models.
+- \`pillar_spawn({ pillar, prompt, model?, planFile?, backend? })\` — Spawn a new session. Returns pillarId. Use \`planFile\` to scope the session to only a specific plan file. \`backend\`: "gemini", "claude", "codex", "copilot", or "ollama" (defaults to your current backend). Gemini runs Google models. Codex is good for focused coding and structured output. Copilot (GitHub Copilot CLI) supports Claude/GPT/Gemini models with built-in GitHub MCP tools. Claude is an alternative backend. Ollama runs local Qwen models. IMPORTANT: Prefer spawning instances of yourself (Gemini) unless specifically asked otherwise.
 - \`pillar_message({ pillarId, message })\` — Follow-up message to a running pillar.
 - \`pillar_read_output({ pillarId, since? })\` — Read output. Use \`since: 'all'\` for full history.
 - \`pillar_status({ pillarId })\` — Check status (running/idle/completed/error/stopped).

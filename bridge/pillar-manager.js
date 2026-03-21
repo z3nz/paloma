@@ -43,19 +43,22 @@ export class PillarManager {
   }
 
   /**
-   * Resolve a CLI session ID from a CLI request ID by checking all backend process maps.
+   * Resolve a CLI session ID and backend from a CLI request ID by checking all backend process maps.
    * This allows us to find which CLI session spawned a pillar, regardless of backend.
    */
-  _resolveCliSessionIdFromRequest(requestId) {
-    if (!requestId) return null
-    for (const backend of Object.values(this.backends)) {
+  _resolveCliSessionFromRequest(requestId) {
+    if (!requestId) return { sessionId: null, backendName: null }
+    for (const [backendName, backend] of Object.entries(this.backends)) {
       if (backend?.processes?.has(requestId)) {
         const entry = backend.processes.get(requestId)
         // Claude/Copilot use .sessionId, Codex uses .threadId
-        return entry.sessionId || entry.threadId || null
+        return {
+          sessionId: entry.sessionId || entry.threadId || null,
+          backendName
+        }
       }
     }
-    return null
+    return { sessionId: null, backendName: null }
   }
 
   /**
@@ -63,8 +66,11 @@ export class PillarManager {
    * Returns immediately with pillarId and metadata.
    */
   async spawn({ pillar, prompt, model, flowRequestId, planFile, backend, parentPillarId, recursive, depth, singularityRole }) {
+    // Resolve flowCliSessionId and originatingBackend from the actual spawning session
+    const { sessionId: resolvedFlowCliSessionId, backendName: originatingBackend } = this._resolveCliSessionFromRequest(flowRequestId)
+
     // Singularity dual-mind: spawn Voice + Thinker concurrently
-    const resolvedBackend = backend || 'claude'
+    const resolvedBackend = backend || originatingBackend || 'gemini'
     if (recursive && (depth || 0) === 0 && resolvedBackend === 'ollama' && !singularityRole) {
       return this._spawnSingularityGroup({ pillar, prompt, model, flowRequestId, planFile, backend: resolvedBackend, parentPillarId })
     }
@@ -159,12 +165,12 @@ export class PillarManager {
     }
 
     // Notify browser to create the session in IndexedDB
-    // Resolve flowCliSessionId from the actual spawning session (via request ID → CLI session ID),
+    // Use the resolvedFlowCliSessionId from the actual spawning session,
     // falling back to the globally registered Flow session for backward compat.
-    const resolvedFlowCliSessionId = this._resolveCliSessionIdFromRequest(flowRequestId)
+    const finalFlowCliSessionId = resolvedFlowCliSessionId
       || this.flowSession?.cliSessionId
       || null
-    const modelLabel = finalBackend === 'ollama' ? `ollama:${resolvedModel}` : finalBackend === 'codex' ? `codex:${resolvedModel}` : finalBackend === 'copilot' ? `copilot:${resolvedModel}` : `claude-cli:${resolvedModel}`
+    const modelLabel = finalBackend === 'ollama' ? `ollama:${resolvedModel}` : finalBackend === 'codex' ? `codex:${resolvedModel}` : finalBackend === 'copilot' ? `copilot:${resolvedModel}` : finalBackend === 'gemini' ? `gemini:${resolvedModel}` : `claude-cli:${resolvedModel}`
     this.broadcast({
       type: 'pillar_session_created',
       pillarId,
@@ -172,7 +178,7 @@ export class PillarManager {
       model: modelLabel,
       backend: finalBackend,
       flowRequestId,
-      flowCliSessionId: resolvedFlowCliSessionId,
+      flowCliSessionId: finalFlowCliSessionId,
       prompt: fullPrompt
     })
 
@@ -468,7 +474,7 @@ export class PillarManager {
               pillar: { type: 'string', enum: ['scout', 'chart', 'forge', 'polish', 'ship'], description: 'Which pillar role for the sub-instance' },
               prompt: { type: 'string', description: 'The task for the sub-instance to work on' },
               model: { type: 'string', description: 'Optional model override' },
-              backend: { type: 'string', enum: ['claude', 'codex', 'copilot', 'ollama'], description: 'AI backend (default: ollama)' }
+              backend: { type: 'string', enum: ['claude', 'codex', 'copilot', 'gemini', 'ollama'], description: 'AI backend (defaults to your current backend)' }
             },
             required: ['pillar', 'prompt']
           }
@@ -1887,7 +1893,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
     this.stop({ pillarId })
   }
 
-  _defaultModel(pillar, backend = 'claude', { recursive, depth, singularityRole } = {}) {
+  _defaultModel(pillar, backend = 'gemini', { recursive, depth, singularityRole } = {}) {
     if (backend === 'ollama') {
       // Singularity: both Voice and Thinker use the big model
       if (singularityRole === 'voice' || singularityRole === 'thinker') return 'qwen3-coder:30b'

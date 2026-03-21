@@ -175,8 +175,16 @@ export function useMCP() {
         const { createPillarSession } = useSessions()
         const { projectName } = useProject()
         const projectPath = projectName.value || 'paloma'
-        // Look up the correct parent Flow session by CLI session ID
-        const parentDbSessionId = (msg.flowCliSessionId && flowDbSessionMap.get(msg.flowCliSessionId)) || activeFlowDbSessionId
+        
+        // Race condition mitigation: The session_id stream chunk might still be queued
+        // in useCliChat's async generator. Wait briefly if we have a flowCliSessionId but no map entry.
+        let parentDbSessionId = msg.flowCliSessionId ? flowDbSessionMap.get(msg.flowCliSessionId) : null
+        if (msg.flowCliSessionId && !parentDbSessionId) {
+          await new Promise(r => setTimeout(r, 150))
+          parentDbSessionId = flowDbSessionMap.get(msg.flowCliSessionId)
+        }
+        parentDbSessionId = parentDbSessionId || activeFlowDbSessionId
+
         const dbSessionId = await createPillarSession(
           projectPath,
           msg.model,
