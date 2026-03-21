@@ -274,6 +274,14 @@ async function handleEvalCompare ({ models }) {
 }
 
 async function handlePromptCreate ({ version, modelfile_content }) {
+  // Validate version to prevent path traversal
+  if (!/^[a-zA-Z0-9._-]+$/.test(version)) {
+    return {
+      content: [{ type: 'text', text: 'Invalid version: must contain only alphanumeric characters, dots, dashes, and underscores.' }],
+      isError: true
+    }
+  }
+
   // If modelfile_content provided, write it to the prompts directory first
   if (modelfile_content) {
     const modelfilePath = join(PROMPTS_DIR, `Modelfile.${version}`)

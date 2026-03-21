@@ -16,7 +16,7 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema
 } from '@modelcontextprotocol/sdk/types.js'
-import { readFile, writeFile, mkdir } from 'fs/promises'
+import { readFile, writeFile, mkdir, copyFile } from 'fs/promises'
 import { resolve, join } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
@@ -101,6 +101,7 @@ class LocalStore {
     this.collection = collection
     this.filePath = join(MEMORY_DIR, `${collection}.json`)
     this.data = null
+    this._writeQueue = Promise.resolve()
   }
 
   async load () {
@@ -109,21 +110,48 @@ class LocalStore {
     try {
       const raw = await readFile(this.filePath, 'utf-8')
       this.data = JSON.parse(raw)
-    } catch {
-      this.data = {
-        memories: [],
-        metadata: {
-          created: new Date().toISOString(),
-          model: EMBEDDING_MODEL,
-          dimensions: EMBEDDING_DIM,
-          collection: this.collection
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        // File doesn't exist yet — fresh init
+        this.data = {
+          memories: [],
+          metadata: {
+            created: new Date().toISOString(),
+            model: EMBEDDING_MODEL,
+            dimensions: EMBEDDING_DIM,
+            collection: this.collection
+          }
+        }
+      } else {
+        // Corrupt JSON or other error — back up the file before initializing fresh
+        console.error(`[memory] Failed to load ${this.filePath}: ${err.message}`)
+        try {
+          const backupPath = `${this.filePath}.corrupt.${Date.now()}`
+          await copyFile(this.filePath, backupPath)
+          console.error(`[memory] Backed up corrupt file to ${backupPath}`)
+        } catch (backupErr) {
+          console.error(`[memory] Could not back up corrupt file: ${backupErr.message}`)
+        }
+        this.data = {
+          memories: [],
+          metadata: {
+            created: new Date().toISOString(),
+            model: EMBEDDING_MODEL,
+            dimensions: EMBEDDING_DIM,
+            collection: this.collection
+          }
         }
       }
     }
   }
 
   async save () {
-    await writeFile(this.filePath, JSON.stringify(this.data, null, 2), 'utf-8')
+    this._writeQueue = this._writeQueue.then(() =>
+      writeFile(this.filePath, JSON.stringify(this.data, null, 2), 'utf-8')
+    ).catch(err => {
+      console.error(`[memory] Write failed for ${this.filePath}: ${err.message}`)
+    })
+    return this._writeQueue
   }
 
   async store (memory) {
@@ -606,9 +634,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'memory_update': {
         const store = getStore(args.collection)
         const updates = {}
+        let embeddingWarning = ''
         if (args.content) {
           updates.content = args.content
-          updates.embedding = await embed(args.content)
+          const newEmbedding = await embed(args.content)
+          if (newEmbedding) {
+            updates.embedding = newEmbedding
+          } else {
+            embeddingWarning = ' (warning: embedding could not be updated — Ollama unavailable, keeping old embedding)'
+          }
         }
         if (args.tags) updates.tags = args.tags
         if (args.context !== undefined) updates.context = args.context
@@ -624,7 +658,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [{
             type: 'text',
-            text: JSON.stringify({ updated: true, memory: result }, null, 2)
+            text: JSON.stringify({ updated: true, memory: result }, null, 2) + embeddingWarning
           }]
         }
       }

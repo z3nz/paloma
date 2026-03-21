@@ -25,7 +25,7 @@ const MAX_OUTPUT = 100_000       // chars before truncation
 
 function isAllowed(path) {
   const resolved = resolve(path)
-  return resolved.startsWith(ALLOWED_ROOT)
+  return resolved === ALLOWED_ROOT || resolved.startsWith(ALLOWED_ROOT + '/')
 }
 
 const server = new Server(

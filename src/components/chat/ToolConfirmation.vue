@@ -1,6 +1,6 @@
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="tool-confirm-title" @click.self="$emit('deny')">
-    <div class="absolute inset-0 bg-black/60" @click="$emit('deny')"></div>
+  <div class="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="tool-confirm-title">
+    <div class="absolute inset-0 bg-black/60"></div>
     <div class="relative bg-bg-secondary border border-border rounded-lg w-full max-w-lg mx-4 shadow-2xl max-h-[80vh] flex flex-col">
       <!-- Header -->
       <div class="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">

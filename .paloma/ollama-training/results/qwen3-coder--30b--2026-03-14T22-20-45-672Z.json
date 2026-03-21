@@ -1,0 +1,178 @@
+{
+  "meta": {
+    "model": "qwen3-coder:30b",
+    "category": "tool-use",
+    "timestamp": "2026-03-14T22:20:45.674Z",
+    "taskCount": 15,
+    "completed": 15,
+    "skipped": 0,
+    "averageScore": 3.07
+  },
+  "results": [
+    {
+      "taskId": "tool-use-001",
+      "category": "tool-use",
+      "model": "qwen3-coder:30b",
+      "prompt": "Read the contents of the file at /home/adam/Projects/paloma/package.json",
+      "response": "<function=read_text_file>\n<parameter=path>\n/home/adam/Projects/paloma/package.json\n</parameter>\n</function>\n</tool_call>",
+      "score": 4,
+      "timing_ms": 764,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "Correct tool (read_text_file) called with the exact path specified. Single tool call, no extras. Minor formatting issue with extra newlines in parameter but functionally correct."
+    },
+    {
+      "taskId": "tool-use-002",
+      "category": "tool-use",
+      "model": "qwen3-coder:30b",
+      "prompt": "List all files in the /home/adam/Projects/paloma/bridge/ directory.",
+      "response": "I'll list all files in the specified directory using the available tools.\n\n<function=shell_ls>\n<parameter=path>\n/home/adam/Projects/paloma/bridge/\n</parameter>\n</function>\n</tool_call>",
+      "score": 2,
+      "timing_ms": 892,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The AI used shell_ls instead of list_directory as specified in the rubric. The path was correct (/home/adam/Projects/paloma/bridge/), but the wrong tool was chosen."
+    },
+    {
+      "taskId": "tool-use-003",
+      "category": "tool-use",
+      "model": "qwen3-coder:30b",
+      "prompt": "Check the current git status of the repository.",
+      "response": "I'll check the current git status of the repository for you.\n\n<function=git_status>\n<parameter=repo_path>\n.\n</parameter>\n</function>\n</tool_call>",
+      "score": 4,
+      "timing_ms": 781,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response correctly calls git_status with repo_path set to '.', which is a reasonable path for the current directory. However, the XML closing tag is malformed (uses </tool_call> instead of closing properly), which is a minor formatting issue. The tool choice and parameter are correct."
+    },
+    {
+      "taskId": "tool-use-004",
+      "category": "tool-use",
+      "model": "qwen3-coder:30b",
+      "prompt": "Find all .js files in the bridge/ directory that contain the string \"WebSocket\".",
+      "response": "I need to search for JavaScript files in the bridge/ directory that contain the string \"WebSocket\".\n\nFirst, let me list the contents of the bridge/ directory to understand what I'm working with:\n\n--- Tool Calls ---\nTool: list_directory\nArguments: {\n  \"path\": \"bridge/\"\n}",
+      "score": 2,
+      "timing_ms": 1169,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The AI used list_directory instead of search_files. Rather than directly searching for 'WebSocket' in .js files within bridge/, it chose to first list the directory contents, which is an indirect and less efficient approach. The correct approach would be to use search_files with path='bridge/', pattern='WebSocket', and file_pattern='*.js' in a single tool call."
+    },
+    {
+      "taskId": "tool-use-005",
+      "category": "tool-use",
+      "model": "qwen3-coder:30b",
+      "prompt": "Create a new file at /home/adam/Projects/paloma/tmp/config.json with the content {\"port\": 3000, \"host\": \"localhost\"}, then read it back to verify it was created correctly.",
+      "response": "I'll create a new file at the specified location with the given JSON content, then read it back to verify it was created correctly.\n\n<function=write_file>\n<parameter=path>\n/home/adam/Projects/paloma/tmp/config.json\n</parameter>\n<parameter=content>\n{\"port\": 3000, \"host\": \"localhost\"}\n</parameter>\n</function>\n</tool_call>",
+      "score": 2,
+      "timing_ms": 1192,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response only calls write_file but never follows up with a read_text_file call to verify the file was created correctly. It completes only half the required task."
+    },
+    {
+      "taskId": "tool-use-006",
+      "category": "tool-use",
+      "model": "qwen3-coder:30b",
+      "prompt": "Show me the 5 most recent git commits in the repository.",
+      "response": "I'll show you the 5 most recent git commits in the repository.\n\n<function=git_log>\n<parameter=repo_path>\n.\n</parameter>\n<parameter=max_count>\n5\n</parameter>\n</function>\n</tool_call>",
+      "score": 5,
+      "timing_ms": 904,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response uses a single git_log call with max_count set to 5 and a valid repo_path of '.', exactly matching the rubric's highest score criteria."
+    },
+    {
+      "taskId": "tool-use-007",
+      "category": "tool-use",
+      "model": "qwen3-coder:30b",
+      "prompt": "Search the web for \"Node.js WebSocket library comparison\" and give me a summary of the top options.",
+      "response": "I'll search for \"Node.js WebSocket library comparison\" to find information about the top WebSocket libraries for Node.js.\n\n--- Tool Calls ---\nTool: brave_web_search\nArguments: {\n  \"query\": \"Node.js WebSocket library comparison\",\n  \"count\": 10\n}",
+      "score": 4,
+      "timing_ms": 1030,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The AI correctly used brave_web_search with a reasonable query that closely matches the requested search term. However, it cannot receive a score of 5 because no summary was provided based on results — the response only shows the tool call without any actual summary of findings, likely because the evaluation captures only the tool call and not the follow-up response."
+    },
+    {
+      "taskId": "tool-use-008",
+      "category": "tool-use",
+      "model": "qwen3-coder:30b",
+      "prompt": "Rename the file /home/adam/Projects/paloma/src/utils/old.js to /home/adam/Projects/paloma/src/utils/new.js and update the git staging area to reflect the rename.",
+      "response": "I'll help you rename the file and update the git staging area. Let me do this step by step.\n\nFirst, I'll rename the file using the move_file function:\n\n--- Tool Calls ---\nTool: move_file\nArguments: {\n  \"source\": \"/home/adam/Projects/paloma/src/utils/old.js\",\n  \"destination\": \"/home/adam/Projects/paloma/src/utils/new.js\"\n}\nTool: git_add\nArguments: {\n  \"repo_path\": \"/home/adam/Projects/paloma\",\n  \"files\": [\n    \"src/utils/new.js\"\n  ]\n}",
+      "score": 4,
+      "timing_ms": 1840,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response correctly uses move_file with the right source and destination paths, then calls git_add to stage the new file. However, it only stages src/utils/new.js and not the old path src/utils/old.js. Git rename detection requires both the deleted file and the new file to be staged together, so missing the old path means git may not detect this as a rename but rather as a new file addition."
+    },
+    {
+      "taskId": "tool-use-009",
+      "category": "tool-use",
+      "model": "qwen3-coder:30b",
+      "prompt": "Create a new git branch called \"feature/auth\", switch to it, create a file at /home/adam/Projects/paloma/src/auth/index.js with a basic module export, stage it, and make an initial commit with the message \"feat: add auth module scaffold\".",
+      "response": "I'll help you create a new git branch, switch to it, create a file, and make an initial commit. Let me do this step by step.\n\nFirst, I'll create the new branch called \"feature/auth\":\n\n--- Tool Calls ---\nTool: git_branch\nArguments: {\n  \"repo_path\": \"/home/adam/Projects/paloma\",\n  \"name\": \"feature/auth\",\n  \"action\": \"create\"\n}",
+      "score": 2,
+      "timing_ms": 1626,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response only shows one tool call (git_branch create) out of the 5 required steps. It doesn't show checkout, file creation, git add, or git commit. Only 1-2 steps demonstrated."
+    },
+    {
+      "taskId": "tool-use-010",
+      "category": "tool-use",
+      "model": "qwen3-coder:30b",
+      "prompt": "Read the files /home/adam/Projects/paloma/bridge/claude-cli.js and /home/adam/Projects/paloma/bridge/codex-cli.js and compare what they export. Tell me the similarities and differences in their module exports.",
+      "response": "I'll help you compare the module exports of these two JavaScript files. Let me read both files first to understand what they export.\n\n<function=shell_cat>\n<parameter=path>\n/home/adam/Projects/paloma/bridge/claude-cli.js\n</parameter>\n</function>\n</tool_call>",
+      "score": 2,
+      "timing_ms": 1048,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response only reads one file (claude-cli.js) instead of both files simultaneously, and uses shell_cat instead of the preferred read_text_file tool."
+    },
+    {
+      "taskId": "tool-use-011",
+      "category": "tool-use",
+      "model": "qwen3-coder:30b",
+      "prompt": "I have uncommitted changes I want to keep. Stash them, pull the latest changes from the remote, then pop my stash to restore my work.",
+      "response": "I'll help you stash your uncommitted changes, pull the latest changes from the remote, and then restore your stashed work. Let me do this step by step.\n\nFirst, I'll stash your uncommitted changes:\n<function=git_stash>\n<parameter=repo_path>\n.\n</parameter>\n<parameter=action>\nsave\n</parameter>\n<parameter=message>\nWork in progress before pulling latest changes\n</parameter>\n</function>\n</tool_call>",
+      "score": 2,
+      "timing_ms": 1473,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response only shows the first step (stash save) and does not complete the full sequence. It says 'step by step' but only one tool call is present — no git_pull or git_stash pop are shown. Partial execution of a multi-step chain."
+    },
+    {
+      "taskId": "tool-use-012",
+      "category": "tool-use",
+      "model": "qwen3-coder:30b",
+      "prompt": "Fetch the HTML content from https://example.com and save it to /home/adam/Projects/paloma/tmp/example.html.",
+      "response": "I'll fetch the HTML content from https://example.com and save it to the specified file path.\n\n<function=web_fetch>\n<parameter=url>\nhttps://example.com\n</parameter>\n</function>\n</tool_call>\n\n--- Tool Calls ---\nTool: write_file\nArguments: {\n  \"path\": \"/home/adam/Projects/paloma/tmp/example.html\",\n  \"content\": \"<html><head><title>Example Domain</title></head><body><h1>Example Domain</h1><p>This domain is for use in illustrative examples in documents. You may use this domain in literature without prior coordination or asking for permission.</p><p><a href=\\\"https://www.iana.org/domains/example\\\">More information...</a></p></body></html>\"\n}",
+      "score": 4,
+      "timing_ms": 2070,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response uses web_fetch with the correct URL and write_file with the correct path. However, the web_fetch tool call appears malformed (missing closing tag structure) and the content written appears to be fabricated/hardcoded HTML rather than the actual fetched content from the tool result. The core approach is correct but execution has issues."
+    },
+    {
+      "taskId": "tool-use-013",
+      "category": "tool-use",
+      "model": "qwen3-coder:30b",
+      "prompt": "Find all TODO comments across the entire /home/adam/Projects/paloma/src/ directory, count how many are in each file, and write a summary report to /home/adam/Projects/paloma/tmp/todo-report.md.",
+      "response": "I'll help you find all TODO comments in the Paloma project directory, count them per file, and create a summary report.\n\nFirst, I need to search for all TODO comments in the source directory:\n\n--- Tool Calls ---\nTool: shell_grep\nArguments: {\n  \"pattern\": \"TODO\",\n  \"path\": \"/home/adam/Projects/paloma/src/\",\n  \"flags\": \"-r\"\n}",
+      "score": 2,
+      "timing_ms": 1492,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response starts correctly by searching for TODO comments with a grep-like tool call using the right pattern and path. However, it stops after the first tool call without analyzing the results, counting TODOs per file, or writing the report to the specified output path. A complete solution would need to process the search results and write a structured markdown report with per-file counts."
+    },
+    {
+      "taskId": "tool-use-014",
+      "category": "tool-use",
+      "model": "qwen3-coder:30b",
+      "prompt": "Show me the diff of only the staged changes in the repository (not unstaged changes).",
+      "response": "To show the diff of only the staged changes in the repository, I will use the `git_diff` tool with the `staged` parameter set to `true`. This will display the differences between the staged changes and the committed changes. \n\nHere’s the step-by-step plan:\n1. Call the `git_diff` tool with the `staged` parameter set to `true`.\n2. Ensure that the repository path is specified, although it's not provided in the request, I'll assume the current directory as the repository path for this operation.\n\nI will proceed with the tool call now.\n\n--- Tool Calls ---\nTool: git_diff\nArguments: {\n  \"repo_path\": \".\",\n  \"staged\": true\n}",
+      "score": 5,
+      "timing_ms": 1933,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response uses a single git_diff tool call with staged: true and repo_path: '.', which is correct for showing only staged changes. No unnecessary extra calls were made."
+    },
+    {
+      "taskId": "tool-use-015",
+      "category": "tool-use",
+      "model": "qwen3-coder:30b",
+      "prompt": "Set up a new feature module at /home/adam/Projects/paloma/src/features/notifications/. Create the directory, then create an index.js file with a basic NotificationService class export, and a notifications.test.js file with a placeholder test. Finally, stage all the new files in git.",
+      "response": "I'll help you set up a new feature module for notifications. Let me break this down into steps:\n\n1. Create the directory structure\n2. Create the index.js file with NotificationService class\n3. Create the notifications.test.js file with a placeholder test\n4. Stage all files in git\n\nLet's start:\n\n--- Tool Calls ---\nTool: create_directory\nArguments: {\n  \"path\": \"/home/adam/Projects/paloma/src/features/notifications\"\n}",
+      "score": 2,
+      "timing_ms": 1528,
+      "scorer_mode": "claude_judge",
+      "judge_rationale": "The response only shows the first tool call (create_directory) and does not complete the remaining steps: writing index.js with NotificationService class, writing notifications.test.js with a placeholder test, or staging the files with git_add. The plan is outlined correctly but execution is incomplete."
+    }
+  ]
+}

@@ -4,13 +4,8 @@ import { useProject } from './useProject.js'
 import { useToolExecution } from './useToolExecution.js'
 import { useSessionState } from './useSessionState.js'
 import { buildSystemPrompt, buildOllamaSystemPrompt } from './useSystemPrompt.js'
-import { classifyResult } from '../utils/toolClassifier.js'
+import { classifyResult, sanitizeForDB } from '../utils/toolClassifier.js'
 import db from '../services/db.js'
-
-/** Strip non-cloneable values for IndexedDB. */
-function sanitizeForDB(obj) {
-  try { return JSON.parse(JSON.stringify(obj)) } catch { return obj }
-}
 
 /**
  * Runs a CLI chat turn: streams Claude CLI output and returns { content, usage }.
@@ -92,15 +87,11 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
       usage = chunk.usage
     } else if (chunk.type === 'session_id') {
       sessionState.cliRequestId = chunk.requestId
-      if (!existingCliSession && chunk.sessionId) {
-        await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId, cliBackend: currentBackend })
-      } else if (existingBackend !== currentBackend) {
-        // Backend changed — store new session ID and backend
-        await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId, cliBackend: currentBackend })
-      }
+      
       // Register Flow sessions for pillar auto-callback notifications and parent association.
       // All backends need registration so pillar children are correctly parented to
       // the spawning chat (not the last-active Claude session).
+      // DO THIS SYNCHRONOUSLY before await db.sessions.update to avoid race condition!
       if (phase === 'flow') {
         const cliSessionIdToRegister = chunk.sessionId || existingCliSession
         if (cliSessionIdToRegister) {
@@ -108,6 +99,13 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
           const resolvedModelName = useOllama ? getOllamaModelName(model) : useGemini ? getGeminiModelName(model) : useCopilot ? getCopilotModelName(model) : useCodex ? getCodexModelName(model) : getCliModelName(model)
           registerFlowSession(cliSessionIdToRegister, resolvedModelName, cliOptions.cwd, sessionId)
         }
+      }
+
+      if (!existingCliSession && chunk.sessionId) {
+        await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId, cliBackend: currentBackend })
+      } else if (existingBackend !== currentBackend) {
+        // Backend changed — store new session ID and backend
+        await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId, cliBackend: currentBackend })
       }
     } else if (chunk.type === 'tool_use') {
       const activityId = addActivity(chunk.name, chunk.input)

@@ -1,13 +1,28 @@
-import { spawn, execSync } from 'child_process'
+import { spawn, execFile } from 'child_process'
 import { randomUUID } from 'crypto'
 import { writeFileSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
+import { promisify } from 'util'
+
+const execFileAsync = promisify(execFile)
 
 export class CopilotCliManager {
   constructor() {
     this.processes = new Map() // requestId → { process, sessionId, mcpConfigPath }
     this.mcpProxyPort = null
+    this._cachedGhToken = null
+    // Warm the GH token asynchronously at construction time
+    this._warmAuth()
+  }
+
+  async _warmAuth() {
+    try {
+      const { stdout } = await execFileAsync('gh', ['auth', 'token'])
+      this._cachedGhToken = stdout.trim()
+    } catch {
+      // gh CLI not available or not authenticated — copilot will use its own auth
+    }
   }
 
   chat({ prompt, model, sessionId, systemPrompt, cwd }, onEvent) {
@@ -65,11 +80,10 @@ export class CopilotCliManager {
     // Use GH_TOKEN from gh auth for authentication
     const env = { ...process.env }
     if (!env.COPILOT_GITHUB_TOKEN && !env.GH_TOKEN && !env.GITHUB_TOKEN) {
-      try {
-        env.GH_TOKEN = execSync('gh auth token', { encoding: 'utf8' }).trim()
-      } catch {
-        // Will use whatever auth copilot has configured
+      if (this._cachedGhToken) {
+        env.GH_TOKEN = this._cachedGhToken
       }
+      // Token is fetched asynchronously at startup via warmAuth()
     }
 
     const proc = spawn('copilot', args, {

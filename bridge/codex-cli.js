@@ -70,6 +70,13 @@ export class CodexCliManager {
             threadId = event.thread_id
             const entry = this.processes.get(requestId)
             if (entry) entry.threadId = threadId
+            
+            // Emit session_id early so frontend can associate pillar spawns
+            onEvent({
+              type: 'codex_stream',
+              requestId,
+              event: { type: 'session_id', sessionId: threadId }
+            })
           }
         } catch {
           // skip non-JSON lines

@@ -72,6 +72,7 @@
         class="absolute right-10 bottom-3 p-1.5 rounded-md transition-colors"
         :class="micButtonClasses"
         :title="voiceMode ? (isListening ? 'Listening... (Ctrl+M to stop)' : 'Voice mode on (Ctrl+M)') : 'Voice mode (Ctrl+M)'"
+        :aria-label="voiceMode ? (isListening ? 'Listening' : 'Voice mode on') : 'Voice mode'"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -86,7 +87,7 @@
         v-if="streaming"
         @click="$emit('stop')"
         class="absolute right-3 bottom-3 p-1.5 bg-danger/20 text-danger rounded-md hover:bg-danger/30 transition-colors"
-        title="Stop"
+        title="Stop" aria-label="Stop generation"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
           <rect x="6" y="6" width="12" height="12" rx="1"/>
@@ -100,7 +101,7 @@
         :class="canSend
           ? 'bg-accent text-white hover:bg-accent-hover'
           : 'bg-bg-tertiary text-text-muted cursor-not-allowed'"
-        title="Send (Ctrl+Enter)"
+        title="Send (Ctrl+Enter)" aria-label="Send message"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="22" y1="2" x2="11" y2="13"/>

@@ -115,7 +115,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import hljs from 'highlight.js'
+import hljs from '../../utils/highlight.js'
 import { inferLanguage } from '../../utils/toolClassifier.js'
 
 const props = defineProps({

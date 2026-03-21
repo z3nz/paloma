@@ -26,9 +26,13 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - Browser receives `backend` field in `pillar_stream` events for format-aware rendering
 - Codex also available as MCP tool (`codex`/`codex-reply`) for Claude pillars to call
 - **Copilot CLI** (`bridge/copilot-cli.js`): GitHub Copilot CLI v1.0.5+ standalone binary. Supports Claude, GPT-5.x, and Gemini models. Has built-in GitHub MCP server, `--output-format json` (JSONL), `--resume`, `--allow-all`/`--yolo` permissions. Auth via `GH_TOKEN` from `gh auth`.
-- **Gemini CLI** (`bridge/gemini-cli.js`): Google's Gemini CLI. System prompt via `GEMINI_SYSTEM_MD` env var (replaces, not appends). MCP config via per-session temp dir `.gemini/settings.json` (no `--mcp-config` flag). Session ID captured from `init` event, used for `--resume`. Auth via `GEMINI_API_KEY`. Free tier: Flash only, 250 req/day.
+- **Gemini CLI** (`bridge/gemini-cli.js`): Google's Gemini CLI. System prompt via `GEMINI_SYSTEM_MD` env var (replaces, not appends). MCP config via per-session temp dir `.gemini/settings.json` (no `--mcp-config` flag). Session ID captured from `init` event, used for `--resume`. Auth via Google OAuth (`~/.gemini/oauth_creds.json`), fallback `GEMINI_API_KEY`. Free tier: Flash only, 250 req/day.
 - `AGENTS.md` = Codex's project instruction file (equivalent of `CLAUDE.md`)
-- ChatGPT login restricts Codex to GPT-5.1-Codex family. API key auth needed for o3/o4-mini.
+- **CLI auth (all backends use CLI login, not API keys):**
+  - Claude: `claude auth login` → OAuth, checked via `claude auth status --json`
+  - Codex: `codex login` → ChatGPT OAuth, checked via `codex login status`. ChatGPT login restricts to GPT-5.1-Codex family; API key auth needed for o3/o4-mini.
+  - Copilot: `copilot login` → GitHub OAuth, credentials stored in `~/.copilot/config.json`. Env var fallback: `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`.
+  - Gemini: Google OAuth via interactive `gemini` launch, credentials stored in `~/.gemini/oauth_creds.json`. Env var fallback: `GEMINI_API_KEY`.
 
 ### Key Patterns
 - Composables use module-level singleton refs with HMR state preservation via `window.__PALOMA_*__`

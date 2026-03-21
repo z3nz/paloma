@@ -15,7 +15,7 @@ export class OllamaManager {
     this._cleanupInterval.unref() // Don't prevent process exit
   }
 
-  chat({ prompt, model, sessionId, systemPrompt, cwd, tools }, onEvent) {
+  chat({ prompt, model, sessionId, systemPrompt, cwd, tools, numCtx }, onEvent) {
     const requestId = randomUUID()
 
     if (!sessionId) {
@@ -25,7 +25,7 @@ export class OllamaManager {
     // Create or resume session
     let session = this.sessions.get(sessionId)
     if (!session) {
-      session = { messages: [], model: model || 'qwen3-coder:30b', tools: null, lastActivity: Date.now() }
+      session = { messages: [], model: model || 'qwen3-coder:30b', tools: null, numCtx: numCtx || null, lastActivity: Date.now() }
       // Prepend system message on new session
       if (systemPrompt) {
         session.messages.push({ role: 'system', content: systemPrompt })
@@ -103,7 +103,7 @@ export class OllamaManager {
         model: session.model,
         messages: [...session.messages],
         stream: true,
-        options: { num_ctx: this.defaultNumCtx }
+        options: { num_ctx: session.numCtx || this.defaultNumCtx }
       }
 
       // Include tools if available

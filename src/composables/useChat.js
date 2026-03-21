@@ -12,12 +12,7 @@ import { useSessionState } from './useSessionState.js'
 import { runOpenRouterLoop } from './useOpenRouterChat.js'
 import { runCliChat, stopCli, clearCliRequestId } from './useCliChat.js'
 import { useSessions } from './useSessions.js'
-import { classifyResult } from '../utils/toolClassifier.js'
-
-/** Strip non-cloneable values (Vue reactive proxies, functions, etc.) for IndexedDB. */
-function sanitizeForDB(obj) {
-  try { return JSON.parse(JSON.stringify(obj)) } catch { return obj }
-}
+import { classifyResult, sanitizeForDB } from '../utils/toolClassifier.js'
 
 /**
  * Starts a periodic save of streaming content to the drafts table.

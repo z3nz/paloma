@@ -66,7 +66,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import ToolCallItem from './ToolCallItem.vue'
-import { parseToolName, getServerColor } from '../../utils/toolClassifier.js'
+import { parseToolName, getServerColor, formatDuration } from '../../utils/toolClassifier.js'
 
 const props = defineProps({
   activities: { type: Array, default: () => [] },
@@ -137,9 +137,5 @@ function getToolMessage(activity) {
   return props.toolMessages[actIdx] || null
 }
 
-function formatDuration(ms) {
-  if (ms < 1000) return `${ms}ms`
-  if (ms < 10000) return `${(ms / 1000).toFixed(1)}s`
-  return `${Math.round(ms / 1000)}s`
-}
+
 </script>
