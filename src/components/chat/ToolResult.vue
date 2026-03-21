@@ -49,6 +49,60 @@
       </button>
     </div>
 
+    <!-- Email read -->
+    <div v-else-if="resultType === 'email'" class="tool-result__email">
+      <div v-if="emailData" class="email-card">
+        <div class="email-card__header">
+          <div class="email-card__field">
+            <span class="email-card__label">From</span>
+            <span class="email-card__value">{{ emailData.from }}</span>
+          </div>
+          <div v-if="emailData.to" class="email-card__field">
+            <span class="email-card__label">To</span>
+            <span class="email-card__value">{{ emailData.to }}</span>
+          </div>
+          <div class="email-card__field">
+            <span class="email-card__label">Subject</span>
+            <span class="email-card__value email-card__subject">{{ emailData.subject }}</span>
+          </div>
+          <div v-if="emailData.timestamp" class="email-card__field">
+            <span class="email-card__label">Date</span>
+            <span class="email-card__value">{{ emailData.timestamp }}</span>
+          </div>
+        </div>
+        <div class="email-card__body">
+          <pre class="email-card__text">{{ emailData.body }}</pre>
+        </div>
+      </div>
+      <pre v-else class="tool-result__pre">{{ content }}</pre>
+    </div>
+
+    <!-- Email sent/reply -->
+    <div v-else-if="resultType === 'email-sent'" class="tool-result__email-sent">
+      <div class="email-card">
+        <div class="email-card__header">
+          <div v-if="sentTo" class="email-card__field">
+            <span class="email-card__label">To</span>
+            <span class="email-card__value">{{ sentTo }}</span>
+          </div>
+          <div v-if="sentSubject" class="email-card__field">
+            <span class="email-card__label">Subject</span>
+            <span class="email-card__value email-card__subject">{{ sentSubject }}</span>
+          </div>
+        </div>
+        <div class="email-card__body">
+          <iframe
+            v-if="sentIsHtml"
+            :srcdoc="sentBody"
+            class="email-card__iframe"
+            sandbox="allow-same-origin"
+            referrerpolicy="no-referrer"
+          />
+          <pre v-else class="email-card__text">{{ sentBody }}</pre>
+        </div>
+      </div>
+    </div>
+
     <!-- Plain text fallback -->
     <div v-else class="tool-result__plain">
       <pre class="tool-result__pre">{{ visibleContent }}</pre>
@@ -179,7 +233,95 @@ function formatSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
 }
 
+// --- Email rendering ---
+const emailData = computed(() => {
+  if (props.resultType !== 'email') return null
+  try {
+    const parsed = JSON.parse(props.content)
+    if (parsed.from || parsed.subject) return parsed
+  } catch { /* not json */ }
+  return null
+})
+
+const sentTo = computed(() => {
+  // Try result first, then args
+  try {
+    const r = JSON.parse(props.content)
+    if (r.to) return r.to
+  } catch { /* ignore */ }
+  return props.toolArgs?.to || ''
+})
+
+const sentSubject = computed(() => props.toolArgs?.subject || '')
+const sentBody = computed(() => props.toolArgs?.body || '')
+const sentIsHtml = computed(() => !!props.toolArgs?.isHtml)
+
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 </script>
+
+<style scoped>
+.email-card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.email-card__header {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.email-card__field {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.email-card__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.4);
+  min-width: 52px;
+  flex-shrink: 0;
+}
+
+.email-card__value {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+}
+
+.email-card__subject {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.email-card__body {
+  padding: 16px;
+}
+
+.email-card__text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0;
+}
+
+.email-card__iframe {
+  width: 100%;
+  min-height: 300px;
+  border: none;
+  border-radius: 4px;
+  background: #ffffff;
+}
+</style>

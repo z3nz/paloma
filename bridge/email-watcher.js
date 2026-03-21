@@ -23,6 +23,18 @@ const POLL_INTERVAL_MS = 30_000 // 30 seconds
 const RETRY_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes before retry check
 const MAX_RETRIES = 2 // max retry attempts per thread
 
+// Trusted senders — emails from these addresses get full engagement (replies, actions).
+// All other emails still spawn sessions so Paloma can triage them like a human would
+// (read, evaluate, archive, mark spam, flag for Adam, etc.)
+const TRUSTED_SENDERS = [
+  'adam@verifesto.com',         // Adam
+  'kelsey',                     // Kelsey (partial match — catches any address)
+  'downesbruce@gmail.com',     // Bruce D
+  'paloma@verifesto.com',      // Paloma (main)
+  'lenovo.paloma@verifesto.com', // Paloma on Lenovo
+  'macbook.paloma@verifesto.com', // Paloma on MacBook
+]
+
 export class EmailWatcher {
   constructor(cliManager, { broadcast } = {}) {
     this.cliManager = cliManager
@@ -145,21 +157,18 @@ export class EmailWatcher {
         const subject = this._getHeader(msg.data, 'Subject') || '(no subject)'
         const body = this._extractBody(msg.data) || msg.data.snippet || ''
 
-        // Skip emails sent by Paloma (check from address)
-        if (from.includes('paloma@verifesto.com')) {
-          console.log(`[email-watcher] Skipping Paloma's own email: ${subject}`)
-          continue
-        }
+        const trusted = this._isTrustedSender(from)
+        console.log(`[email-watcher] New email from ${from} (${trusted ? 'trusted' : 'unknown'}): ${subject}`)
 
-        console.log(`[email-watcher] New email from ${from}: ${subject}`)
-
-        // Spawn a fresh Claude session to handle this email
+        // Spawn a session for every email — trusted get full engagement,
+        // unknown get triage (read, evaluate, decide what to do)
         this._spawnEmailSession({
           messageId: ref.id,
           threadId: ref.threadId,
           from,
           subject,
-          body
+          body,
+          trusted
         })
 
         // Broadcast to browser UI
@@ -188,7 +197,7 @@ export class EmailWatcher {
    * The session gets full MCP access (email tools, etc.) and shows up
    * as a new chat in the browser.
    */
-  _spawnEmailSession({ messageId, threadId, from, subject, body }) {
+  _spawnEmailSession({ messageId, threadId, from, subject, body, trusted = false }) {
     // Clean up existing tracker entry for this thread (new email resets everything)
     const existingEntry = this.threadTracker.get(threadId)
     if (existingEntry) {
@@ -198,8 +207,8 @@ export class EmailWatcher {
       }
     }
 
-    const prompt = [
-      `You just received an email. Read it and respond thoughtfully.`,
+    const trustedPrompt = [
+      `You just received an email from a TRUSTED sender. Read it and respond thoughtfully.`,
       ``,
       `From: ${from}`,
       `Subject: ${subject}`,
@@ -216,6 +225,29 @@ export class EmailWatcher {
       `Set the chat title to something descriptive about this email conversation.`
     ].join('\n')
 
+    const triagePrompt = [
+      `You received an email from an UNKNOWN sender. This is your inbox — manage it like a human would.`,
+      ``,
+      `From: ${from}`,
+      `Subject: ${subject}`,
+      `Thread ID: ${threadId}`,
+      `Message ID: ${messageId}`,
+      ``,
+      `--- Email Body ---`,
+      body,
+      `--- End ---`,
+      ``,
+      `TRIAGE RULES:`,
+      `- Read and evaluate the email carefully`,
+      `- DO NOT reply to unknown senders — you don't know who they are yet`,
+      `- Decide: is this spam, a legitimate inquiry, something Adam should know about, or junk?`,
+      `- If it looks like spam or junk, just note it and move on`,
+      `- If it looks legitimate or important, note what it's about so Adam can decide`,
+      `- Set the chat title to "Triage: ${subject}"`,
+    ].join('\n')
+
+    const prompt = trusted ? trustedPrompt : triagePrompt
+
     // NOTE: HTML email styling is handled by the session's CLAUDE.md instructions.
     // See .paloma/instructions.md "HTML Email Styling Rules" for the canonical guide.
 
@@ -229,20 +261,22 @@ export class EmailWatcher {
 
     console.log(`[email-watcher] Spawned session ${sessionId} (opus) for email: ${subject}`)
 
-    // Track thread for retry timeout
-    const timer = setTimeout(() => this._checkAndRetryThread(threadId), RETRY_TIMEOUT_MS)
-    this.threadTracker.set(threadId, {
-      threadId,
-      messageId,
-      requestId,
-      sessionId,
-      from,
-      subject,
-      body,
-      spawnedAt: Date.now(),
-      timer,
-      retryCount: 0
-    })
+    // Only track for retry if trusted sender — triage sessions don't need retries
+    if (trusted) {
+      const timer = setTimeout(() => this._checkAndRetryThread(threadId), RETRY_TIMEOUT_MS)
+      this.threadTracker.set(threadId, {
+        threadId,
+        messageId,
+        requestId,
+        sessionId,
+        from,
+        subject,
+        body,
+        spawnedAt: Date.now(),
+        timer,
+        retryCount: 0
+      })
+    }
   }
 
   /**
@@ -485,6 +519,15 @@ export class EmailWatcher {
       retryCount: retryNum,
       maxRetries: MAX_RETRIES
     })
+  }
+
+  /**
+   * Check if a sender address matches the trusted senders list.
+   * Supports partial matches (e.g., 'kelsey' matches 'kelsey@anything.com').
+   */
+  _isTrustedSender(from) {
+    const fromLower = from.toLowerCase()
+    return TRUSTED_SENDERS.some(sender => fromLower.includes(sender.toLowerCase()))
   }
 
   _getHeader(message, name) {

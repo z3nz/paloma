@@ -11,6 +11,7 @@ export const SERVER_COLORS = {
   web:        { bg: 'rgba(57, 210, 192, 0.15)', text: '#39d2c0', border: 'rgba(57, 210, 192, 0.3)' },
   'brave-search': { bg: 'rgba(240, 136, 62, 0.15)', text: '#f0883e', border: 'rgba(240, 136, 62, 0.3)' },
   'fs-extra':  { bg: 'rgba(248, 81, 73, 0.15)',  text: '#f85149', border: 'rgba(248, 81, 73, 0.3)' },
+  gmail:       { bg: 'rgba(234, 67, 53, 0.15)',  text: '#ea4335', border: 'rgba(234, 67, 53, 0.3)' },
   _default:    { bg: 'rgba(139, 148, 158, 0.15)', text: '#8b949e', border: 'rgba(139, 148, 158, 0.3)' }
 }
 
@@ -168,6 +169,19 @@ export function getToolSummary(toolName, args) {
     case 'brave_local_search':
       return args.query ? `"${truncate(args.query, 40)}"` : 'local search'
 
+    // Gmail
+    case 'email_read':
+      return args.messageId ? `message ${truncate(args.messageId, 16)}` : 'read email'
+
+    case 'email_reply':
+      return args.to ? `to: ${truncate(args.to, 40)}` : 'reply'
+
+    case 'email_send':
+      return args.to ? `to: ${truncate(args.to, 40)}` : 'send'
+
+    case 'email_list':
+      return args.query ? `"${truncate(args.query, 40)}"` : 'inbox'
+
     default: {
       // Generic: show first short string arg value
       const firstStr = Object.values(args).find(v => typeof v === 'string' && v.length < 60)
@@ -190,6 +204,10 @@ export function classifyResult(toolName, content) {
   }
 
   const { tool } = parseToolName(toolName)
+
+  // Email
+  if (tool === 'email_read') return 'email'
+  if (tool === 'email_reply' || tool === 'email_send') return 'email-sent'
 
   // Git diff
   if (tool === 'git_diff' || str.startsWith('diff --git') || /^@@\s/.test(str)) {
