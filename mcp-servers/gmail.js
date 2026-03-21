@@ -192,7 +192,7 @@ function buildRawEmail ({ to, subject, body, isHtml = false }) {
 }
 
 function buildReplyRaw ({ to, subject, body, inReplyTo, references, isHtml = false }) {
-  const replySubject = subject.startsWith('Re:') ? subject : `Re: ${subject}`
+  const replySubject = /^re:/i.test(subject) ? subject : `Re: ${subject}`
   const contentType = isHtml ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8'
   const newReferences = inReplyTo
     ? (references ? `${references} ${inReplyTo}` : inReplyTo)
@@ -289,10 +289,20 @@ async function handleSend ({ to, subject, body, isHtml = false }) {
   }
 
   const raw = buildRawEmail({ to: recipient, subject, body, isHtml })
-  const result = await gmail.users.messages.send({
-    userId: 'me',
-    requestBody: { raw }
-  })
+
+  let result
+  try {
+    result = await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: { raw }
+    })
+  } catch (err) {
+    const reason = err.response?.data?.error?.message || err.message
+    return {
+      content: [{ type: 'text', text: `Failed to send email: ${reason}` }],
+      isError: true
+    }
+  }
 
   return {
     content: [{
@@ -341,10 +351,19 @@ async function handleReply ({ threadId, body, to, isHtml = false }) {
     isHtml: isHtml || false
   })
 
-  const result = await gmail.users.messages.send({
-    userId: 'me',
-    requestBody: { raw, threadId }
-  })
+  let result
+  try {
+    result = await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: { raw, threadId }
+    })
+  } catch (err) {
+    const reason = err.response?.data?.error?.message || err.message
+    return {
+      content: [{ type: 'text', text: `Failed to send reply: ${reason}` }],
+      isError: true
+    }
+  }
 
   return {
     content: [{
@@ -358,9 +377,10 @@ async function handleReply ({ threadId, body, to, isHtml = false }) {
   }
 }
 
-async function handleWait ({ threadId, timeoutSeconds = 600, intervalSeconds = 20 }) {
+async function handleWait ({ threadId, timeoutSeconds = 120, intervalSeconds = 20 }) {
   const gmail = ensureAuth()
-  const timeoutMs = timeoutSeconds * 1000
+  const cappedTimeout = Math.min(timeoutSeconds, 120)
+  const timeoutMs = cappedTimeout * 1000
   const intervalMs = intervalSeconds * 1000
   const deadline = Date.now() + timeoutMs
 
@@ -415,7 +435,8 @@ async function handleWait ({ threadId, timeoutSeconds = 600, intervalSeconds = 2
       text: JSON.stringify({
         found: false,
         timeout: true,
-        elapsedSeconds: timeoutSeconds
+        message: `Timed out waiting for reply after ${cappedTimeout} seconds. Use email_check_thread for non-blocking checks.`,
+        elapsedSeconds: cappedTimeout
       }, null, 2)
     }]
   }
@@ -464,25 +485,30 @@ async function handleList ({ query, maxResults = 10 }) {
     }
   }
 
-  // Fetch metadata for each message
-  const messages = await Promise.all(
-    messageRefs.map(async (ref) => {
-      const msg = await gmail.users.messages.get({
-        userId: 'me',
-        id: ref.id,
-        format: 'metadata',
-        metadataHeaders: ['From', 'Subject', 'Date']
+  // Fetch metadata in batches of 5 to avoid Gmail rate limits
+  const messages = []
+  for (let i = 0; i < messageRefs.length; i += 5) {
+    const batch = messageRefs.slice(i, i + 5)
+    const batchResults = await Promise.all(
+      batch.map(async (ref) => {
+        const msg = await gmail.users.messages.get({
+          userId: 'me',
+          id: ref.id,
+          format: 'metadata',
+          metadataHeaders: ['From', 'Subject', 'Date']
+        })
+        return {
+          messageId: msg.data.id,
+          threadId: msg.data.threadId,
+          subject: extractHeader(msg.data, 'Subject'),
+          from: extractHeader(msg.data, 'From'),
+          snippet: msg.data.snippet,
+          timestamp: extractHeader(msg.data, 'Date')
+        }
       })
-      return {
-        messageId: msg.data.id,
-        threadId: msg.data.threadId,
-        subject: extractHeader(msg.data, 'Subject'),
-        from: extractHeader(msg.data, 'From'),
-        snippet: msg.data.snippet,
-        timestamp: extractHeader(msg.data, 'Date')
-      }
-    })
-  )
+    )
+    messages.push(...batchResults)
+  }
 
   return {
     content: [{
@@ -603,7 +629,7 @@ async function startServer () {
             },
             timeoutSeconds: {
               type: 'number',
-              description: 'Maximum time to wait in seconds. Default: 600 (10 minutes).'
+              description: 'Maximum time to wait in seconds. Default and max: 120 (2 minutes).'
             },
             intervalSeconds: {
               type: 'number',
