@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 
 const MAX_TOOL_ROUNDS = 20  // Safety limit on tool call loops
+const MAX_SESSION_MESSAGES = 100  // Sliding window to prevent unbounded message growth
 
 export class OllamaManager {
   constructor() {
@@ -48,6 +49,14 @@ export class OllamaManager {
     // Append user message
     session.messages.push({ role: 'user', content: prompt })
     session.lastActivity = Date.now()
+
+    // Sliding window: keep system message + last N messages to prevent unbounded growth
+    if (session.messages.length > MAX_SESSION_MESSAGES) {
+      const systemMsg = session.messages[0]?.role === 'system' ? session.messages[0] : null
+      session.messages = systemMsg
+        ? [systemMsg, ...session.messages.slice(-(MAX_SESSION_MESSAGES - 1))]
+        : session.messages.slice(-MAX_SESSION_MESSAGES)
+    }
 
     // Set up abort controller
     const abortController = new AbortController()

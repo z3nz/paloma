@@ -725,6 +725,7 @@ async function main() {
     }
 
     if (staleRequestInterval) clearInterval(staleRequestInterval)
+    if (health) health.shutdown()
     if (emailWatcher) emailWatcher.shutdown()
     if (pillarManager) pillarManager.shutdown()
     cliManager.shutdown()

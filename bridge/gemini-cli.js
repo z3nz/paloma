@@ -1,6 +1,6 @@
 import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
-import { mkdirSync, writeFileSync, rmSync } from 'fs'
+import { mkdirSync, writeFileSync, rmSync, readdirSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -8,6 +8,21 @@ export class GeminiCliManager {
   constructor() {
     this.processes = new Map() // requestId → { process, sessionId, sessionDir }
     this.mcpProxyPort = null
+    // Clean up orphaned temp dirs from previous crashes
+    this._cleanupOrphanedDirs()
+  }
+
+  _cleanupOrphanedDirs() {
+    try {
+      const tmp = tmpdir()
+      const dirs = readdirSync(tmp).filter(d => d.startsWith('paloma-gemini-'))
+      for (const dir of dirs) {
+        try { rmSync(join(tmp, dir), { recursive: true, force: true }) } catch {}
+      }
+      if (dirs.length > 0) {
+        console.log(`[gemini] Cleaned up ${dirs.length} orphaned temp dir(s)`)
+      }
+    } catch {}
   }
 
   chat({ prompt, model, sessionId, systemPrompt, cwd }, onEvent) {
@@ -91,6 +106,7 @@ export class GeminiCliManager {
 
     proc.stdout.on('error', (err) => {
       console.error(`[gemini] stdout error: ${err.message}`)
+      onEvent({ type: 'gemini_error', requestId, error: `Stream error: ${err.message}` })
     })
 
     proc.stderr.on('data', (data) => {

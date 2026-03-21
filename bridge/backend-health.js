@@ -11,6 +11,8 @@ const FALLBACK_CHAIN = ['claude', 'copilot', 'gemini', 'codex', 'ollama']
  * Health is checked once at startup. Runtime failures (from PillarManager's
  * fast-fail detection) update the cache via markUnhealthy().
  */
+const REPROBE_INTERVAL_MS = 5 * 60 * 1000 // Re-check backends every 5 minutes
+
 export class BackendHealth {
   constructor() {
     // backend → { available: bool, reason: string, lastCheck: ISO string, models?: string[] }
@@ -21,10 +23,12 @@ export class BackendHealth {
       gemini:  { available: false, reason: 'not checked', lastCheck: null },
       ollama:  { available: false, reason: 'not checked', lastCheck: null, models: [] }
     }
+    this._reprobeTimer = null
   }
 
   /**
-   * Run all four backend probes. Returns a summary object.
+   * Run all five backend probes. Returns a summary object.
+   * Starts periodic re-probes so stale health data gets refreshed.
    */
   async checkAll() {
     // Run all probes in parallel — each catches its own errors
@@ -36,7 +40,39 @@ export class BackendHealth {
       this.checkOllama()
     ])
 
+    // Start periodic re-probes for backends that were unavailable
+    this._startReprobeTimer()
+
     return this.getSummary()
+  }
+
+  /**
+   * Periodically re-check unavailable backends so they recover
+   * when a service comes online after bridge startup.
+   */
+  _startReprobeTimer() {
+    if (this._reprobeTimer) return
+    this._reprobeTimer = setInterval(async () => {
+      const unavailable = Object.entries(this.status)
+        .filter(([, info]) => !info.available)
+        .map(([backend]) => backend)
+      if (unavailable.length === 0) {
+        // All healthy — stop re-probing
+        clearInterval(this._reprobeTimer)
+        this._reprobeTimer = null
+        return
+      }
+      const probes = unavailable.map(b => {
+        const method = 'check' + b.charAt(0).toUpperCase() + b.slice(1)
+        return this[method]?.()
+      }).filter(Boolean)
+      await Promise.all(probes)
+      const recovered = unavailable.filter(b => this.status[b]?.available)
+      if (recovered.length > 0) {
+        console.log(`[health] Backends recovered: ${recovered.join(', ')}`)
+      }
+    }, REPROBE_INTERVAL_MS)
+    this._reprobeTimer.unref()
   }
 
   async checkClaude() {
@@ -166,6 +202,18 @@ export class BackendHealth {
       this.status[backend].reason = reason
       this.status[backend].lastCheck = new Date().toISOString()
       console.warn(`[health] Marked ${backend} as unhealthy: ${reason}`)
+      // Restart reprobe timer so the backend gets re-checked
+      this._startReprobeTimer()
+    }
+  }
+
+  /**
+   * Stop periodic re-probing (for clean shutdown).
+   */
+  shutdown() {
+    if (this._reprobeTimer) {
+      clearInterval(this._reprobeTimer)
+      this._reprobeTimer = null
     }
   }
 

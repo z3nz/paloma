@@ -79,6 +79,7 @@ export class CodexCliManager {
 
     proc.stdout.on('error', (err) => {
       console.error(`[codex] stdout error: ${err.message}`)
+      onEvent({ type: 'codex_error', requestId, error: `Stream error: ${err.message}` })
     })
 
     proc.stderr.on('data', () => {

@@ -71,16 +71,27 @@ export class McpProxyServer {
   }
 
   async shutdown() {
-    for (const [, entry] of this.transports) {
-      try { await entry.transport.close() } catch {}
+    const closeWithTimeout = async (transport, label) => {
+      try {
+        await Promise.race([
+          transport.close(),
+          new Promise(resolve => setTimeout(resolve, 5000))
+        ])
+      } catch { /* swallow close errors */ }
+    }
+    for (const [id, entry] of this.transports) {
+      await closeWithTimeout(entry.transport, `sse-${id}`)
     }
     this.transports.clear()
-    for (const [, entry] of this.streamableTransports) {
-      try { await entry.transport.close() } catch {}
+    for (const [id, entry] of this.streamableTransports) {
+      await closeWithTimeout(entry.transport, `http-${id}`)
     }
     this.streamableTransports.clear()
     if (this.httpServer) {
-      return new Promise(resolve => this.httpServer.close(resolve))
+      return new Promise(resolve => {
+        const timer = setTimeout(() => resolve(), 5000)
+        this.httpServer.close(() => { clearTimeout(timer); resolve() })
+      })
     }
   }
 
@@ -314,6 +325,11 @@ export class McpProxyServer {
     }
     const serverName = name.slice(0, sepIdx)
     const toolName = name.slice(sepIdx + 2)
+
+    // Validate parsed names to prevent routing confusion
+    if (!/^[a-zA-Z0-9_-]+$/.test(serverName) || !/^[a-zA-Z0-9_-]+$/.test(toolName)) {
+      return { content: [{ type: 'text', text: `Invalid tool name format: ${name}` }], isError: true }
+    }
 
     // Ask browser for confirmation before executing
     this.onToolActivity(name, args, 'pending', cliRequestId)

@@ -111,8 +111,9 @@ async function handleWebFetch({ url, headers = {} }) {
       }]
     }
   } catch (e) {
+    const msg = e.name === 'TimeoutError' ? `Fetch timed out after 30s: ${url}` : `Fetch error: ${e.message}`
     return {
-      content: [{ type: 'text', text: `Fetch error: ${e.message}` }],
+      content: [{ type: 'text', text: msg }],
       isError: true
     }
   }
@@ -156,8 +157,9 @@ async function handleWebDownload({ url, path, headers = {} }) {
       }]
     }
   } catch (e) {
+    const msg = e.name === 'TimeoutError' ? `Download timed out after 60s: ${url}` : `Download error: ${e.message}`
     return {
-      content: [{ type: 'text', text: `Download error: ${e.message}` }],
+      content: [{ type: 'text', text: msg }],
       isError: true
     }
   }

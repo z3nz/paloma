@@ -109,6 +109,7 @@ export class CopilotCliManager {
 
     proc.stdout.on('error', (err) => {
       console.error(`[copilot] stdout error: ${err.message}`)
+      onEvent({ type: 'copilot_error', requestId, error: `Stream error: ${err.message}` })
     })
 
     proc.stderr.on('data', (data) => {

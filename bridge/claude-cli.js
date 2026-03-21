@@ -86,6 +86,7 @@ export class ClaudeCliManager {
 
     proc.stdout.on('error', (err) => {
       console.error(`[cli] stdout error: ${err.message}`)
+      onEvent({ type: 'claude_error', requestId, error: `Stream error: ${err.message}` })
     })
 
     proc.stderr.on('data', () => {

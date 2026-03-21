@@ -546,7 +546,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const store = getStore(args.collection)
         const queryEmbedding = await embed(args.query)
         const results = await store.search(queryEmbedding, args.query, {
-          limit: args.limit || 5,
+          limit: Math.min(args.limit || 5, 100),
           tags: args.tags || null,
           threshold: args.threshold ?? 0.3
         })

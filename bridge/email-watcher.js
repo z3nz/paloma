@@ -35,6 +35,9 @@ const TRUSTED_SENDERS = [
   'macbook.paloma@verifesto.com', // Paloma on MacBook
 ]
 
+const THREAD_TRACKER_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours before thread entries expire
+const MAX_POLL_BACKOFF_MS = 5 * 60 * 1000 // 5 minute max backoff on poll errors
+
 export class EmailWatcher {
   constructor(cliManager, { broadcast } = {}) {
     this.cliManager = cliManager
@@ -44,6 +47,7 @@ export class EmailWatcher {
     this.seenIds = new Set()
     this.threadTracker = new Map()
     this.running = false
+    this._consecutivePollFailures = 0
   }
 
   /**
@@ -187,8 +191,33 @@ export class EmailWatcher {
         const arr = [...this.seenIds]
         this.seenIds = new Set(arr.slice(-500))
       }
+      // Reset backoff on success
+      this._consecutivePollFailures = 0
+
+      // Expire stale thread tracker entries (older than 24h)
+      const now = Date.now()
+      for (const [id, entry] of this.threadTracker.entries()) {
+        if (entry.spawnedAt && now - entry.spawnedAt > THREAD_TRACKER_TTL_MS) {
+          clearTimeout(entry.timer)
+          this.threadTracker.delete(id)
+        }
+      }
     } catch (err) {
-      console.error('[email-watcher] Poll error:', err.message)
+      this._consecutivePollFailures++
+      const backoffMs = Math.min(
+        POLL_INTERVAL_MS * Math.pow(2, this._consecutivePollFailures - 1),
+        MAX_POLL_BACKOFF_MS
+      )
+      console.error(`[email-watcher] Poll error (${this._consecutivePollFailures}x): ${err.message} — next poll in ${Math.round(backoffMs / 1000)}s`)
+
+      // Reschedule with exponential backoff
+      if (this.interval) {
+        clearInterval(this.interval)
+        this.interval = setTimeout(() => {
+          this.interval = setInterval(() => this._poll(false), POLL_INTERVAL_MS)
+          this._poll(false)
+        }, backoffMs)
+      }
     }
   }
 
