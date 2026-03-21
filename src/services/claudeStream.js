@@ -16,12 +16,21 @@ export const CLI_MODELS = [
   { id: 'claude-cli-direct:sonnet', name: 'Claude Sonnet (CLI Direct)', context_length: 200000, direct: true, pricing: ANTHROPIC_PRICING.sonnet },
   { id: 'claude-cli-direct:haiku', name: 'Claude Haiku (CLI Direct)', context_length: 200000, direct: true, pricing: ANTHROPIC_PRICING.haiku },
   { id: 'codex-cli:codex-max', name: 'GPT-5.1 Codex Max', context_length: 1000000, codex: true, pricing: FREE_PRICING },
+  { id: 'codex-cli:codex', name: 'GPT-5.1 Codex', context_length: 200000, codex: true, pricing: FREE_PRICING },
+  { id: 'codex-cli:o3', name: 'o3', context_length: 200000, codex: true, pricing: FREE_PRICING },
+  { id: 'codex-cli:o4-mini', name: 'o4-mini', context_length: 200000, codex: true, pricing: FREE_PRICING },
+  { id: 'codex-cli:gpt-4.1', name: 'GPT-4.1', context_length: 1000000, codex: true, pricing: FREE_PRICING },
+  { id: 'codex-cli:gpt-4.1-mini', name: 'GPT-4.1 Mini', context_length: 1000000, codex: true, pricing: FREE_PRICING },
+  { id: 'codex-cli:gpt-4.1-nano', name: 'GPT-4.1 Nano', context_length: 1000000, codex: true, pricing: FREE_PRICING },
   { id: 'copilot-cli:claude-sonnet-4.6', name: 'Claude Sonnet 4.6 (Copilot)', context_length: 200000, copilot: true, pricing: ANTHROPIC_PRICING.sonnet },
   { id: 'copilot-cli:claude-opus-4.6', name: 'Claude Opus 4.6 (Copilot)', context_length: 200000, copilot: true, pricing: ANTHROPIC_PRICING.opus },
   { id: 'copilot-cli:gpt-5.4', name: 'GPT-5.4 (Copilot)', context_length: 200000, copilot: true, pricing: FREE_PRICING },
   { id: 'copilot-cli:gemini-3-pro-preview', name: 'Gemini 3 Pro (Copilot)', context_length: 200000, copilot: true, pricing: FREE_PRICING },
-  { id: 'gemini-cli:flash', name: 'Gemini Flash (CLI)', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
-  { id: 'gemini-cli:pro', name: 'Gemini Pro (CLI)', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
+  { id: 'gemini-cli:gemini-2.5-flash', name: 'Gemini 2.5 Flash', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
+  { id: 'gemini-cli:gemini-2.5-pro', name: 'Gemini 2.5 Pro', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
+  { id: 'gemini-cli:gemini-2.0-flash', name: 'Gemini 2.0 Flash', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
+  { id: 'gemini-cli:gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
+  { id: 'gemini-cli:gemini-exp', name: 'Gemini Experimental', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
   { id: 'ollama:qwen2.5-coder:32b', name: 'Qwen 2.5 Coder 32B', context_length: 32768, ollama: true, pricing: FREE_PRICING },
   { id: 'ollama:qwen2.5-coder:7b', name: 'Qwen 2.5 Coder 7B', context_length: 32768, ollama: true, pricing: FREE_PRICING }
 ]
@@ -43,7 +52,7 @@ export function isGeminiModel(modelId) {
 }
 
 export function getGeminiModelName(modelId) {
-  return modelId?.split(':')[1] || 'flash'
+  return modelId?.split(':')[1] || 'gemini-2.5-flash'
 }
 
 export function isOllamaModel(modelId) {
@@ -64,7 +73,13 @@ export function getCliModelName(modelId) {
 }
 
 const CODEX_MODEL_MAP = {
-  'codex-max': 'gpt-5.1-codex-max'
+  'codex-max': 'gpt-5.1-codex-max',
+  'codex': 'gpt-5.1-codex',
+  'o3': 'o3',
+  'o4-mini': 'o4-mini',
+  'gpt-4.1': 'gpt-4.1',
+  'gpt-4.1-mini': 'gpt-4.1-mini',
+  'gpt-4.1-nano': 'gpt-4.1-nano'
 }
 
 export function getCodexModelName(modelId) {
