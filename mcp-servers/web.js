@@ -126,7 +126,8 @@ async function handleWebFetch({ url, headers = {} }) {
       content: [{
         type: 'text',
         text: `HTTP ${response.status} ${response.statusText}\nContent-Type: ${contentType}\nLength: ${text.length} chars${truncated ? ' (truncated)' : ''}\n\n${content}`
-      }]
+      }],
+      ...(!response.ok && { isError: true })
     }
   } catch (e) {
     return {

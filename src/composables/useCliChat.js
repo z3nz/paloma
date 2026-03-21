@@ -4,13 +4,8 @@ import { useProject } from './useProject.js'
 import { useToolExecution } from './useToolExecution.js'
 import { useSessionState } from './useSessionState.js'
 import { buildSystemPrompt, buildOllamaSystemPrompt } from './useSystemPrompt.js'
-import { classifyResult } from '../utils/toolClassifier.js'
+import { classifyResult, sanitizeForDB } from '../utils/toolClassifier.js'
 import db from '../services/db.js'
-
-/** Strip non-cloneable values for IndexedDB. */
-function sanitizeForDB(obj) {
-  try { return JSON.parse(JSON.stringify(obj)) } catch { return obj }
-}
 
 /**
  * Runs a CLI chat turn: streams Claude CLI output and returns { content, usage }.

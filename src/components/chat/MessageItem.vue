@@ -118,8 +118,9 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { marked } from 'marked'
+import { useSessionState } from '../../composables/useSessionState.js'
 import hljs from '../../utils/highlight.js'
 import { useCostTracking } from '../../composables/useCostTracking.js'
 import ToolCallGroup from './ToolCallGroup.vue'
@@ -132,8 +133,12 @@ const props = defineProps({
 
 const emit = defineEmits(['apply-code'])
 
-const HTML_CACHE_MAX = 100
+const HTML_CACHE_MAX = 50
 const htmlCache = new Map()
+
+// Clear HTML cache when the active session changes to prevent memory accumulation
+const { activeId } = useSessionState()
+const stopSessionWatch = watch(activeId, () => { htmlCache.clear() })
 
 const { formatCost, formatTokens, formatTokenBreakdown, calculateMessageCost } = useCostTracking()
 const messageCost = computed(() => calculateMessageCost(props.message))

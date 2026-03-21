@@ -262,6 +262,11 @@ export function inferLanguage(path) {
   return map[ext] || ext || ''
 }
 
+/** Strip non-cloneable values (Vue reactive proxies, functions, etc.) for IndexedDB. */
+export function sanitizeForDB(obj) {
+  try { return JSON.parse(JSON.stringify(obj)) } catch { return obj }
+}
+
 /**
  * Get a result size summary (line count or byte estimate).
  */

@@ -51,7 +51,7 @@
     <!-- Expanded result -->
     <div v-if="expanded && hasResult" class="tool-call-item__result">
       <!-- Copy button -->
-      <button class="tool-call-item__copy" @click.stop="copyResult" :title="copyLabel">
+      <button class="tool-call-item__copy" @click.stop="copyResult" :title="copyLabel" :aria-label="copyLabel">
         {{ copyLabel }}
       </button>
       <ToolResult

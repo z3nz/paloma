@@ -273,7 +273,7 @@ watch(
     // Render immediately on first chunk, then throttle subsequent updates
     if (!throttleTimer) {
       renderAndScroll()
-      throttleTimer = setTimeout(() => { throttleTimer = null }, 80)
+      throttleTimer = setTimeout(() => { throttleTimer = null }, 120)
     }
   }
 )
