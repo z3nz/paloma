@@ -89,7 +89,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 })
 
+function validateUrl(url) {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return `Blocked: only http:// and https:// URLs are allowed (got ${parsed.protocol})`
+    }
+    return null
+  } catch {
+    return `Invalid URL: ${url}`
+  }
+}
+
 async function handleWebFetch({ url, headers = {} }) {
+  const urlError = validateUrl(url)
+  if (urlError) {
+    return { content: [{ type: 'text', text: urlError }], isError: true }
+  }
+
   try {
     const response = await fetch(url, {
       headers: { 'User-Agent': 'Paloma/1.0', ...headers },
@@ -120,6 +137,11 @@ async function handleWebFetch({ url, headers = {} }) {
 }
 
 async function handleWebDownload({ url, path, headers = {} }) {
+  const urlError = validateUrl(url)
+  if (urlError) {
+    return { content: [{ type: 'text', text: urlError }], isError: true }
+  }
+
   try {
     const resolvedPath = resolve(path)
 

@@ -1096,11 +1096,6 @@ export class PillarManager {
         return
       }
       this.notificationCooldown.set(pillarId, now)
-
-      // Periodic cleanup: remove stale cooldown entries (older than 60s)
-      for (const [id, ts] of this.notificationCooldown) {
-        if (now - ts > 60000) this.notificationCooldown.delete(id)
-      }
     }
 
     // Rate limiting: max 10 notifications per minute
@@ -1297,6 +1292,11 @@ This is informational — Adam is communicating directly with the pillar. Decide
       if ((session.status === 'stopped' || session.status === 'error') && session.startTime < cutoff) {
         this.pillars.delete(id)
       }
+    }
+    // Clean stale notification cooldown entries (older than 60s)
+    const now = Date.now()
+    for (const [id, ts] of this.notificationCooldown) {
+      if (now - ts > 60000) this.notificationCooldown.delete(id)
     }
   }
 
