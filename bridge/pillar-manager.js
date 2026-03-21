@@ -30,8 +30,7 @@ export class PillarManager {
     this.mcpManager = mcpManager || null // for Ollama tool execution
     this.health = health || null // BackendHealth instance for fallback logic
     this.pillars = new Map()   // pillarId → PillarSession
-    this.flowSessions = new Map()  // cliSessionId → { cliSessionId, wsClient, currentlyStreaming, notificationQueue, model, cwd }
-    this.flowSession = null          // points to the most recently registered Flow session (backward compat)
+    this.flowSession = null          // points to the most recently registered Flow session
     this.notificationCooldown = new Map() // pillarId → timestamp of last notification
     this.notificationCount = 0 // notifications sent in current minute
     this.notificationWindowStart = Date.now()
@@ -1098,11 +1097,6 @@ export class PillarManager {
         return
       }
       this.notificationCooldown.set(pillarId, now)
-
-      // Periodic cleanup: remove stale cooldown entries (older than 60s)
-      for (const [id, ts] of this.notificationCooldown) {
-        if (now - ts > 60000) this.notificationCooldown.delete(id)
-      }
     }
 
     // Rate limiting: max 10 notifications per minute
@@ -1299,6 +1293,11 @@ This is informational — Adam is communicating directly with the pillar. Decide
       if ((session.status === 'stopped' || session.status === 'error') && session.startTime < cutoff) {
         this.pillars.delete(id)
       }
+    }
+    // Clean stale notification cooldown entries (older than 60s)
+    const now = Date.now()
+    for (const [id, ts] of this.notificationCooldown) {
+      if (now - ts > 60000) this.notificationCooldown.delete(id)
     }
   }
 

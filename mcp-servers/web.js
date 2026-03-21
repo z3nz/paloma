@@ -18,7 +18,8 @@ import { homedir } from 'node:os'
 const ALLOWED_ROOT = resolve(homedir())
 
 function isAllowed(filePath) {
-  return resolve(filePath).startsWith(ALLOWED_ROOT)
+  const resolved = resolve(filePath)
+  return resolved === ALLOWED_ROOT || resolved.startsWith(ALLOWED_ROOT + '/')
 }
 
 const server = new Server(
@@ -88,7 +89,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 })
 
+function validateUrl(url) {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return `Blocked: only http:// and https:// URLs are allowed (got ${parsed.protocol})`
+    }
+    return null
+  } catch {
+    return `Invalid URL: ${url}`
+  }
+}
+
 async function handleWebFetch({ url, headers = {} }) {
+  const urlError = validateUrl(url)
+  if (urlError) {
+    return { content: [{ type: 'text', text: urlError }], isError: true }
+  }
+
   try {
     const response = await fetch(url, {
       headers: { 'User-Agent': 'Paloma/1.0', ...headers },
@@ -108,7 +126,8 @@ async function handleWebFetch({ url, headers = {} }) {
       content: [{
         type: 'text',
         text: `HTTP ${response.status} ${response.statusText}\nContent-Type: ${contentType}\nLength: ${text.length} chars${truncated ? ' (truncated)' : ''}\n\n${content}`
-      }]
+      }],
+      ...(!response.ok && { isError: true })
     }
   } catch (e) {
     return {
@@ -119,6 +138,11 @@ async function handleWebFetch({ url, headers = {} }) {
 }
 
 async function handleWebDownload({ url, path, headers = {} }) {
+  const urlError = validateUrl(url)
+  if (urlError) {
+    return { content: [{ type: 'text', text: urlError }], isError: true }
+  }
+
   try {
     const resolvedPath = resolve(path)
 

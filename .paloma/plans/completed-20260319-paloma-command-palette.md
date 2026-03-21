@@ -461,10 +461,9 @@ No new files created. No composable changes needed (all necessary APIs are alrea
 - **Scope:** Review the implementation for code quality, UX edge cases, keyboard navigation correctness, error handling, and visual polish.
 - **Acceptance:** All issues found are documented or fixed. Code is clean and production-ready.
 - **Result:** All clear — no blocking issues. Keyboard nav wraps correctly, plan rename logic preserves body invariant, inject-message has no infinite loop (null guard), all 7 emits match App.vue handlers, build clean.
-#### WU-5: Commit all changes with clear commit messages
-- **Feature:** Ship Delivery
-- **Status:** pending
-- **Depends on:** WU-4
-- **Files:** src/components/CommandPalette.vue, src/App.vue, .paloma/plans/active-20260319-paloma-command-palette.md, .paloma/plans/active-20260313-paloma-backlog.md
-- **Scope:** Commit all changes with clear commit messages. Update backlog to mark keyboard shortcuts / command palette as complete. Push to remote. Archive plan.
+#### WU-5: Commit all changes, update backlog, archive plan, push to remote
+- **Status:** completed
+- **Files:** src/components/CommandPalette.vue, src/App.vue, src/components/chat/ChatView.vue, .paloma/plans/active-20260319-paloma-command-palette.md, .paloma/plans/active-20260313-paloma-backlog.md
+- **Scope:** Commit all changes, update backlog, archive plan, push to remote.
 - **Acceptance:** Changes committed and pushed. Backlog updated. Plan archived.
+- **Result:** 5 commits pushed to main. Merge conflict in ChatView.vue resolved (kept both injectedMessage watcher and pendingAutoResume watcher). Backlog ticket #2 marked complete. Plan archived to completed- prefix.

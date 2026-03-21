@@ -155,38 +155,6 @@ const visibleMessages = computed(() => {
 })
 
 /**
- * Build a set of tool message IDs that are "consumed" by an assistant message
- * with toolActivity — these should not render as standalone messages.
- */
-const consumedToolIds = computed(() => {
-  const consumed = new Set()
-  const msgs = visibleMessages.value
-  for (let i = 0; i < msgs.length; i++) {
-    const msg = msgs[i]
-    if (msg.role === 'assistant' && msg.toolActivity?.length) {
-      // Collect tool messages AFTER this assistant message (OpenRouter path)
-      for (let j = i + 1; j < msgs.length; j++) {
-        if (msgs[j].role === 'tool') {
-          consumed.add(msgs[j].id)
-        } else {
-          break
-        }
-      }
-      // Collect tool messages BEFORE this assistant message (CLI path:
-      // tool results arrive during stream, assistant message saved at end)
-      for (let j = i - 1; j >= 0; j--) {
-        if (msgs[j].role === 'tool') {
-          consumed.add(msgs[j].id)
-        } else {
-          break
-        }
-      }
-    }
-  }
-  return consumed
-})
-
-/**
  * Messages to display — filters out tool messages that are consumed by ToolCallGroup.
  */
 const displayMessages = computed(() => {
@@ -305,7 +273,7 @@ watch(
     // Render immediately on first chunk, then throttle subsequent updates
     if (!throttleTimer) {
       renderAndScroll()
-      throttleTimer = setTimeout(() => { throttleTimer = null }, 80)
+      throttleTimer = setTimeout(() => { throttleTimer = null }, 120)
     }
   }
 )

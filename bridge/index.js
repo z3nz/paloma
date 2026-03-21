@@ -211,6 +211,14 @@ async function main() {
   emailWatcher.start()
 
   // Start HTTP + WebSocket server
+  httpServer.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n  \x1b[31m✘\x1b[0m Port ${port} is already in use. Is another bridge instance running?`)
+    } else {
+      console.error(`\n  \x1b[31m✘\x1b[0m HTTP server error: ${err.message}`)
+    }
+    process.exit(1)
+  })
   httpServer.listen(port)
   if (hasDistDir) {
     stepOk('frontend', `serving built files at http://localhost:${port}`)
@@ -311,18 +319,16 @@ async function main() {
 
               // Use dynamic WS lookup so reconnected clients receive events
               const targetWs = cliRequestToWs.get(requestId) || ws
-              if (targetWs.readyState !== 1) return // OPEN
-              targetWs.send(JSON.stringify({ ...event, id: msg.id }))
-              // Clean up mapping when CLI session ends
+              // Clean up mapping when CLI session ends (even if WS is dead)
               if (event.type === 'claude_done' || event.type === 'claude_error') {
                 cliRequestToWs.delete(requestId)
                 flowChatBuffers.delete(sessionId)
-                // If this was the Flow session, mark it as no longer streaming
-                // so queued notifications can be processed
                 if (pillarManager?.flowSession?.cliSessionId === sessionId) {
                   pillarManager.onFlowTurnComplete()
                 }
               }
+              if (targetWs.readyState !== 1) return // OPEN
+              targetWs.send(JSON.stringify({ ...event, id: msg.id }))
             }
           )
           // Map this CLI request to the originating WebSocket
@@ -729,6 +735,7 @@ async function main() {
     if (pillarManager) pillarManager.shutdown()
     cliManager.shutdown()
     codexManager.shutdown()
+    copilotManager.shutdown()
     geminiManager.shutdown()
     ollamaManager.shutdown()
     if (mcpProxy) await mcpProxy.shutdown()
