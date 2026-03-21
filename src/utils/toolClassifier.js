@@ -267,15 +267,15 @@ export function sanitizeForDB(obj) {
   try { return JSON.parse(JSON.stringify(obj)) } catch { return obj }
 }
 
-/**
- * Get a result size summary (line count or byte estimate).
- */
 export function formatDuration(ms) {
   if (ms < 1000) return `${ms}ms`
   if (ms < 10000) return `${(ms / 1000).toFixed(1)}s`
   return `${Math.round(ms / 1000)}s`
 }
 
+/**
+ * Get a result size summary (line count or byte estimate).
+ */
 export function getResultSize(content) {
   if (!content) return null
   const str = typeof content === 'string' ? content : JSON.stringify(content)

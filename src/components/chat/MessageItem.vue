@@ -118,7 +118,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, onBeforeUnmount } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { marked } from 'marked'
 import { useSessionState } from '../../composables/useSessionState.js'
 import hljs from '../../utils/highlight.js'
@@ -138,7 +138,7 @@ const htmlCache = new Map()
 
 // Clear HTML cache when the active session changes to prevent memory accumulation
 const { activeId } = useSessionState()
-const stopSessionWatch = watch(activeId, () => { htmlCache.clear() })
+watch(activeId, () => { htmlCache.clear() })
 
 const { formatCost, formatTokens, formatTokenBreakdown, calculateMessageCost } = useCostTracking()
 const messageCost = computed(() => calculateMessageCost(props.message))

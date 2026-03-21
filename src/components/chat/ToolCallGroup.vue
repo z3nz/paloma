@@ -136,6 +136,4 @@ function getToolMessage(activity) {
   // Last resort: positional match
   return props.toolMessages[actIdx] || null
 }
-
-
 </script>
