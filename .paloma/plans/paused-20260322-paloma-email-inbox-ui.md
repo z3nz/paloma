@@ -1,6 +1,6 @@
 # Email Inbox UI — Dedicated Email Section for Paloma
 
-**Status:** active
+**Status:** paused
 **Created:** 2026-03-22
 **Scope:** paloma
 **Phase 1:** Read-only inbox with full transparency (today)
