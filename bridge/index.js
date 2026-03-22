@@ -9,13 +9,70 @@ process.on('uncaughtException', (err) => {
   console.error('[bridge] Uncaught exception:', err)
   // Don't exit — the bridge should stay alive. Only fatal errors (like ENOMEM) will kill it.
 })
-import { mkdir, writeFile, readdir, stat, unlink } from 'fs/promises'
-import { writeFileSync, unlinkSync, createReadStream, existsSync } from 'fs'
+import { mkdir, writeFile, readdir, stat, unlink, readFile } from 'fs/promises'
+import { writeFileSync, unlinkSync, createReadStream, existsSync, readFileSync } from 'fs'
 import { join, extname } from 'path'
 import { homedir, tmpdir } from 'os'
 import { randomUUID } from 'crypto'
+import { execSync } from 'child_process'
 
 const PID_FILE = join(tmpdir(), 'paloma-bridge.pid')
+
+/**
+ * Kill any stale bridge processes before starting.
+ * Two-pronged approach:
+ *   1. PID file — kill the process recorded from last startup
+ *   2. Process scan — catch orphans that lost their PID file
+ */
+function killStaleBridgeProcesses() {
+  const myPid = process.pid
+  let killedAny = false
+
+  // Strategy 1: PID file — most reliable
+  try {
+    const pidStr = readFileSync(PID_FILE, 'utf8').trim()
+    const pid = parseInt(pidStr, 10)
+    if (pid && pid !== myPid) {
+      try {
+        process.kill(pid, 0) // probe — throws if not alive
+        console.log(`[bridge] Killing stale bridge (pid ${pid}) from PID file`)
+        process.kill(pid, 'SIGTERM')
+        killedAny = true
+        // Synchronous wait: give it up to 3s to die, then SIGKILL
+        const deadline = Date.now() + 3000
+        while (Date.now() < deadline) {
+          try { process.kill(pid, 0); execSync('sleep 0.1') } catch { break }
+        }
+        try { process.kill(pid, 0); process.kill(pid, 'SIGKILL') } catch { /* dead */ }
+      } catch {
+        // Process not alive — just clean up the stale PID file
+      }
+      try { unlinkSync(PID_FILE) } catch { /* best-effort */ }
+    }
+  } catch {
+    // No PID file or unreadable — fine
+  }
+
+  // Strategy 2: Scan for orphaned bridge processes that lost their PID file
+  try {
+    const psOutput = execSync('ps aux', { encoding: 'utf8', timeout: 5000 })
+    for (const line of psOutput.split('\n')) {
+      if (!line.includes('node') || !line.includes('bridge/index.js')) continue
+      if (line.includes('grep') || line.includes('run.js')) continue
+      const parts = line.trim().split(/\s+/)
+      const pid = parseInt(parts[1], 10)
+      if (!pid || pid === myPid) continue
+      console.log(`[bridge] Killing orphaned bridge process (pid ${pid})`)
+      try { process.kill(pid, 'SIGTERM'); killedAny = true } catch { /* dead or no permission */ }
+    }
+  } catch {
+    // ps not available — non-fatal
+  }
+
+  return killedAny
+}
+
+const killedStaleProcesses = killStaleBridgeProcesses()
 import { loadConfig } from './config.js'
 import { McpManager } from './mcp-manager.js'
 import { ClaudeCliManager } from './claude-cli.js'
@@ -92,6 +149,9 @@ staleRequestInterval.unref() // Don't prevent process exit
 async function main() {
   const startTime = Date.now()
   printBanner()
+
+  // Brief pause to let killed processes release their ports
+  if (killedStaleProcesses) await new Promise(r => setTimeout(r, 500))
 
   // Check backend health
   const health = new BackendHealth()
