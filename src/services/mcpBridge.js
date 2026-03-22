@@ -32,6 +32,7 @@ export function createMcpBridge() {
   let onEmailStream = null
   let onEmailDone = null
   let onEmailError = null
+  let onEmailStoreUpdated = null
   let onSupervisorRestart = null
   let onSingularityCreated = null
   let onSingularityReady = null
@@ -68,6 +69,7 @@ export function createMcpBridge() {
     onEmailStream = callbacks.onEmailStream || null
     onEmailDone = callbacks.onEmailDone || null
     onEmailError = callbacks.onEmailError || null
+    onEmailStoreUpdated = callbacks.onEmailStoreUpdated || null
     onSupervisorRestart = callbacks.onSupervisorRestart || null
     onSingularityCreated = callbacks.onSingularityCreated || null
     onSingularityReady = callbacks.onSingularityReady || null
@@ -283,6 +285,8 @@ export function createMcpBridge() {
         }
       } else if (msg.type === 'email_received') {
         onEmailReceived?.(msg)
+      } else if (msg.type === 'email_store_updated') {
+        onEmailStoreUpdated?.()
       } else if (msg.type === 'email_abandoned') {
         console.warn(`[email] Thread abandoned after ${msg.retries} retries: "${msg.subject}" from ${msg.from}`)
       } else if (msg.type === 'cli_tool_activity') {
