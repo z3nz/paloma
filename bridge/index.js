@@ -487,6 +487,7 @@ async function main() {
         if (pillarManager) {
           pillarManager.registerFlowSession({
             cliSessionId: msg.cliSessionId,
+            dbSessionId: msg.dbSessionId,
             model: msg.model,
             cwd: msg.cwd,
             wsClient: ws

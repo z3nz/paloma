@@ -149,10 +149,12 @@ export function useSessions() {
   }
 
   const sessionTree = computed(() => {
+    // Filter out email sessions — they belong in the inbox, not the chat sidebar
+    const chatSessions = sessions.value.filter(s => s.source !== 'email')
     const childMap = new Map()
-    const parentIds = new Set(sessions.value.map(s => s.id))
+    const parentIds = new Set(chatSessions.map(s => s.id))
 
-    for (const session of sessions.value) {
+    for (const session of chatSessions) {
       if (session.parentFlowSessionId && parentIds.has(session.parentFlowSessionId)) {
         const siblings = childMap.get(session.parentFlowSessionId) || []
         siblings.push(session)
@@ -161,7 +163,7 @@ export function useSessions() {
     }
 
     const topLevel = []
-    for (const session of sessions.value) {
+    for (const session of chatSessions) {
       const isOrphan = session.parentFlowSessionId && !parentIds.has(session.parentFlowSessionId)
       if (!session.parentFlowSessionId || isOrphan) {
         const children = (childMap.get(session.id) || [])

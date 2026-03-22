@@ -199,6 +199,7 @@ export class PillarManager {
       backend: finalBackend,
       flowRequestId,
       flowCliSessionId: finalFlowCliSessionId,
+      flowDbSessionId: this.flowSession?.dbSessionId || null,
       prompt: fullPrompt
     })
 
@@ -1134,7 +1135,7 @@ export class PillarManager {
   /**
    * Register Flow's session for callback notifications.
    */
-  registerFlowSession({ cliSessionId, model, cwd, wsClient }) {
+  registerFlowSession({ cliSessionId, dbSessionId, model, cwd, wsClient }) {
     if (this.flowSession && this.flowSession.cliSessionId !== cliSessionId) {
       console.warn('[pillar] Overwriting existing Flow session:', this.flowSession.cliSessionId, '→', cliSessionId)
       // Drain any queued notifications to prevent silent loss
@@ -1145,6 +1146,7 @@ export class PillarManager {
     console.log('[pillar] Flow session registered:', cliSessionId)
     this.flowSession = {
       cliSessionId,
+      dbSessionId: dbSessionId || null,
       model,
       cwd,
       wsClient,
@@ -2207,11 +2209,17 @@ This is informational — Adam is communicating directly with the pillar. Decide
       const plansDir = join(this.projectRoot, '.paloma', 'plans')
       let plans = await this._readActiveFiles(plansDir, 'active-')
       if (planFilter) {
+        // When a specific plan is requested (e.g., for a scoped Forge session), include full content
         plans = plans.filter(p => p.name === planFilter)
-      }
-      if (plans.length > 0) {
+        if (plans.length > 0) {
+          prompt += '\n\n## Active Plans\n\n'
+          prompt += plans.map(p => `<plan name="${p.name}">\n${p.content}\n</plan>`).join('\n\n')
+        }
+      } else if (plans.length > 0) {
+        // Lazy loading: only include plan names — read full content on demand via filesystem tools
         prompt += '\n\n## Active Plans\n\n'
-        prompt += plans.map(p => `<plan name="${p.name}">\n${p.content}\n</plan>`).join('\n\n')
+        prompt += 'The following plans are currently active. Read their full content with filesystem tools when needed:\n\n'
+        prompt += plans.map(p => `- \`.paloma/plans/${p.name}\``).join('\n')
       }
     }
 

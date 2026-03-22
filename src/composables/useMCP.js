@@ -13,6 +13,8 @@ const pillarSessionMap = new Map()
 const flowDbSessionMap = new Map()
 // The most recently registered Flow dbSessionId (used for notification routing)
 let activeFlowDbSessionId = null
+// Promise-based waiters for flow session registration (eliminates race conditions)
+const flowSessionWaiters = new Map() // cliSessionId → { resolve, promise }
 // Track pending notification metadata between start and done events
 let pendingNotificationMeta = null
 // Email session routing
@@ -277,12 +279,25 @@ export function useMCP() {
         const { projectName } = useProject()
         const projectPath = projectName.value || 'paloma'
         
-        // Race condition mitigation: The session_id stream chunk might still be queued
-        // in useCliChat's async generator. Wait briefly if we have a flowCliSessionId but no map entry.
-        let parentDbSessionId = msg.flowCliSessionId ? flowDbSessionMap.get(msg.flowCliSessionId) : null
-        if (msg.flowCliSessionId && !parentDbSessionId) {
-          await new Promise(r => setTimeout(r, 150))
+        // Resolve parent Flow session ID — three strategies:
+        // 1. Bridge sends flowDbSessionId directly (most reliable, no race condition)
+        // 2. Local flowDbSessionMap lookup (fast, works when registration happened first)
+        // 3. Promise-based wait for registration (handles race condition properly)
+        let parentDbSessionId = msg.flowDbSessionId || null
+        if (!parentDbSessionId && msg.flowCliSessionId) {
           parentDbSessionId = flowDbSessionMap.get(msg.flowCliSessionId)
+        }
+        if (!parentDbSessionId && msg.flowCliSessionId) {
+          // Flow session not registered yet — wait for it with a promise instead of arbitrary timeout
+          let waiter = flowSessionWaiters.get(msg.flowCliSessionId)
+          if (!waiter) {
+            let resolve
+            const promise = new Promise(r => { resolve = r })
+            waiter = { resolve, promise }
+            flowSessionWaiters.set(msg.flowCliSessionId, waiter)
+          }
+          const timeout = new Promise(r => setTimeout(() => r(null), 5000))
+          parentDbSessionId = await Promise.race([waiter.promise, timeout])
         }
         parentDbSessionId = parentDbSessionId || activeFlowDbSessionId
 
@@ -569,7 +584,7 @@ export function useMCP() {
           null,
           summary
         )
-        await updateSession(dbSessionId, { title: msg.subject })
+        await updateSession(dbSessionId, { title: msg.subject, source: 'email' })
         pendingEmailSessions.set(msg.subject, dbSessionId)
         activeEmailDbSessionId = dbSessionId
       },
@@ -592,7 +607,7 @@ export function useMCP() {
               null,
               null
             )
-            await updateSession(dbSessionId, { title: emailSubject || 'Incoming Email' })
+            await updateSession(dbSessionId, { title: emailSubject || 'Incoming Email', source: 'email' })
           }
           emailSessionMap.set(id, dbSessionId)
           activeEmailDbSessionId = dbSessionId
@@ -856,10 +871,16 @@ export function useMCP() {
   }
 
   function registerFlowSession(cliSessionId, model, cwd, dbSessionId) {
-    if (bridge) bridge.registerFlowSession(cliSessionId, model, cwd)
+    if (bridge) bridge.registerFlowSession(cliSessionId, model, cwd, dbSessionId)
     if (dbSessionId && cliSessionId) {
       flowDbSessionMap.set(cliSessionId, dbSessionId)
       activeFlowDbSessionId = dbSessionId
+      // Resolve any waiters blocked on this flow session registration
+      const waiter = flowSessionWaiters.get(cliSessionId)
+      if (waiter) {
+        waiter.resolve(dbSessionId)
+        flowSessionWaiters.delete(cliSessionId)
+      }
     }
   }
 
@@ -953,7 +974,7 @@ export function useMCP() {
         const modelName = session.model || 'claude-sonnet-4-20250514'
         flowDbSessionMap.set(session.cliSessionId, session.id)
         activeFlowDbSessionId = session.id
-        bridge.registerFlowSession(session.cliSessionId, modelName, session.projectPath || undefined)
+        bridge.registerFlowSession(session.cliSessionId, modelName, session.projectPath || undefined, session.id)
         console.log(`[flow] Re-registered Flow session ${session.cliSessionId?.slice(0, 8)} → db session ${session.id}`)
       }
 

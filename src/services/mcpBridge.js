@@ -543,8 +543,8 @@ export function createMcpBridge() {
     _send({ type: 'pillar_db_session_id', pillarId, dbSessionId })
   }
 
-  function registerFlowSession(cliSessionId, model, cwd) {
-    _send({ type: 'register_flow_session', cliSessionId, model, cwd })
+  function registerFlowSession(cliSessionId, model, cwd, dbSessionId) {
+    _send({ type: 'register_flow_session', cliSessionId, model, cwd, dbSessionId })
   }
 
   function listPillars() {
