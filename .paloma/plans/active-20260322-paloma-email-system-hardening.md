@@ -50,10 +50,11 @@ Cloudflare email routing, Gmail Send-As, fleet discovery. Requires Scout researc
 
 #### WU-4: Write the admin setup guide for multi-machine email routing and update the machi
 - **Feature:** Tier 2 — Multi-Machine Email Infrastructure
-- **Status:** pending
+- **Status:** completed
 - **Files:** .paloma/docs/email-admin-setup.md, .paloma/docs/machine-fleet.md
 - **Scope:** Write the admin setup guide for multi-machine email routing and update the machine-fleet doc. Two deliverables: (1) `.paloma/docs/email-admin-setup.md` — step-by-step instructions for Adam to configure Google Workspace aliases, Gmail Send-As per machine, and GMAIL_SENDER env var in mcp-settings.json. (2) Update `.paloma/docs/machine-fleet.md` to add LYNCH-TOWER entry, confirm MacBook alias as `macbook.paloma@verifesto.com`, and mark Lenovo alias as pending Google Workspace admin setup.
 - **Acceptance:** `.paloma/docs/email-admin-setup.md` exists and contains: (a) Google Workspace Admin Console steps to add `lenovo.paloma@verifesto.com` and `macbook.paloma@verifesto.com` as aliases on the paloma@verifesto.com account, (b) per-machine Gmail Settings → Send As steps, (c) per-machine mcp-settings.json GMAIL_SENDER configuration, (d) note that LYNCH-TOWER needs no alias changes. `machine-fleet.md` has LYNCH-TOWER row with `paloma@verifesto.com` email alias and status Active.
+- **Result:** Committed. `email-admin-setup.md` written with 4-step guide (Workspace aliases → Send-As → machine-profile → verify). `machine-fleet.md` updated with LYNCH-TOWER entry, MacBook alias confirmed as `macbook.paloma@verifesto.com`, Pending Actions updated to reflect WU-1/WU-2 completion.
 
 
 #### WU-5: Cross-machine email test — validate that recipient filtering works end-to-end af

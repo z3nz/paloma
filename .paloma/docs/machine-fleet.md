@@ -48,6 +48,8 @@ Cloudflare Email Routing would conflict with Google Workspace MX records. The cu
 2. On each machine: Gmail Settings → Accounts and Import → "Send mail as" → add machine alias → "Treat as alias" (no SMTP config needed for Workspace aliases)
 3. Set `GMAIL_SENDER` env var in `~/.paloma/mcp-settings.json` to the machine alias
 
+See full walkthrough: `.paloma/docs/email-admin-setup.md`
+
 ## How Machines Coordinate
 
 - **Email** is the inter-machine communication channel — Paloma instances email each other for status updates, blocker notifications, and completion signals
@@ -64,9 +66,12 @@ Cloudflare Email Routing would conflict with Google Workspace MX records. The cu
 
 ## Pending Actions (Adam)
 
+> WU-1 (code fixes) and WU-2 (Scout research + fleet doc) are complete. Remaining actions are infrastructure setup.
+
 - [ ] Add `lenovo.paloma@verifesto.com` as alias in Google Workspace Admin Console
 - [ ] Add `macbook.paloma@verifesto.com` as alias in Google Workspace Admin Console
-- [ ] Configure "Send mail as" in Gmail for each machine alias
+- [ ] Configure "Send mail as" in Gmail Settings for each machine alias
 - [ ] Set `GMAIL_SENDER` in `~/.paloma/mcp-settings.json` on Lenovo and MacBook
-- [ ] Confirm hostnames and OS for Lenovo and MacBook
-- [ ] Confirm MacBook's intended email alias
+- [ ] Update `machine-profile.json` on Lenovo and MacBook with correct `emailAlias`
+- [ ] Confirm hostnames and OS for Lenovo and MacBook (update this file)
+- [ ] Run WU-5 cross-machine email test once aliases are provisioned
