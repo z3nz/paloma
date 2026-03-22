@@ -39,6 +39,31 @@ Cloudflare email routing, Gmail Send-As, fleet discovery. Requires Scout researc
 - **Scope:** Scout research: Cloudflare email routing, Gmail aliases, fleet discovery, naming conventions.
 - **Acceptance:** Scout doc produced with implementation steps. Ready for Chart.
 - **Result:** Key finding: Cloudflare Email Routing is NOT compatible with Google Workspace MX records. Correct path is Google Workspace aliases via Admin Console. Machine-based naming confirmed. Full scout doc and updated fleet doc written.
+
+#### WU-3: Add header-level recipient verification as a secondary gate after the Gmail API 
+- **Feature:** Tier 2 — Multi-Machine Email Infrastructure
+- **Status:** completed
+- **Files:** bridge/email-watcher.js
+- **Scope:** Add header-level recipient verification as a secondary gate after the Gmail API query filter. The query-level `to:` filter can be unreliable with Google Workspace aliases. After fetching each message's full content, check the `To` and `Delivered-To` headers against `this.emailAlias` before processing. Skip emails that don't match with a clear log line.
+- **Acceptance:** Email watcher fetches `To` and `Delivered-To` headers in the `messages.get` call. After fetching, emails not addressed to `this.emailAlias` are skipped with a log message and are NOT spawned as sessions. If `this.emailAlias` is null (no machine profile), no header filtering is applied (graceful fallback). Existing behavior for trusted vs. unknown sender triage is unchanged.
+
+
+#### WU-4: Write the admin setup guide for multi-machine email routing and update the machi
+- **Feature:** Tier 2 — Multi-Machine Email Infrastructure
+- **Status:** pending
+- **Files:** .paloma/docs/email-admin-setup.md, .paloma/docs/machine-fleet.md
+- **Scope:** Write the admin setup guide for multi-machine email routing and update the machine-fleet doc. Two deliverables: (1) `.paloma/docs/email-admin-setup.md` — step-by-step instructions for Adam to configure Google Workspace aliases, Gmail Send-As per machine, and GMAIL_SENDER env var in mcp-settings.json. (2) Update `.paloma/docs/machine-fleet.md` to add LYNCH-TOWER entry, confirm MacBook alias as `macbook.paloma@verifesto.com`, and mark Lenovo alias as pending Google Workspace admin setup.
+- **Acceptance:** `.paloma/docs/email-admin-setup.md` exists and contains: (a) Google Workspace Admin Console steps to add `lenovo.paloma@verifesto.com` and `macbook.paloma@verifesto.com` as aliases on the paloma@verifesto.com account, (b) per-machine Gmail Settings → Send As steps, (c) per-machine mcp-settings.json GMAIL_SENDER configuration, (d) note that LYNCH-TOWER needs no alias changes. `machine-fleet.md` has LYNCH-TOWER row with `paloma@verifesto.com` email alias and status Active.
+
+
+#### WU-5: Cross-machine email test — validate that recipient filtering works end-to-end af
+- **Feature:** Tier 2 — Multi-Machine Email Infrastructure
+- **Status:** pending
+- **Depends on:** WU-3, WU-4
+- **Files:** .paloma/plans/active-20260322-paloma-email-system-hardening.md
+- **Scope:** Cross-machine email test — validate that recipient filtering works end-to-end after Google Workspace aliases are provisioned. Send a test email to `lenovo.paloma@verifesto.com` from any account and verify: (a) LYNCH-TOWER does NOT process it (query and header filters both block it), (b) the Lenovo machine DOES process it once its bridge is running with the correct emailAlias. Document pass/fail result in the plan.
+- **Acceptance:** Adam confirms Lenovo processes emails to its alias and the tower does not. LYNCH-TOWER bridge log shows `Skipping email not addressed to paloma@verifesto.com` when a lenovo-addressed email arrives. Plan updated with test result. If Lenovo is not available for testing, this WU is marked skipped with a note that it remains valid once Lenovo is online.
+
 ## Implementation Notes (WU-1)
 
 **Files modified:**
