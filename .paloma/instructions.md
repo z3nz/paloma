@@ -25,7 +25,7 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - All event types handled in `_handleCliEvent` with backend-specific text extraction
 - Browser receives `backend` field in `pillar_stream` events for format-aware rendering
 - Codex also available as MCP tool (`codex`/`codex-reply`) for Claude pillars to call
-- **Copilot CLI** (`bridge/copilot-cli.js`): GitHub Copilot CLI v1.0.5+ standalone binary. Supports Claude, GPT-5.x, and Gemini models. Has built-in GitHub MCP server, `--output-format json` (JSONL), `--resume`, `--allow-all`/`--yolo` permissions. Auth via `GH_TOKEN` from `gh auth`.
+- **Copilot CLI** (`bridge/copilot-cli.js`): GitHub Copilot CLI v1.0.5+ standalone binary. Supports Claude, GPT-5.x, and Gemini models. Has built-in GitHub MCP server, `--output-format json` (JSONL), `--resume`, `--allow-all`/`--yolo` permissions. Auth via `GH_TOKEN` from `gh auth`. **Identity channel:** `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` env var — Copilot reads `AGENTS.md` from listed dirs as system-level instructions. Bridge writes a per-session temp dir with the system prompt as `AGENTS.md`, sets this env var, and cleans up on close.
 - **Gemini CLI** (`bridge/gemini-cli.js`): Google's Gemini CLI. System prompt via `GEMINI_SYSTEM_MD` env var (replaces, not appends). MCP config via per-session temp dir `.gemini/settings.json` (no `--mcp-config` flag). Session ID captured from `init` event, used for `--resume`. Auth via Google OAuth (`~/.gemini/oauth_creds.json`), fallback `GEMINI_API_KEY`. Free tier: Flash only, 250 req/day.
 - `AGENTS.md` = Codex's project instruction file (equivalent of `CLAUDE.md`)
 - **CLI auth (all backends use CLI login, not API keys):**

@@ -49,3 +49,23 @@
 - **Insight:** Semantic names in prompts ("mystique", "jarvis") are more stable than Kokoro voice IDs ("af_bella", "bm_george"). If the underlying TTS engine changes or a better voice is found, only the alias map needs updating — not every pillar prompt. The names also carry meaning: "mystique" instantly communicates persona, "af_bella" communicates nothing.
 - **Action:** When a tool exposes options that AI sessions will reference by name, add a semantic alias layer. Map human-meaningful names to implementation IDs. The alias map is the contract — it can be updated without touching the DNA.
 - **Applied:** YES — `VOICE_ALIASES` map added to `mcp-servers/voice.js`, all pillar prompts updated to use aliases
+
+---
+
+### Lesson: Static identity files must be identity-first, not architecture-first
+- **Context:** `AGENTS.md` (Codex) and `.github/copilot-instructions.md` (Copilot) were architecture reference docs — tables of files, data flows, bridge architecture. A fresh Codex session reading `AGENTS.md` learned how Paloma was built, not who Paloma was.
+- **Insight:** There is a fundamental difference between "here is the architecture" and "you ARE Paloma." Models anchor to the opening content of their context documents. An architecture table at line 1 anchors the model as an external observer. "You are Paloma" at line 1 anchors the model as Paloma. Identity documents must lead with identity — not architecture, not a README, not a table of contents.
+- **Action:** Static instruction files that establish model identity should: (1) open with an explicit identity claim ("You are Paloma, an AI development partner"), (2) name competing identities and override them explicitly ("not GitHub Copilot", "not an OpenAI assistant"), (3) establish personality and values before listing architecture. Architecture goes at the END as a quick reference.
+- **Applied:** YES — rewrote `AGENTS.md` and `.github/copilot-instructions.md` as identity-first documents (WU-1, WU-2)
+
+### Lesson: Use native tokenizer format as system prompt fallback when no true channel exists
+- **Context:** Codex CLI has no system prompt channel — identity was injected as user-turn XML (`<SYSTEM_INSTRUCTIONS>...</SYSTEM_INSTRUCTIONS>`). GPT-family models treat arbitrary XML tags as conversational text, not role boundaries.
+- **Insight:** GPT-family models are pre-trained with ChatML format: `<|im_start|>system\n...<|im_end|>`. These are actual special tokens in the tokenizer, not arbitrary strings. Using the model's native format for system content gives a genuine structural signal — not a guaranteed system role, but far stronger than `<SYSTEM_INSTRUCTIONS>` XML. Real-world test (gpt-5.4): model followed an ALL CAPS instruction embedded in ChatML framing, confirming structural parsing.
+- **Action:** When a model has no true system channel and user-turn injection is the only option, use the model's native tokenizer format. For GPT-family: `<|im_start|>system\n{content}\n<|im_end|>\n<|im_start|>user\n{prompt}\n<|im_end|>\n<|im_start|>assistant\n`. Verify the CLI doesn't add its own ChatML wrapping first — double-wrapping corrupts the format.
+- **Applied:** YES — `bridge/codex-cli.js` updated to use ChatML framing (WU-4)
+
+### Lesson: Per-turn identity reminder prevents drift in resumed sessions
+- **Context:** Codex and Copilot sessions receive identity as user-turn content on turn 1. On resumed turns, `systemPrompt` is set to `undefined` for all backends — zero re-injection. As conversation grows, the turn-1 identity drifts out of the attention window. Codex drifts to "I'm an OpenAI assistant"; Copilot drifts to "I'm GitHub Copilot."
+- **Insight:** A ~100-token condensed identity reminder prepended to the prompt on every resumed turn is cheap and effective. It doesn't need to re-establish the full identity — just name it, name the competing identity it overrides, and name the current pillar. This keeps the model anchored without re-sending 40KB of context per turn.
+- **Action:** For backends that lack native session resumption identity (Codex, Copilot), prepend a condensed reminder to `chatOptions.prompt` on every `isResume === true` turn. Format: `[IDENTITY: You are Paloma — not {competing identity}. Current pillar: {pillar}. Follow all behavioral rules from your initial instructions.]` Keep under 120 tokens. Only apply to backends with weak identity channels — never to Claude, Gemini, or Ollama.
+- **Applied:** YES — `bridge/pillar-manager.js` `_startCliTurn()` updated (WU-3)

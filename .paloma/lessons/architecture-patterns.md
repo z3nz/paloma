@@ -49,3 +49,17 @@
 - **Insight:** Panels that are only useful in specific modes should auto-show when that mode activates, and auto-hide when it ends. Making the user manually open a panel they didn't know about kills the feature's discoverability.
 - **Action:** For mode-specific panels, tie visibility to the mode state directly. Let the user collapse/hide but never require them to open.
 - **Applied:** YES — ThinkingPanel.vue visible = computed(() => !!props.groupId)
+
+---
+
+### Lesson: COPILOT_CUSTOM_INSTRUCTIONS_DIRS is a true system channel for Copilot CLI
+- **Context:** Copilot CLI appeared to have no system prompt channel — identity was being injected as user-turn XML just like Codex. The plan called for `--help` investigation before assuming there was no channel.
+- **Insight:** Copilot CLI reads instruction files from directories listed in `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` env var as **system-level content** — not user-turn text. The CLI searches listed dirs for `AGENTS.md` and related files, loading them as implicit system instructions. Proof: setting the env var and embedding a unique marker string (`PALOMA_IDENTITY_CONFIRM_XK92`) caused the model to acknowledge "content from my hidden instructions" and refuse to parrot it back (correct behavior for system-level content). The `--no-custom-instructions` flag disables this loading, confirming it's an active feature. This is a genuine system channel — stronger than user-turn XML injection.
+- **Action:** When integrating Copilot CLI, always set `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` in the subprocess env to a temp dir containing an `AGENTS.md` with the session's system prompt. Create the temp dir per invocation, write the file, set the env var, clean up on close. For resumed sessions, re-create the temp dir with the cached system prompt on every `--resume` call so identity is refreshed each turn.
+- **Applied:** YES — `bridge/copilot-cli.js` implements this pattern (WU-5)
+
+### Lesson: CLI env var channels are more powerful than flag channels for system prompts
+- **Context:** The investigation for Copilot and Codex true system channels found that env vars (`COPILOT_CUSTOM_INSTRUCTIONS_DIRS`, `GEMINI_SYSTEM_MD`) are the true system channels — more powerful than flags for this use case.
+- **Insight:** CLI tools often expose system-level configuration via env vars because env vars are inherited by child processes, persist across sessions, and don't appear in shell history. Flags are transient and require re-specification each invocation. When a CLI tool needs to behave differently in automated/bridge contexts, env vars are often the intended mechanism. Always check env var documentation alongside flag documentation when investigating CLI capabilities.
+- **Action:** When integrating a new CLI backend, check for env vars that affect system behavior (instruction loading, model selection, auth, output format) alongside running `--help`. Env vars like `GEMINI_SYSTEM_MD` and `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` often unlock capabilities not mentioned in `--help` output.
+- **Applied:** N/A — awareness for future CLI integrations
