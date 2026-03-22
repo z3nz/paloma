@@ -2,6 +2,12 @@
 
 ---
 
+### Lesson: Prefer theme-aware CSS variables over hardcoded Tailwind classes
+- **Context:** Implementing app-wide Solarized Light theme. Components were originally using hardcoded classes like `bg-gray-900`, `text-purple-400`, etc.
+- **Insight:** Hardcoded color classes in Vue templates make theming impossible without complex conditional classes (`:class="{ 'bg-gray-900': isDark, 'bg-beige-100': isLight }"`). By moving all colors to CSS variables in `main.css` (`--color-bg-primary`, `--color-accent`, etc.) and using those variables in templates, we can change the entire app's look by swapping a single class on the `<html>` element.
+- **Action:** Any new UI component must use CSS variables for colors, borders, and shadows. Avoid `bg-gray-X00` or `text-purple-X00` for core UI elements. Use variables like `var(--color-bg-primary)` instead. This ensures the component "just works" when a new theme is added.
+- **Applied:** YES — refactored MessageItem.vue, ToolConfirmation.vue, ToolResult.vue, PhaseSelector.vue, ThinkingPanel.vue, and SettingsModal.vue to use CSS variables.
+
 ### Lesson: SVG transforms need `transform-box: fill-box`
 - **Context:** Building PillarLoader.vue — animated SVGs were transforming around the SVG viewport origin (0,0) instead of each element's own center.
 - **Insight:** CSS `transform-origin: center` on SVG elements defaults to the SVG viewport's center (12,12 in a 24x24 viewBox), not the element's own bounding box center. To make `transform-origin: center` work relative to the element itself, add `transform-box: fill-box`. Without it, `scale()` on a small circle in the corner scales around the wrong point entirely.

@@ -22,4 +22,10 @@ A Forge session implementing WU-1+WU-2 (BackendHealth fixes + machine profile ge
 
 ## The Principle
 
-Frontend bugs are annoying. Bridge crashes are catastrophic. The bridge is the ONE component that must never break.
+Frontend bugs are annoying. Bridge crashes are catastrophic. ---
+
+### Lesson: Explicitly handle CORS and Cache-Control in Bridge API
+- **Context:** Added CORS and cache-busting headers to `bridge/index.js` routes.
+- **Insight:** In multi-port development environments (Vite on :5173, Bridge on :19191), the browser's browser-side JS will be blocked by CORS unless the bridge explicitly allows the cross-origin origin. Additionally, without `Cache-Control: no-cache`, the browser may aggressively cache `index.html` and other non-hashed static files, leading to frustrating stale UI states that require DevTools "Disable cache" to fix.
+- **Action:** Any new API route in the bridge must include `corsHeaders` on response. Static file serving must differentiate between hashed assets (immutable cache) and entry points (no cache).
+- **Applied:** YES — updated `bridge/index.js` to include CORS for all `/api/` routes and `no-cache` for non-asset static files.
