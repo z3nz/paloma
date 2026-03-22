@@ -263,15 +263,15 @@ function escapeHtml(str) {
 
 <style scoped>
 .email-card {
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--color-bg-secondary);
 }
 
 .email-card__header {
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--color-border-light);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -288,19 +288,19 @@ function escapeHtml(str) {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--color-text-muted);
   min-width: 52px;
   flex-shrink: 0;
 }
 
 .email-card__value {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--color-text-secondary);
   font-size: 13px;
 }
 
 .email-card__subject {
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--color-text-primary);
 }
 
 .email-card__body {
@@ -313,7 +313,7 @@ function escapeHtml(str) {
   font-family: inherit;
   font-size: 13px;
   line-height: 1.6;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--color-text-primary);
   margin: 0;
 }
 

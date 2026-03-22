@@ -33,11 +33,11 @@ function modelHint(phaseId) {
 }
 
 const phases = [
-  { id: 'flow', label: 'Flow', tooltip: 'The Orchestrator — Head Mind' + modelHint('flow'), activeClass: 'bg-blue-500/20 text-blue-400' },
-  { id: 'scout', label: 'Scout', tooltip: 'Curious Inquiry Without Assumption' + modelHint('scout'), activeClass: 'bg-cyan-500/20 text-cyan-400' },
-  { id: 'chart', label: 'Chart', tooltip: 'Strategic Foresight Through Collaboration' + modelHint('chart'), activeClass: 'bg-yellow-500/20 text-yellow-400' },
-  { id: 'forge', label: 'Forge', tooltip: 'Powerful Craftsmanship With Transparency' + modelHint('forge'), activeClass: 'bg-orange-500/20 text-orange-400' },
-  { id: 'polish', label: 'Polish', tooltip: 'Rigorous Excellence Without Compromise' + modelHint('polish'), activeClass: 'bg-pink-500/20 text-pink-400' },
-  { id: 'ship', label: 'Ship', tooltip: 'Complete Documentation As Legacy' + modelHint('ship'), activeClass: 'bg-green-500/20 text-green-400' }
+  { id: 'flow', label: 'Flow', tooltip: 'The Orchestrator — Head Mind' + modelHint('flow'), activeClass: 'bg-accent/15 text-accent' },
+  { id: 'scout', label: 'Scout', tooltip: 'Curious Inquiry Without Assumption' + modelHint('scout'), activeClass: 'bg-blue-500/15 text-blue-600 dark:text-blue-400' },
+  { id: 'chart', label: 'Chart', tooltip: 'Strategic Foresight Through Collaboration' + modelHint('chart'), activeClass: 'bg-warning/15 text-warning' },
+  { id: 'forge', label: 'Forge', tooltip: 'Powerful Craftsmanship With Transparency' + modelHint('forge'), activeClass: 'bg-orange-500/15 text-orange-600 dark:text-orange-400' },
+  { id: 'polish', label: 'Polish', tooltip: 'Rigorous Excellence Without Compromise' + modelHint('polish'), activeClass: 'bg-pink-500/15 text-pink-600 dark:text-pink-400' },
+  { id: 'ship', label: 'Ship', tooltip: 'Complete Documentation As Legacy' + modelHint('ship'), activeClass: 'bg-success/15 text-success' }
 ]
 </script>

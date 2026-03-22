@@ -15,6 +15,29 @@
           </span>
         </h1>
         <div class="flex items-center gap-2">
+          <!-- Theme Toggle -->
+          <button 
+            @click="toggleTheme" 
+            class="p-2 hover:bg-[--color-bg-hover] rounded-md transition-colors text-[--color-text-secondary] hover:text-[--color-text-primary]"
+            :title="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
+          >
+            <!-- Sun icon (shown in dark mode — click to go light) -->
+            <svg v-if="theme === 'dark'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <!-- Moon icon (shown in light mode — click to go dark) -->
+            <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+          </button>
           <button 
             @click="syncEmails" 
             class="p-2 hover:bg-[--color-bg-hover] rounded-md transition-colors text-[--color-text-secondary] hover:text-[--color-text-primary] disabled:opacity-50"
@@ -68,7 +91,7 @@
       </div>
 
       <!-- Error Overlay -->
-      <div v-if="error" class="absolute bottom-4 right-4 max-w-sm p-3 bg-red-900/20 border border-red-500/50 text-red-200 rounded-lg text-sm flex items-start gap-3 shadow-lg z-50">
+      <div v-if="error" class="absolute bottom-4 right-4 max-w-sm p-3 rounded-lg text-sm flex items-start gap-3 shadow-lg z-50 border bg-[--color-danger]/10 border-[--color-danger]/30 text-[--color-danger]">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mt-0.5 shrink-0">
           <circle cx="12" cy="12" r="10"></circle>
           <line x1="12" y1="8" x2="12" y2="12"></line>
@@ -88,6 +111,7 @@ import { onMounted } from 'vue'
 import InboxList from './InboxList.vue'
 import InboxThread from './InboxThread.vue'
 import { useInbox } from '../../composables/useInbox.js'
+import { useTheme } from '../../composables/useTheme.js'
 
 const {
   threads,
@@ -104,6 +128,8 @@ const {
   unreadCount,
   hasMore
 } = useInbox()
+
+const { theme, toggleTheme } = useTheme()
 
 onMounted(() => {
   fetchThreads({ limit: 50 })

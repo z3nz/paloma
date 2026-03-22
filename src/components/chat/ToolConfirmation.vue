@@ -101,7 +101,7 @@
             class="px-4 py-2 text-sm text-white rounded-md transition-colors"
             :class="confirmation.toolName === 'deleteFile'
               ? 'bg-danger/90 hover:bg-danger'
-              : isExternalTool ? 'bg-purple-600/90 hover:bg-purple-600'
+              : isExternalTool ? 'bg-accent/90 hover:bg-accent'
               : 'bg-success/90 hover:bg-success'"
             aria-label="Allow tool execution (Y)"
           >
@@ -189,7 +189,7 @@ const actionLabel = computed(() => {
 })
 
 const actionBadgeClass = computed(() => {
-  if (isExternalTool.value) return 'bg-purple-500/20 text-purple-400'
+  if (isExternalTool.value) return 'bg-accent-muted text-accent'
   switch (props.confirmation.toolName) {
     case 'createFile': return 'bg-success/20 text-success'
     case 'deleteFile': return 'bg-danger/20 text-danger'

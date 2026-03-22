@@ -34,7 +34,7 @@
             <div class="w-2 h-2 rounded-full" :class="thinkerDotClass" title="Thinker"></div>
           </div>
           <h2 class="text-sm font-semibold text-text-primary">Thinker</h2>
-          <span v-if="group?.voiceReady && group?.thinkerReady" class="text-xs text-green-400 font-mono">COMPLETE</span>
+          <span v-if="group?.voiceReady && group?.thinkerReady" class="text-xs text-success font-mono">COMPLETE</span>
         </div>
         <button
           @click="collapsed = true"
@@ -79,15 +79,15 @@ const thinkerContent = computed(() => props.groupId ? (singularityThinkerContent
 
 // Agreement indicator dot classes
 const voiceDotClass = computed(() => {
-  if (!group.value) return 'bg-gray-600'
-  if (group.value.voiceReady) return 'bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.5)]'
-  return 'bg-blue-400 animate-pulse'
+  if (!group.value) return 'bg-text-muted'
+  if (group.value.voiceReady) return 'bg-success shadow-sm'
+  return 'bg-accent animate-pulse'
 })
 
 const thinkerDotClass = computed(() => {
-  if (!group.value) return 'bg-gray-600'
-  if (group.value.thinkerReady) return 'bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.5)]'
-  return 'bg-blue-400 animate-pulse'
+  if (!group.value) return 'bg-text-muted'
+  if (group.value.thinkerReady) return 'bg-success shadow-sm'
+  return 'bg-accent animate-pulse'
 })
 
 const thinkerStatus = computed(() => {

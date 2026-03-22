@@ -192,6 +192,20 @@ async function main() {
     const url = new URL(req.url, `http://localhost:${port}`)
     const pathname = url.pathname
 
+    // CORS headers for API routes (dev mode: Vite on :5173 → Bridge on :19191)
+    const corsHeaders = pathname.startsWith('/api/') ? {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    } : {}
+
+    // Handle CORS preflight
+    if (req.method === 'OPTIONS' && pathname.startsWith('/api/')) {
+      res.writeHead(204, corsHeaders)
+      res.end()
+      return
+    }
+
     // ─── Email API Routes ───────────────────────────────────────────────────
 
     if (pathname === '/api/emails' && req.method === 'GET') {
@@ -200,11 +214,11 @@ async function main() {
         const offset = parseInt(url.searchParams.get('offset') || '0', 10)
         const search = url.searchParams.get('search') || ''
         const result = emailStore.getThreads({ limit, offset, search })
-        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
         res.end(JSON.stringify(result))
       } catch (err) {
         console.error('[bridge] GET /api/emails error:', err.message)
-        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.writeHead(500, { 'Content-Type': 'application/json', ...corsHeaders })
         res.end(JSON.stringify({ error: err.message }))
       }
       return
@@ -217,7 +231,7 @@ async function main() {
 
         if (threadId === 'stats') {
           const result = emailStore.getStats()
-          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
           res.end(JSON.stringify(result))
           return
         }
@@ -225,17 +239,17 @@ async function main() {
         if (threadId) {
           const result = emailStore.getThread(threadId)
           if (result) {
-            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
             res.end(JSON.stringify(result))
           } else {
-            res.writeHead(404)
+            res.writeHead(404, corsHeaders)
             res.end('Thread not found')
           }
           return
         }
       } catch (err) {
         console.error('[bridge] GET /api/emails/:id error:', err.message)
-        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.writeHead(500, { 'Content-Type': 'application/json', ...corsHeaders })
         res.end(JSON.stringify({ error: err.message }))
       }
       return
@@ -244,12 +258,12 @@ async function main() {
     if (pathname === '/api/emails/sync' && req.method === 'POST') {
       try {
         const result = await emailStore.syncFromGmail()
-        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
         res.end(JSON.stringify(result))
         // Broadcast that the store has been updated
         broadcast({ type: 'email_store_updated' })
       } catch (err) {
-        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.writeHead(500, { 'Content-Type': 'application/json', ...corsHeaders })
         res.end(JSON.stringify({ error: err.message }))
       }
       return
@@ -275,6 +289,10 @@ async function main() {
       const headers = { 'Content-Type': mime }
       if (pathname.startsWith('/assets/')) {
         headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+      } else {
+        // Prevent caching of index.html and other non-hashed files
+        // so rebuilds are picked up immediately without "Disable cache" in DevTools
+        headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
       }
       res.writeHead(200, headers)
       stream.pipe(res)

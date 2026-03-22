@@ -17,6 +17,41 @@
 
       <!-- Body -->
       <div class="px-6 py-5 space-y-5 overflow-y-auto">
+        <!-- Appearance -->
+        <div>
+          <label class="block text-sm text-text-secondary mb-1.5">Appearance</label>
+          <div class="flex items-center gap-2 p-1 bg-bg-primary border border-border rounded-lg w-fit">
+            <button 
+              @click="theme = 'dark'"
+              class="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-all"
+              :class="theme === 'dark' ? 'bg-accent text-white shadow-sm' : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+              </svg>
+              Dark
+            </button>
+            <button 
+              @click="theme = 'light'"
+              class="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-all"
+              :class="theme === 'light' ? 'bg-accent text-white shadow-sm' : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="5"></circle>
+                <line x1="12" y1="1" x2="12" y2="3"></line>
+                <line x1="12" y1="21" x2="12" y2="23"></line>
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                <line x1="1" y1="12" x2="3" y2="12"></line>
+                <line x1="21" y1="12" x2="23" y2="12"></line>
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+              </svg>
+              Light
+            </button>
+          </div>
+        </div>
+
         <!-- MCP Bridge -->
         <div>
           <label class="block text-sm text-text-secondary mb-1.5">MCP Bridge</label>
@@ -248,6 +283,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useSettings } from '../../composables/useSettings.js'
+import { useTheme } from '../../composables/useTheme.js'
 import { useMCP } from '../../composables/useMCP.js'
 import { usePermissions } from '../../composables/usePermissions.js'
 import { useProject } from '../../composables/useProject.js'
@@ -259,6 +295,7 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const { apiKey, defaultModel } = useSettings()
+const { theme } = useTheme()
 const { connected: mcpConnected, connectionState: mcpConnectionState, servers: mcpServerList, bridgeUrl, autoConnect: mcpAutoConnect, connect: mcpConnect, disconnect: mcpDisconnect, callMcpTool } = useMCP()
 const { sessionApprovals, approveForSession, revokeSession, approveToolForSession, revokeToolSession, clearSession, getToolPermTier } = usePermissions()
 const { projectRoot, mcpConfig } = useProject()

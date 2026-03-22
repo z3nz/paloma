@@ -5,7 +5,7 @@
   <div
     v-if="message.role === 'assistant' && hasToolActivity"
     class="px-6"
-    :class="message.content ? 'py-4 bg-bg-secondary/50' : 'py-2'"
+    :class="message.content ? 'py-4 bg-[--color-bg-secondary]/50' : 'py-2'"
   >
     <div class="max-w-3xl mx-auto">
       <!-- Callback badge -->
@@ -13,7 +13,7 @@
 
       <!-- Role label (only if there's content) -->
       <div v-if="message.content" class="flex items-center gap-2 mb-2">
-        <span class="text-xs font-medium uppercase tracking-wider text-purple-400">Paloma</span>
+        <span class="text-xs font-medium uppercase tracking-wider text-accent">Paloma</span>
         <span v-if="shortModelName" class="text-[10px] text-text-muted bg-bg-tertiary px-1.5 py-0.5 rounded">{{ shortModelName }}</span>
       </div>
 
@@ -62,7 +62,7 @@
   <div
     v-else
     class="px-6 py-4"
-    :class="message.role === 'user' ? 'bg-bg-primary' : 'bg-bg-secondary/50'"
+    :class="message.role === 'user' ? 'bg-bg-primary' : 'bg-[--color-bg-secondary]/50'"
   >
     <div class="max-w-3xl mx-auto">
       <!-- Callback badge -->
@@ -72,7 +72,7 @@
       <div class="flex items-center gap-2 mb-2">
         <span
           class="text-xs font-medium uppercase tracking-wider"
-          :class="message.role === 'user' ? 'text-success' : 'text-purple-400'"
+          :class="message.role === 'user' ? 'text-success' : 'text-accent'"
         >
           {{ message.role === 'user' ? 'You' : 'Paloma' }}
         </span>
