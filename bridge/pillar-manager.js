@@ -166,7 +166,8 @@ export class PillarManager {
       singularityGroupId: null,     // UUID linking Voice ↔ Thinker
       singularityRole: singularityRole || null,  // 'voice' | 'thinker' | null
       numCtx: singularityRole ? 65536 : null,  // Singularity sessions get 64K context
-      _voiceStreamBuffer: ''        // Voice only: buffer for <to-thinker> tag detection
+      _voiceStreamBuffer: '',       // Voice only: buffer for <to-thinker> tag detection
+      _receivedThinkerMessages: 0   // Voice only: count of [THINKER] messages received
     }
 
     this.pillars.set(pillarId, session)
@@ -356,6 +357,8 @@ export class PillarManager {
         for (const timer of group._idleNudgeTimers.values()) clearTimeout(timer)
         this._singularityGroups.delete(session.singularityGroupId)
       }
+      // Clear singularityGroupId BEFORE stopTree to prevent stop() → stopTree() → stop() recursion
+      session.singularityGroupId = null
       return this.stopTree({ pillarId })
     }
 
@@ -917,6 +920,12 @@ export class PillarManager {
     const prefix = targetRole === 'voice' ? '[THINKER]' : '[VOICE]'
     const formattedMessage = `${prefix}: ${message}`
 
+    // Track Thinker→Voice message count for premature <ready/> prevention
+    if (targetRole === 'voice') {
+      const voiceSession = this.pillars.get(group.voicePillarId)
+      if (voiceSession) voiceSession._receivedThinkerMessages++
+    }
+
     // Use existing sendMessage mechanism — handles queuing if busy
     this.sendMessage({ pillarId: targetPillarId, message: formattedMessage })
   }
@@ -933,6 +942,13 @@ export class PillarManager {
 
     const group = this._singularityGroups.get(session.singularityGroupId)
     if (!group) return false
+
+    // Guard: Voice cannot be ready until it has received at least one Thinker finding.
+    // This prevents premature completion when Voice sends <ready/> without waiting.
+    if (session.singularityRole === 'voice' && session._receivedThinkerMessages === 0) {
+      console.log(`[singularity] Voice sent <ready/> prematurely (0 Thinker messages received) — ignoring`)
+      return false
+    }
 
     // Mark this role as ready
     if (session.singularityRole === 'voice') {
@@ -1034,15 +1050,85 @@ export class PillarManager {
       if (!currentGroup) return
       if (session.status !== 'idle') return
 
+      // Don't nudge Voice if Thinker is actively working — Voice is rightfully
+      // waiting for findings. Only nudge when the partner is also idle (deadlock).
+      if (session.singularityRole === 'voice') {
+        const thinkerSession = this.pillars.get(currentGroup.thinkerPillarId)
+        if (thinkerSession && (thinkerSession.status === 'running' || thinkerSession.currentlyStreaming)) {
+          // Thinker is busy — reschedule nudge check instead of nudging now
+          currentGroup._idleNudgeTimers.set(session.pillarId, setTimeout(() => {
+            this._nudgeSingularityIdle(session)
+          }, 30 * 1000))
+          return
+        }
+      }
+
       const nudgeMessage = session.singularityRole === 'voice'
-        ? '[SYSTEM]: Your Thinker partner is waiting. Do you have everything you need to complete your response? If yes, include <ready/> in your response. If not, ask Thinker for what you need via <to-thinker> tags.'
-        : `[SYSTEM]: Voice is waiting for your findings. Send what you have via pillar_message({ pillarId: "${group.voicePillarId}", message: "..." }), then include <ready/> when done.`
+        ? '[SYSTEM]: Thinker is idle. Do you have everything you need to answer Adam? If yes, include <ready/> in your response. If you need more information, ask Thinker via <to-thinker> tags.'
+        : `[SYSTEM]: Voice is waiting for your findings. Send what you have via pillar_message({ pillarId: "${currentGroup.voicePillarId}", message: "..." }), then include <ready/> when done.`
 
       console.log(`[singularity] Nudging idle ${session.singularityRole} (${session.pillarId.slice(0, 8)})`)
       this.sendMessage({ pillarId: session.pillarId, message: nudgeMessage })
     }, 30 * 1000) // 30 seconds
 
     group._idleNudgeTimers.set(session.pillarId, timer)
+  }
+
+  /**
+   * Auto-route Thinker's FOUND/KEY/DETAIL findings to Voice.
+   * Qwen3 outputs findings as text instead of calling pillar_message,
+   * so we intercept and route them automatically at the bridge level.
+   */
+  _autoRouteThinkerFindings(session, output) {
+    if (session.singularityRole !== 'thinker') return
+    if (!session.singularityGroupId) return
+
+    const group = this._singularityGroups.get(session.singularityGroupId)
+    if (!group) return
+
+    // Extract FOUND: blocks line-by-line to avoid regex backtracking issues
+    const lines = output.split('\n')
+    const findings = []
+    let currentFinding = null
+
+    for (const line of lines) {
+      if (line.startsWith('FOUND:')) {
+        if (currentFinding) findings.push(currentFinding.trim())
+        currentFinding = line
+      } else if (currentFinding && (line.startsWith('KEY:') || line.startsWith('DETAIL:'))) {
+        currentFinding += '\n' + line
+      } else if (currentFinding && line.match(/^<ready/)) {
+        findings.push(currentFinding.trim())
+        currentFinding = null
+      } else if (currentFinding && line.trim()) {
+        currentFinding += ' ' + line.trim()
+      }
+    }
+    if (currentFinding) findings.push(currentFinding.trim())
+
+    // Filter out very short/empty findings
+    const validFindings = findings.filter(f => f.length > 20)
+    if (validFindings.length === 0) return
+
+    // Deduplicate — Thinker sometimes repeats the same finding
+    const seen = new Set()
+    const uniqueFindings = validFindings.filter(f => {
+      const key = f.substring(0, 80)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+
+    // Combine all findings into one message to Voice
+    const combinedFindings = uniqueFindings.map((f, i) => {
+      const truncated = f.length > 400 ? f.substring(0, 400) + '...' : f
+      return truncated
+    }).join('\n\n')
+
+    // Send as a single message with explicit synthesis instruction
+    const message = `${combinedFindings}\n\n---\nYou now have Thinker's research. Synthesize the above into a clear answer for Adam (max 250 words). Do NOT send more <to-thinker> tags. Include <ready/> when done.`
+    console.log(`[singularity] Auto-routing ${uniqueFindings.length} finding(s) to Voice`)
+    this._queueSingularityMessage(session.singularityGroupId, 'voice', message)
   }
 
   /**
@@ -1762,8 +1848,32 @@ This is informational — Adam is communicating directly with the pillar. Decide
           }
         }
 
+        // Bridge-level fallback: if Voice's visible output is empty (only <to-thinker> tags),
+        // inject a default "thinking..." message so Adam sees something.
+        if (session.singularityRole === 'voice') {
+          const visibleText = completedOutput.replace(/<to-thinker>[\s\S]*?<\/to-thinker>/g, '').replace(/<ready\s*\/?>/g, '').trim()
+          if (!visibleText) {
+            const defaultMsg = 'Looking into that for you...'
+            this.broadcast({
+              type: 'pillar_stream',
+              pillarId: session.pillarId,
+              backend: session.backend,
+              singularityRole: 'voice',
+              singularityGroupId: session.singularityGroupId,
+              event: { text: defaultMsg, content: defaultMsg }
+            })
+          }
+        }
+
         // Check for <ready/> and manage agreement
         const isReady = this._checkSingularityReady(session, completedOutput)
+
+        // Auto-route Thinker findings to Voice — Qwen outputs FOUND: blocks as text
+        // instead of calling pillar_message, so we intercept and route them.
+        if (session.singularityRole === 'thinker' && completedOutput) {
+          this._autoRouteThinkerFindings(session, completedOutput)
+        }
+
         // Don't fall through to normal completion for singularity sessions
         // They either continue via queued messages or get nudged
       }

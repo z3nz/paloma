@@ -35,13 +35,18 @@ All machines running Paloma instances. They communicate via email for parallel w
 - **Notes:** Designated as "the brain" by Adam. Needs machine-profile.json on that machine. Specs TBD once powered on.
 
 ### 4. Adam's MacBook Pro (adambookpro)
-- **Hostname:** TBD (Adam to confirm)
+- **Hostname:** `AdamBook Pro` (Mac17,7)
 - **Role:** TBD — newest machine, incredible specs
-- **Path:** TBD
+- **Path:** `/Users/adam/Projects/paloma`
 - **Email:** `adambookpro.paloma@verifesto.com`
-- **OS:** macOS
-- **Status:** New (email alias verified working 2026-03-22)
-- **Notes:** Newest addition to the fleet. Needs Paloma installed, machine-profile.json created. Specs to be reported once online.
+- **OS:** macOS 26.3.1 (Darwin 25.3.0)
+- **Chip:** Apple M5 Max (18 cores: 6 Super + 12 Performance)
+- **GPU:** Apple M5 Max, 40-core, Metal 4
+- **Memory:** 128 GB unified
+- **Storage:** 8 TB Apple SSD (7.84 TB free)
+- **Display:** Built-in Liquid Retina XDR, 3024x1964
+- **Status:** Active (email alias verified working 2026-03-22, specs confirmed 2026-03-22)
+- **Notes:** Newest addition to the fleet. Beast hardware — M5 Max with 128GB unified memory makes this the most powerful machine in the fleet by far. Needs machine-profile.json created.
 
 ## Email Architecture
 

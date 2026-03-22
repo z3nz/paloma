@@ -210,7 +210,7 @@ cat > "$SETTINGS_FILE" <<ENDJSON
       "args": ["$PALOMA_DIR/mcp-servers/gmail.js"],
       "env": {
         "GMAIL_RECIPIENT": "$GMAIL_RECIPIENT",
-        "GMAIL_SENDER": "paloma@verifesto.com"
+        "GMAIL_SENDER": "adambookpro.paloma@verifesto.com"
       }
     },
     "social-poster": {
