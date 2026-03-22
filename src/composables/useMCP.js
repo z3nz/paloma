@@ -31,6 +31,9 @@ const pillarToolUseMeta = new Map()       // `${pillarId}:${toolUseId}` → { na
 // Reactive: whether Flow is currently processing a callback notification
 const flowProcessingCallback = ref(false)
 
+// Reactive: trigger for email store updates
+const emailStoreUpdateTrigger = ref(0)
+
 // Reactive: supervisor restart pending — show overlay until reload
 const restartPending = ref(false)
 
@@ -763,6 +766,9 @@ export function useMCP() {
         emailSessionMap.delete(id)
         if (activeEmailDbSessionId === dbSessionId) activeEmailDbSessionId = null
       },
+      onEmailStoreUpdated() {
+        emailStoreUpdateTrigger.value++
+      },
       onSupervisorRestart() {
         restartPending.value = true
       }
@@ -1049,6 +1055,7 @@ export function useMCP() {
     registerFlowSession,
     sendPillarUserMessage,
     flowProcessingCallback,
+    emailStoreUpdateTrigger,
     pillarStatuses,
     pillarPhases,
     pillarParents,

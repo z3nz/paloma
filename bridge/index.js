@@ -27,6 +27,7 @@ import { McpProxyServer } from './mcp-proxy-server.js'
 import { PillarManager, OLLAMA_ALLOWED_SERVERS } from './pillar-manager.js'
 import { BackendHealth } from './backend-health.js'
 import { EmailWatcher } from './email-watcher.js'
+import { emailStore } from './email-store.js'
 import { printBanner, stepOk, stepFail, stepInfo, printSummary, printShutdown } from './startup.js'
 
 const port = parseInt(process.argv.find((_, i, a) => a[i - 1] === '--port') || '19191', 10)
@@ -127,14 +128,82 @@ async function main() {
     '.map': 'application/json'
   }
 
-  const httpServer = createHttpServer((req, res) => {
+  const httpServer = createHttpServer(async (req, res) => {
+    const url = new URL(req.url, `http://localhost:${port}`)
+    const pathname = url.pathname
+
+    // ─── Email API Routes ───────────────────────────────────────────────────
+
+    if (pathname === '/api/emails' && req.method === 'GET') {
+      try {
+        const limit = parseInt(url.searchParams.get('limit') || '50', 10)
+        const offset = parseInt(url.searchParams.get('offset') || '0', 10)
+        const search = url.searchParams.get('search') || ''
+        const result = emailStore.getThreads({ limit, offset, search })
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(result))
+      } catch (err) {
+        console.error('[bridge] GET /api/emails error:', err.message)
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: err.message }))
+      }
+      return
+    }
+
+    if (pathname.startsWith('/api/emails/') && req.method === 'GET') {
+      try {
+        const parts = pathname.split('/')
+        const threadId = parts[parts.length - 1]
+
+        if (threadId === 'stats') {
+          const result = emailStore.getStats()
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(result))
+          return
+        }
+
+        if (threadId) {
+          const result = emailStore.getThread(threadId)
+          if (result) {
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify(result))
+          } else {
+            res.writeHead(404)
+            res.end('Thread not found')
+          }
+          return
+        }
+      } catch (err) {
+        console.error('[bridge] GET /api/emails/:id error:', err.message)
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: err.message }))
+      }
+      return
+    }
+
+    if (pathname === '/api/emails/sync' && req.method === 'POST') {
+      try {
+        const result = await emailStore.syncFromGmail()
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(result))
+        // Broadcast that the store has been updated
+        broadcast({ type: 'email_store_updated' })
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: err.message }))
+      }
+      return
+    }
+
+    // ─── Frontend Static Serving ───────────────────────────────────────────
+
     if (!hasDistDir) {
       res.writeHead(503, { 'Content-Type': 'text/plain' })
       res.end('Paloma: run "npm run build" first to generate the frontend')
       return
     }
-    const url = new URL(req.url, `http://localhost:${port}`)
-    let filePath = join(distDir, url.pathname === '/' ? 'index.html' : url.pathname)
+
+    let filePath = join(distDir, pathname === '/' ? 'index.html' : pathname)
     const ext = extname(filePath)
 
     // SPA fallback: non-file routes serve index.html
@@ -144,7 +213,7 @@ async function main() {
     const stream = createReadStream(filePath)
     stream.on('open', () => {
       const headers = { 'Content-Type': mime }
-      if (url.pathname.startsWith('/assets/')) {
+      if (pathname.startsWith('/assets/')) {
         headers['Cache-Control'] = 'public, max-age=31536000, immutable'
       }
       res.writeHead(200, headers)

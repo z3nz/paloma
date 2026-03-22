@@ -34,19 +34,20 @@ All machines running Paloma instances. They communicate via email for parallel w
 - **Status:** Off (Adam powers on when needed; email alias verified working 2026-03-22)
 - **Notes:** Designated as "the brain" by Adam. Needs machine-profile.json on that machine. Specs TBD once powered on.
 
-### 4. Adam's MacBook Pro (adambookpro)
-- **Hostname:** `AdamBook Pro` (Mac17,7)
-- **Role:** TBD — newest machine, incredible specs
+### 4. Adam's MacBook Pro (adambookpro) — THE FORGE
+- **Hostname:** `AdamBook-Pro.lan`
+- **Role:** **The Forge.** GPU workhorse — heavy Ollama inference, model training, parallel Forge sessions.
 - **Path:** `/Users/adam/Projects/paloma`
 - **Email:** `adambookpro.paloma@verifesto.com`
 - **OS:** macOS 26.3.1 (Darwin 25.3.0)
-- **Chip:** Apple M5 Max (18 cores: 6 Super + 12 Performance)
+- **Model:** MacBook Pro (Mac17,7)
+- **CPU:** Apple M5 Max — 18 cores (6 Super + 12 Performance)
 - **GPU:** Apple M5 Max, 40-core, Metal 4
-- **Memory:** 128 GB unified
+- **RAM:** 128 GB unified
 - **Storage:** 8 TB Apple SSD (7.84 TB free)
-- **Display:** Built-in Liquid Retina XDR, 3024x1964
-- **Status:** Active (email alias verified working 2026-03-22, specs confirmed 2026-03-22)
-- **Notes:** Newest addition to the fleet. Beast hardware — M5 Max with 128GB unified memory makes this the most powerful machine in the fleet by far. Needs machine-profile.json created.
+- **Display:** Liquid Retina XDR, 3024x1964
+- **Status:** Active (email alias verified working 2026-03-22, specs confirmed 2026-03-22, Paloma installed 2026-03-22)
+- **Notes:** Newest and most powerful machine in the fleet. 128GB unified memory can run even the largest Ollama models (qwen2.5-coder:32b unquantized, 70B+ quantized). Needs machine-profile.json created.
 
 ## Email Architecture
 

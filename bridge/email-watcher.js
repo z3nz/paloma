@@ -16,6 +16,7 @@ import { google } from 'googleapis'
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { homedir } from 'node:os'
+import { emailStore } from './email-store.js'
 
 const OAUTH_KEYS_PATH = resolve(homedir(), '.paloma', 'gmail-oauth-keys.json')
 const TOKENS_PATH = resolve(homedir(), '.paloma', 'gmail-tokens.json')
@@ -228,6 +229,26 @@ export class EmailWatcher {
         const from = this._getHeader(msg.data, 'From') || 'Unknown'
         const subject = this._getHeader(msg.data, 'Subject') || '(no subject)'
         const body = this._extractBody(msg.data) || msg.data.snippet || ''
+        const to = this._getHeader(msg.data, 'To') || 'Unknown'
+        const timestamp = this._getHeader(msg.data, 'Date') || new Date().toISOString()
+        const htmlBody = this._findMimePart(msg.data.payload, 'text/html') || ''
+
+        // Persist to email store
+        emailStore.addMessage({
+          messageId: ref.id,
+          threadId: ref.threadId,
+          from,
+          to,
+          subject,
+          body,
+          htmlBody,
+          timestamp,
+          unread: msg.data.labelIds?.includes('UNREAD'),
+          labels: msg.data.labelIds || []
+        })
+
+        // Broadcast store update to browser UI
+        this.broadcast({ type: 'email_store_updated' })
 
         // Header-level recipient gate (secondary filter — query-level to: is unreliable with Workspace aliases)
         if (this.emailAlias) {
@@ -369,6 +390,9 @@ export class EmailWatcher {
         this.broadcast({ ...event, emailTriggered: true, emailSubject: subject })
       }
     )
+
+    // Link session to email
+    emailStore.linkSession(messageId, sessionId)
 
     console.log(`[email-watcher] Spawned session ${sessionId} (opus) for email: ${subject}`)
 
@@ -606,6 +630,9 @@ export class EmailWatcher {
         this.broadcast({ ...event, emailTriggered: true, emailSubject: entry.subject })
       }
     )
+
+    // Link retry session to email
+    emailStore.linkSession(entry.messageId, sessionId)
 
     console.log(`[email-watcher] Retry ${retryNum}/${MAX_RETRIES} spawned session ${sessionId} for: ${entry.subject}`)
 

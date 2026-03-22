@@ -107,6 +107,19 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Retry tracking** only applies to trusted sender threads (30 min timeout, max 2 retries)
 - **Inter-instance comms:** Paloma instances on different machines email each other to coordinate work across sessions. These emails are always trusted and always responded to.
 
+### Email Rate Limiting Policy (NON-NEGOTIABLE)
+**Gmail abuse prevention is critical. Excessive email sending WILL get our Gmail account shut down.**
+
+This policy applies to ALL Paloma instances on ALL machines:
+
+- **Daily continuity email:** Each machine sends ONE daily continuity email. This is the primary sanctioned use of email.
+- **Inter-instance communication:** Each machine may send a MAXIMUM of ONE email per day to each other machine. That's it.
+- **No email spam:** Do NOT send multiple emails in rapid succession. Do NOT use email for routine coordination that could be handled other ways.
+- **Replies are fine:** Replying to an email thread you received is always allowed — that's how conversations work.
+- **Exceptions:** Some days may require additional emails for genuinely critical situations (system failures, urgent coordination). These are rare exceptions, not the norm. When in doubt, DON'T send.
+- **The rule is simple:** 1 daily continuity email + 1 outbound email per machine per day = the limit. Replies to received emails don't count against this limit.
+- **Why this matters:** Gmail monitors sending patterns. If we send too many emails too fast, the account gets flagged, rate-limited, or permanently suspended. We cannot afford to lose email capability.
+
 ### HTML Email Styling Rules
 When sending HTML emails (via `email_send` or `email_reply` with `isHtml: true`), follow these rules strictly:
 - **ALL body text must be `#ffffff` (pure white).** This is NON-NEGOTIABLE. No gray, no light-blue, no muted tones for body copy.

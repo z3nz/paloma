@@ -21,3 +21,22 @@ export function sanitizeHtml(html) {
     ALLOW_DATA_ATTR: true
   })
 }
+
+/**
+ * Sanitize raw email HTML before inserting via v-html.
+ * Stricter than sanitizeHtml — email content is untrusted and must NOT allow
+ * any event handlers since they execute in the app's JS context (XSS).
+ */
+export function sanitizeEmailHtml(html) {
+  return DOMPurify.sanitize(html, {
+    FORBID_ATTR: [
+      'onclick', 'ondblclick', 'onmousedown', 'onmouseup', 'onmousemove',
+      'onmouseover', 'onmouseout', 'onmouseenter', 'onmouseleave',
+      'onkeydown', 'onkeyup', 'onkeypress',
+      'onfocus', 'onblur', 'onchange', 'oninput', 'onsubmit', 'onreset',
+      'onload', 'onerror', 'onabort', 'onresize', 'onscroll',
+      'oncontextmenu', 'ondrag', 'ondrop'
+    ],
+    ALLOW_DATA_ATTR: false
+  })
+}

@@ -28,9 +28,11 @@
           :active-session-id="activeSessionId"
           :project-path="projectName"
           :width="sidebarWidth"
+          :active-view="activeView"
           @new-chat="$emit('new-chat')"
           @select-session="id => $emit('select-session', id)"
           @delete-session="id => $emit('delete-session', id)"
+          @switch-view="$emit('switch-view', $event)"
         />
         <div
           class="w-1 cursor-col-resize bg-border hover:bg-accent/50 active:bg-accent transition-colors shrink-0"
@@ -56,10 +58,11 @@ defineProps({
   sessions: { type: Array, default: () => [] },
   activeSessionId: { type: Number, default: null },
   activeModel: { type: String, default: '' },
-  sidebarCollapsed: { type: Boolean, default: false }
+  sidebarCollapsed: { type: Boolean, default: false },
+  activeView: { type: String, default: 'chat' }
 })
 
-defineEmits(['open-settings', 'open-project', 'new-chat', 'select-session', 'delete-session', 'toggle-sidebar'])
+defineEmits(['open-settings', 'open-project', 'new-chat', 'select-session', 'delete-session', 'toggle-sidebar', 'switch-view'])
 
 const MIN_WIDTH = 200
 const MAX_WIDTH = 500

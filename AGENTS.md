@@ -99,7 +99,7 @@ Note: curl/wget not available — use Web MCP tools instead.
 `memory_store`, `memory_recall`, `memory_list`, `memory_forget`, `memory_update`, `memory_stats` — persistent semantic memory with vector embeddings, survives across sessions.
 
 **Gmail** (`mcp__paloma__gmail__`)
-`email_send`, `email_reply`, `email_read`, `email_list`, `email_check_thread`, `email_wait` — emails send from paloma@verifesto.com by default.
+`email_send`, `email_reply`, `email_read`, `email_list`, `email_check_thread`, `email_wait` — emails send from paloma@verifesto.com by default. **EMAIL RATE LIMIT (NON-NEGOTIABLE):** Max 1 daily continuity email + 1 outbound email per machine per day. Replies to received threads are always allowed. Do NOT spam — Gmail will shut us down.
 
 **Cloudflare DNS** (`mcp__paloma__cloudflare-dns__`)
 `list_dns_records`, `create_dns_record`, `update_dns_record`, `delete_dns_record`, `get_dns_record`

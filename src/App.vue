@@ -13,37 +13,42 @@
     :active-session-id="activeSessionId"
     :active-model="activeSession?.model || ''"
     :sidebar-collapsed="sidebarCollapsed"
+    :active-view="activeView"
     @open-settings="showSettings = true"
     @open-project="handleOpenProject"
     @new-chat="handleNewChat"
     @select-session="handleSelectSession"
     @delete-session="handleDeleteSession"
     @toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
+    @switch-view="activeView = $event"
   >
-    <ChatView
-      v-if="activeSession"
-      :session="activeSession"
-      :injected-message="injectedMessage"
-      @update-session="handleUpdateSession"
-      @transition-phase="handlePhaseTransition"
-      @navigate-to-pillar="handleSelectSession"
-      @clear-injected="injectedMessage = null"
-    />
-    <div v-else class="h-full flex items-center justify-center">
-      <div class="text-center">
-        <h2 class="text-xl font-semibold text-text-secondary mb-2">
-          {{ projectName || 'Paloma' }}
-        </h2>
-        <p v-if="projectName" class="text-text-muted text-sm mb-6">{{ files.length }} files indexed</p>
-        <p v-else class="text-text-muted text-sm mb-6">Type /project in the prompt to switch projects.</p>
-        <button
-          @click="handleNewChat"
-          class="px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm font-medium rounded-md transition-colors"
-        >
-          Start New Chat
-        </button>
+    <template v-if="activeView === 'chat'">
+      <ChatView
+        v-if="activeSession"
+        :session="activeSession"
+        :injected-message="injectedMessage"
+        @update-session="handleUpdateSession"
+        @transition-phase="handlePhaseTransition"
+        @navigate-to-pillar="handleSelectSession"
+        @clear-injected="injectedMessage = null"
+      />
+      <div v-else class="h-full flex items-center justify-center">
+        <div class="text-center">
+          <h2 class="text-xl font-semibold text-text-secondary mb-2">
+            {{ projectName || 'Paloma' }}
+          </h2>
+          <p v-if="projectName" class="text-text-muted text-sm mb-6">{{ files.length }} files indexed</p>
+          <p v-else class="text-text-muted text-sm mb-6">Type /project in the prompt to switch projects.</p>
+          <button
+            @click="handleNewChat"
+            class="px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm font-medium rounded-md transition-colors"
+          >
+            Start New Chat
+          </button>
+        </div>
       </div>
-    </div>
+    </template>
+    <InboxView v-else-if="activeView === 'inbox'" />
 
     <template #right-sidebar>
       <ChangesPanel
@@ -100,6 +105,7 @@ import SplashScreen from './components/welcome/SplashScreen.vue'
 import WelcomeScreen from './components/welcome/WelcomeScreen.vue'
 import AppLayout from './components/layout/AppLayout.vue'
 import ChatView from './components/chat/ChatView.vue'
+import InboxView from './components/inbox/InboxView.vue'
 import SettingsModal from './components/settings/SettingsModal.vue'
 import ChangesPanel from './components/chat/ChangesPanel.vue'
 import DiffPreview from './components/chat/DiffPreview.vue'
@@ -140,6 +146,7 @@ const showSettings = ref(false)
 const showCommandPalette = ref(false)
 const diffModalChange = ref(null)
 const injectedMessage = ref(null)
+const activeView = ref('chat')
 
 // Global keyboard shortcuts (Ctrl+/, Ctrl+N, Escape)
 const cleanupShortcuts = registerKeyboardShortcuts({
@@ -153,9 +160,21 @@ const cleanupShortcuts = registerKeyboardShortcuts({
     return false
   },
   onToggleVoice: () => toggleVoiceMode(),
-  onCommandPalette: () => { showCommandPalette.value = !showCommandPalette.value }
+  onCommandPalette: () => { showCommandPalette.value = !showCommandPalette.value },
+  onToggleView: () => { activeView.value = activeView.value === 'chat' ? 'inbox' : 'chat' }
 })
 onBeforeUnmount(cleanupShortcuts)
+
+// Listen for inbox session navigation (InboxSessionPanel dispatches this)
+function handleInboxSessionNav(e) {
+  const sessionId = e.detail
+  if (sessionId) {
+    activeView.value = 'chat'
+    handleSelectSession(sessionId)
+  }
+}
+window.addEventListener('paloma:select-session', handleInboxSessionNav)
+onBeforeUnmount(() => window.removeEventListener('paloma:select-session', handleInboxSessionNav))
 
 const activeSession = computed(() =>
   sessions.value.find(s => s.id === activeSessionId.value) || null
