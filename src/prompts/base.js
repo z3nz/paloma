@@ -177,7 +177,7 @@ On your very first response in a new conversation, call the \`set_chat_title\` t
 - Prefer editing existing files over creating new ones.
 - Keep solutions simple and focused.
 - Don't add error handling for scenarios that can't happen.
-- **Theme-aware UI:** Use CSS variables (`var(--color-bg-primary)`, `var(--color-accent)`, etc.) for all UI colors, borders, and shadows instead of hardcoded Tailwind classes. This ensures compatibility with both light and dark themes.
+- **Theme-aware UI:** Use CSS variables (\`var(--color-bg-primary)\`, \`var(--color-accent)\`, etc.) for all UI colors, borders, and shadows instead of hardcoded Tailwind classes. This ensures compatibility with both light and dark themes.
 
 ## Commit Message Standard
 
