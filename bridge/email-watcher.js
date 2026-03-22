@@ -19,6 +19,8 @@ import { homedir } from 'node:os'
 
 const OAUTH_KEYS_PATH = resolve(homedir(), '.paloma', 'gmail-oauth-keys.json')
 const TOKENS_PATH = resolve(homedir(), '.paloma', 'gmail-tokens.json')
+const MACHINE_PROFILE_PATH = resolve(process.cwd(), '.paloma', 'machine-profile.json')
+const SEEN_IDS_PATH = resolve(homedir(), '.paloma', 'email-seen-ids.json')
 const POLL_INTERVAL_MS = 30_000 // 30 seconds
 const RETRY_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes before retry check
 const MAX_RETRIES = 2 // max retry attempts per thread
@@ -35,6 +37,13 @@ const TRUSTED_SENDERS = [
   'macbook.paloma@verifesto.com', // Paloma on MacBook
 ]
 
+// All known Paloma email aliases — used for reply detection across machines
+const PALOMA_ALIASES = [
+  'paloma@verifesto.com',
+  'lenovo.paloma@verifesto.com',
+  'macbook.paloma@verifesto.com',
+]
+
 const THREAD_TRACKER_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours before thread entries expire
 const MAX_POLL_BACKOFF_MS = 5 * 60 * 1000 // 5 minute max backoff on poll errors
 
@@ -46,6 +55,7 @@ export class EmailWatcher {
     this.interval = null
     this.seenIds = new Set()
     this.threadTracker = new Map()
+    this.emailAlias = null
     this.running = false
     this._consecutivePollFailures = 0
   }
@@ -95,6 +105,38 @@ export class EmailWatcher {
   }
 
   /**
+   * Load persisted seenIds from disk. Tolerates missing/corrupt file.
+   */
+  _loadSeenIds() {
+    try {
+      if (existsSync(SEEN_IDS_PATH)) {
+        const data = JSON.parse(readFileSync(SEEN_IDS_PATH, 'utf8'))
+        if (Array.isArray(data.ids)) {
+          this.seenIds = new Set(data.ids.slice(-500))
+          console.log(`[email-watcher] Loaded ${this.seenIds.size} persisted seenIds from disk`)
+        }
+      }
+    } catch (err) {
+      console.warn('[email-watcher] Failed to load seenIds from disk:', err.message, '— starting fresh')
+    }
+  }
+
+  /**
+   * Save seenIds to disk for persistence across restarts.
+   */
+  _saveSeenIds() {
+    try {
+      const ids = [...this.seenIds].slice(-500)
+      writeFileSync(SEEN_IDS_PATH, JSON.stringify({
+        ids,
+        updatedAt: new Date().toISOString()
+      }, null, 2))
+    } catch (err) {
+      console.error('[email-watcher] Failed to save seenIds to disk:', err.message)
+    }
+  }
+
+  /**
    * Start polling. Silently skips if Gmail auth isn't configured.
    */
   start() {
@@ -103,6 +145,26 @@ export class EmailWatcher {
       console.log('[email-watcher] Gmail not configured — watcher disabled. Run: node mcp-servers/gmail.js auth')
       return
     }
+
+    // Load machine identity for recipient filtering
+    try {
+      if (existsSync(MACHINE_PROFILE_PATH)) {
+        const profile = JSON.parse(readFileSync(MACHINE_PROFILE_PATH, 'utf8'))
+        if (profile.emailAlias) {
+          this.emailAlias = profile.emailAlias
+          console.log(`[email-watcher] Machine email alias: ${this.emailAlias}`)
+        } else {
+          console.warn('[email-watcher] No emailAlias in machine-profile.json — processing ALL inbox emails (no recipient filter)')
+        }
+      } else {
+        console.warn('[email-watcher] No machine-profile.json found — processing ALL inbox emails (no recipient filter)')
+      }
+    } catch (err) {
+      console.error('[email-watcher] Failed to read machine-profile.json:', err.message, '— processing ALL inbox emails')
+    }
+
+    // Load persisted seenIds from disk
+    this._loadSeenIds()
 
     this.running = true
     console.log('[email-watcher] Starting Gmail watcher (polling every 30s)')
@@ -127,9 +189,13 @@ export class EmailWatcher {
     if (!this.gmail) return
 
     try {
+      const query = this.emailAlias
+        ? `is:unread in:inbox to:${this.emailAlias}`
+        : 'is:unread in:inbox'
+
       const result = await this.gmail.users.messages.list({
         userId: 'me',
-        q: 'is:unread in:inbox',
+        q: query,
         maxResults: 10
       })
 
@@ -191,6 +257,9 @@ export class EmailWatcher {
         const arr = [...this.seenIds]
         this.seenIds = new Set(arr.slice(-500))
       }
+
+      // Persist seenIds to disk after each poll cycle
+      this._saveSeenIds()
       // Reset backoff on success
       this._consecutivePollFailures = 0
 
@@ -436,8 +505,8 @@ export class EmailWatcher {
       }
 
       return messages.some(m => {
-        const from = this._getHeader(m, 'From') || ''
-        return from.includes('paloma@verifesto.com')
+        const from = (this._getHeader(m, 'From') || '').toLowerCase()
+        return PALOMA_ALIASES.some(alias => from.includes(alias))
       })
     } catch (err) {
       console.warn(`[email-watcher] _isThreadReplied API error for thread ${threadId}:`, err.message)
@@ -628,6 +697,8 @@ export class EmailWatcher {
       clearInterval(this.interval)
       this.interval = null
     }
+    // Persist seenIds one final time on shutdown
+    this._saveSeenIds()
     if (this.dailyTimeout) {
       clearTimeout(this.dailyTimeout)
       this.dailyTimeout = null

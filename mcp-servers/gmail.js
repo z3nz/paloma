@@ -39,7 +39,22 @@ const SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly'
 ]
 const DEFAULT_RECIPIENT = process.env.GMAIL_RECIPIENT || null
-const SENDER_ADDRESS = process.env.GMAIL_SENDER || 'paloma@verifesto.com'
+
+// Sender address priority: env var → machine-profile.json → hardcoded fallback
+function resolveSenderAddress () {
+  if (process.env.GMAIL_SENDER) return process.env.GMAIL_SENDER
+  try {
+    const profilePath = resolve(process.cwd(), '.paloma', 'machine-profile.json')
+    if (existsSync(profilePath)) {
+      const profile = JSON.parse(readFileSync(profilePath, 'utf8'))
+      if (profile.emailAlias) return profile.emailAlias
+    }
+  } catch (err) {
+    // Silently fall through to hardcoded default
+  }
+  return 'paloma@verifesto.com'
+}
+const SENDER_ADDRESS = resolveSenderAddress()
 
 // ─── Auth Module ─────────────────────────────────────────────────────────────
 
