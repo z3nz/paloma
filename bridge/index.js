@@ -94,6 +94,7 @@ async function main() {
 
   // Check backend health
   const health = new BackendHealth()
+  health.setProjectRoot(process.cwd())
   stepInfo('Checking AI backends...')
   const healthSummary = await health.checkAll()
   for (const [backend, info] of Object.entries(healthSummary)) {

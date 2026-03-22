@@ -24,6 +24,10 @@ const emailToolUseToActivity = new Map() // `${requestId}:${toolUseId}` → acti
 const emailToolUseMeta = new Map()       // `${requestId}:${toolUseId}` → { name, args }
 const emailUsageMap = new Map()          // requestId → { promptTokens, completionTokens, totalTokens }
 
+// Pillar tool tracking (parallel to email tool tracking)
+const pillarToolUseToActivity = new Map() // `${pillarId}:${toolUseId}` → activityId
+const pillarToolUseMeta = new Map()       // `${pillarId}:${toolUseId}` → { name, args }
+
 // Reactive: whether Flow is currently processing a callback notification
 const flowProcessingCallback = ref(false)
 
@@ -98,25 +102,119 @@ function getAutoExecuteServers(mcpConfig) {
   return new Set(mcpConfig?.autoExecute || [])
 }
 
-// Shared helper: accumulate text from a pillar stream event into session state
-function _accumulatePillarStream(state, event, backend) {
+// Shared helper: accumulate text and tool events from a pillar stream event into session state
+function _accumulatePillarStream(state, event, backend, pillarId) {
+  const { addActivity, markActivityDone } = useToolExecution(state)
+
   if (backend === 'codex' || backend === 'copilot' || backend === 'gemini') {
     if (event.type === 'agent_message' && event.text) {
       state.streamingContent.value += event.text
+    } else if (event.type === 'tool_use') {
+      const tu = event.tool_use || {}
+      const activityId = addActivity(tu.name, tu.input || {})
+      pillarToolUseToActivity.set(`${pillarId}:${tu.id}`, activityId)
+      pillarToolUseMeta.set(`${pillarId}:${tu.id}`, { name: tu.name, args: tu.input || {} })
+    } else if (event.type === 'tool_result') {
+      _handlePillarToolResult(state, pillarId, event.toolUseId, event.content, markActivityDone)
     }
-  } else {
-    if (event.type === 'assistant' && event.message?.content) {
+  } else if (backend === 'ollama') {
+    // Ollama tool events are emitted directly by bridge pillar-manager
+    if (event.type === 'tool_use') {
+      const tu = event.tool_use || {}
+      const activityId = addActivity(tu.name, tu.input || {})
+      pillarToolUseToActivity.set(`${pillarId}:${tu.id}`, activityId)
+      pillarToolUseMeta.set(`${pillarId}:${tu.id}`, { name: tu.name, args: tu.input || {} })
+    } else if (event.type === 'tool_result') {
+      _handlePillarToolResult(state, pillarId, event.toolUseId, event.content, markActivityDone)
+    } else if (event.type === 'content_block_delta') {
+      if (event.delta?.type === 'text_delta' && event.delta.text) {
+        state.streamingContent.value += event.delta.text
+      }
+    } else if (event.type === 'assistant' && event.message?.content) {
       for (const block of event.message.content) {
         if (block.type === 'text' && block.text) {
           state.streamingContent.value += block.text
         }
       }
+    }
+  } else {
+    // Claude backend
+    if (event.type === 'assistant' && event.message?.content) {
+      for (const block of event.message.content) {
+        if (block.type === 'text' && block.text) {
+          state.streamingContent.value += block.text
+        } else if (block.type === 'tool_use') {
+          const activityId = addActivity(block.name, block.input)
+          pillarToolUseToActivity.set(`${pillarId}:${block.id}`, activityId)
+          pillarToolUseMeta.set(`${pillarId}:${block.id}`, { name: block.name, args: block.input })
+        }
+      }
+    } else if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+      const block = event.content_block
+      const activityId = addActivity(block.name, block.input || {})
+      pillarToolUseToActivity.set(`${pillarId}:${block.id}`, activityId)
+      pillarToolUseMeta.set(`${pillarId}:${block.id}`, { name: block.name, args: block.input || {} })
     } else if (event.type === 'content_block_delta') {
       if (event.delta?.type === 'text_delta' && event.delta.text) {
         state.streamingContent.value += event.delta.text
       }
+    } else if (event.type === 'user' && event.message?.content) {
+      // Tool results come as user-type events with tool_result content blocks
+      for (const block of event.message.content) {
+        if (block.type === 'tool_result') {
+          _handlePillarToolResult(state, pillarId, block.tool_use_id, block.content, markActivityDone)
+        }
+      }
+    } else if (event.type === 'result' && event.result?.content) {
+      for (const block of (Array.isArray(event.result.content) ? event.result.content : [])) {
+        if (block.type === 'tool_result') {
+          _handlePillarToolResult(state, pillarId, block.tool_use_id, block.content, markActivityDone)
+        }
+      }
     }
   }
+}
+
+// Helper: handle a tool_result event for a pillar session
+async function _handlePillarToolResult(state, pillarId, toolUseId, content, markActivityDone) {
+  const key = `${pillarId}:${toolUseId}`
+  const activityId = pillarToolUseToActivity.get(key)
+  const meta = pillarToolUseMeta.get(key)
+
+  // Normalize result content to string
+  let resultStr
+  try {
+    resultStr = Array.isArray(content)
+      ? content.map(c => c.text || '').join('')
+      : typeof content === 'string' ? content : JSON.stringify(content)
+  } catch {
+    resultStr = '[Error serializing tool result]'
+  }
+
+  if (activityId) markActivityDone(activityId, resultStr)
+
+  // Persist as role:'tool' message
+  if (meta) {
+    const dbSessionId = pillarSessionMap.get(pillarId)
+    if (dbSessionId) {
+      const toolMsg = JSON.parse(JSON.stringify({
+        sessionId: dbSessionId,
+        role: 'tool',
+        toolCallId: activityId || toolUseId,
+        toolName: meta.name,
+        toolArgs: meta.args,
+        content: resultStr,
+        resultType: classifyResult(meta.name, resultStr),
+        timestamp: Date.now()
+      }))
+      const toolMsgId = await db.messages.add(toolMsg)
+      toolMsg.id = toolMsgId
+      state.messages.value.push(toolMsg)
+    }
+  }
+
+  pillarToolUseToActivity.delete(key)
+  pillarToolUseMeta.delete(key)
 }
 
 export function useMCP() {
@@ -212,7 +310,7 @@ export function useMCP() {
           const state = getState(dbSessionId)
           state.streaming.value = true
           for (const { event, backend } of buffered) {
-            _accumulatePillarStream(state, event, backend)
+            _accumulatePillarStream(state, event, backend, msg.pillarId)
           }
         }
       },
@@ -248,7 +346,7 @@ export function useMCP() {
         const state = getState(dbSessionId)
         state.streaming.value = true
         pillarStatuses.set(pillarId, 'streaming')
-        _accumulatePillarStream(state, event, backend)
+        _accumulatePillarStream(state, event, backend, pillarId)
       },
       async onPillarMessageSaved(msg) {
         const dbSessionId = pillarSessionMap.get(msg.pillarId)
@@ -264,6 +362,21 @@ export function useMCP() {
           files: [],
           timestamp: Date.now()
         }
+
+        // Attach tool activity snapshot to assistant messages
+        if (msg.role === 'assistant') {
+          const { snapshotActivity, clearActivity, toolActivity, markActivityDone } = useToolExecution(state)
+          // Safety net: mark any still-running activities as done
+          for (const activity of toolActivity.value) {
+            if (activity.status === 'running') {
+              markActivityDone(activity.id)
+            }
+          }
+          const toolActivitySnapshot = snapshotActivity()
+          if (toolActivitySnapshot?.length) dbMsg.toolActivity = toolActivitySnapshot
+          clearActivity()
+        }
+
         const msgId = await db.messages.add(dbMsg)
         dbMsg.id = msgId
         state.messages.value.push(dbMsg)
@@ -340,6 +453,15 @@ export function useMCP() {
         if (isTerminal) {
           pillarSessionMap.delete(msg.pillarId)
           pillarStreamBuffer.delete(msg.pillarId)
+        }
+
+        // Clean up any lingering tool tracking for this pillar
+        const pillarPrefix = `${msg.pillarId}:`
+        for (const key of pillarToolUseToActivity.keys()) {
+          if (key.startsWith(pillarPrefix)) pillarToolUseToActivity.delete(key)
+        }
+        for (const key of pillarToolUseMeta.keys()) {
+          if (key.startsWith(pillarPrefix)) pillarToolUseMeta.delete(key)
         }
 
         // Clean up status display after delay for all done states

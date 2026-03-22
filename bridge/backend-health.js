@@ -1,8 +1,9 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { readFile } from 'fs/promises'
+import { readFile, writeFile } from 'fs/promises'
+import { existsSync } from 'fs'
 import { join } from 'path'
-import { homedir } from 'os'
+import { homedir, hostname, totalmem, cpus, platform } from 'os'
 
 const execFileAsync = promisify(execFile)
 
@@ -27,6 +28,35 @@ export class BackendHealth {
       ollama:  { available: false, reason: 'not checked', lastCheck: null, models: [] }
     }
     this._reprobeTimer = null
+    this.projectRoot = null
+    this.machineProfile = null
+    this._geminiRequestsToday = 0
+    this._geminiResetDate = ''
+  }
+
+  setProjectRoot(root) {
+    this.projectRoot = root
+  }
+
+  incrementGeminiRequests() {
+    const today = new Date().toISOString().split('T')[0]
+    if (this._geminiResetDate !== today) {
+      this._geminiRequestsToday = 0
+      this._geminiResetDate = today
+    }
+    this._geminiRequestsToday++
+  }
+
+  isGeminiApproachingLimit(threshold = 220) {
+    return this._geminiRequestsToday >= threshold
+  }
+
+  getGeminiUsage() {
+    return {
+      today: this._geminiRequestsToday,
+      limit: 250,
+      date: this._geminiResetDate || new Date().toISOString().split('T')[0]
+    }
   }
 
   /**
@@ -46,7 +76,67 @@ export class BackendHealth {
     // Start periodic re-probes for backends that were unavailable
     this._startReprobeTimer()
 
+    // WU-2: Generate machine profile after checks
+    await this._generateMachineProfile()
+
     return this.getSummary()
+  }
+
+  /**
+   * Generates or updates the machine profile JSON file in .paloma/
+   */
+  async _generateMachineProfile() {
+    if (!this.projectRoot) return
+
+    const profilePath = join(this.projectRoot, '.paloma', 'machine-profile.json')
+    let preferences = {
+      default: 'gemini',
+      flow: 'gemini',
+      scout: 'gemini',
+      chart: 'claude',
+      forge: 'gemini',
+      polish: 'claude',
+      ship: 'gemini',
+      subWorker: 'ollama'
+    }
+
+    try {
+      if (existsSync(profilePath)) {
+        const existing = JSON.parse(await readFile(profilePath, 'utf-8'))
+        if (existing.preferences) {
+          preferences = { ...preferences, ...existing.preferences }
+        }
+      }
+    } catch (e) {
+      console.warn(`[health] Error reading existing machine profile: ${e.message}`)
+    }
+
+    const backends = {}
+    for (const [backend, info] of Object.entries(this.status)) {
+      backends[backend] = {
+        available: info.available,
+        reason: info.reason,
+        models: info.models || []
+      }
+    }
+
+    const profile = {
+      hardware: {
+        hostname: hostname(),
+        totalMemory: Math.round(totalmem() / (1024 * 1024 * 1024)) + 'GB',
+        cpu: cpus()[0]?.model || 'unknown',
+        platform: platform()
+      },
+      backends,
+      preferences
+    }
+
+    try {
+      await writeFile(profilePath, JSON.stringify(profile, null, 2))
+      this.machineProfile = profile
+    } catch (e) {
+      console.error(`[health] Failed to write machine profile: ${e.message}`)
+    }
   }
 
   /**
@@ -73,6 +163,8 @@ export class BackendHealth {
       const recovered = unavailable.filter(b => this.status[b]?.available)
       if (recovered.length > 0) {
         console.log(`[health] Backends recovered: ${recovered.join(', ')}`)
+        // WU-2: Update machine profile when backends recover
+        await this._generateMachineProfile()
       }
     }, REPROBE_INTERVAL_MS)
     this._reprobeTimer.unref()
@@ -141,21 +233,18 @@ export class BackendHealth {
     try {
       await execFileAsync('which', ['copilot'])
 
-      // Check Copilot's own auth — it stores credentials in ~/.copilot/config.json
-      // (copilot login — separate from gh auth)
+      // WU-1: Replace config check with gh auth token
       try {
-        const configPath = join(homedir(), '.copilot', 'config.json')
-        const config = JSON.parse(await readFile(configPath, 'utf-8'))
-        if (config.logged_in_users?.length > 0) {
-          const user = config.logged_in_users[0].login || 'unknown'
-          this.status.copilot = { available: true, reason: `CLI authenticated (${user})`, lastCheck: now }
+        const { stdout } = await execFileAsync('gh', ['auth', 'token'], { timeout: 5000 })
+        if (stdout.trim()) {
+          this.status.copilot = { available: true, reason: 'gh auth token valid', lastCheck: now }
         } else if (process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN) {
           this.status.copilot = { available: true, reason: 'token env var set', lastCheck: now }
         } else {
           this.status.copilot = { available: false, reason: 'not authenticated (run: copilot login)', lastCheck: now }
         }
       } catch {
-        // Config file not found or unreadable — check env var fallback
+        // gh auth token failed or gh not installed — check env var fallback
         if (process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN) {
           this.status.copilot = { available: true, reason: 'token env var set', lastCheck: now }
         } else {
@@ -272,6 +361,9 @@ export class BackendHealth {
       summary[backend] = { available: info.available, reason: info.reason }
       if (backend === 'ollama' && info.models?.length) {
         summary[backend].models = info.models
+      }
+      if (backend === 'gemini') {
+        summary[backend].usage = this.getGeminiUsage()
       }
     }
     return summary

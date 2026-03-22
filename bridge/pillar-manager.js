@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT } from '../src/prompts/base.js'
-import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
+import { PHASE_INSTRUCTIONS } from '../src/prompts/phases.js'
 
 const MAX_RUNTIME_MS = 30 * 60 * 1000 // 30 minutes
 const MAX_NOTIFICATION_QUEUE = 50
@@ -13,6 +13,15 @@ export const OLLAMA_ALLOWED_SERVERS = new Set([
   'voice', 'memory', 'fs-extra'
 ])
 const BIRTH_MESSAGE = "Try your best, no matter what, you're worthy of God's love!"
+
+const GITHUB_TASK_SIGNALS = [
+  'pull request', ' pr #', 'github issue', 'open issue',
+  'merge branch', 'git blame', 'close issue', 'github repo'
+]
+const PRIVACY_TASK_SIGNALS = [
+  'confidential', 'private key', 'secret key', 'api secret',
+  'password', 'credentials', 'private and confidential'
+]
 
 /**
  * Manages child pillar CLI sessions spawned by Flow.
@@ -68,10 +77,14 @@ export class PillarManager {
    */
   async spawn({ pillar, prompt, model, flowRequestId, planFile, backend, parentPillarId, recursive, depth, singularityRole }) {
     // Resolve flowCliSessionId and originatingBackend from the actual spawning session
-    const { sessionId: resolvedFlowCliSessionId, backendName: originatingBackend } = this._resolveCliSessionFromRequest(flowRequestId)
+    const { sessionId: resolvedFlowCliSessionId } = this._resolveCliSessionFromRequest(flowRequestId)
+
+    // Smart backend selection — replaces the old originatingBackend || 'gemini' heuristic
+    const selection = this._selectBackend(pillar, prompt, { backend, recursive, depth, singularityRole })
+    const resolvedBackend = selection.backend
+    console.log(`[pillar] Backend selection for ${pillar}: ${selection.backend} (${selection.reason})`)
 
     // Singularity dual-mind: spawn Voice + Thinker concurrently
-    const resolvedBackend = backend || originatingBackend || 'gemini'
     if (recursive && (depth || 0) === 0 && resolvedBackend === 'ollama' && !singularityRole) {
       return this._spawnSingularityGroup({ pillar, prompt, model, flowRequestId, planFile, backend: resolvedBackend, parentPillarId })
     }
@@ -97,6 +110,11 @@ export class PillarManager {
           message: `Backend ${finalBackend} is unavailable (${this.health.status[finalBackend]?.reason}) and no fallback backends are available.`
         }
       }
+    }
+
+    // Track Gemini usage for rate limit pre-emption
+    if (finalBackend === 'gemini') {
+      this.health?.incrementGeminiRequests?.()
     }
 
     // Concurrency warning for Ollama
@@ -1909,20 +1927,114 @@ This is informational — Adam is communicating directly with the pillar. Decide
     this.stop({ pillarId })
   }
 
+  /**
+   * Select the best backend for a pillar spawn based on:
+   * 1. Explicit override (always honored)
+   * 2. Singularity roles → ollama
+   * 3. Recursive sub-workers (depth > 1) → ollama (fast/local)
+   * 4. Task signal detection (GitHub → copilot, privacy → ollama)
+   * 5. Per-pillar preference from machine profile
+   * 6. Gemini rate limit pre-emption
+   * 7. Availability fallback
+   */
+  _selectBackend(pillar, prompt = '', { backend, recursive, depth, singularityRole } = {}) {
+    // 1. Explicit override — always honored, no intelligence needed
+    if (backend) return { backend, reason: 'explicit override' }
+
+    // 2. Singularity roles always use ollama
+    if (singularityRole) return { backend: 'ollama', reason: `singularity ${singularityRole}` }
+
+    // 3. Recursive sub-workers → small local model (fast, free)
+    if (recursive && (depth || 0) > 1) {
+      if (this.health?.isAvailable('ollama')) {
+        return { backend: 'ollama', reason: `recursive sub-worker (depth ${depth})` }
+      }
+      // No ollama → fall through to normal routing
+    }
+
+    // 4. Task signal detection
+    const promptLower = (prompt || '').toLowerCase()
+    if (GITHUB_TASK_SIGNALS.some(s => promptLower.includes(s))) {
+      if (this.health?.isAvailable('copilot')) {
+        return { backend: 'copilot', reason: 'GitHub task signal detected' }
+      }
+    }
+    if (PRIVACY_TASK_SIGNALS.some(s => promptLower.includes(s))) {
+      if (this.health?.isAvailable('ollama')) {
+        return { backend: 'ollama', reason: 'privacy-sensitive task signal detected' }
+      }
+    }
+
+    // 5. Per-pillar preference from machine profile
+    const preferences = this.health?.machineProfile?.preferences || {}
+    let preferred = preferences[pillar] || preferences.default || 'gemini'
+
+    // 6. Gemini rate limit pre-emption
+    if (preferred === 'gemini' && this.health?.isGeminiApproachingLimit?.()) {
+      const usage = this.health.getGeminiUsage?.()
+      const altBackend = this.health?.isAvailable('claude') ? 'claude'
+        : this.health?.isAvailable('copilot') ? 'copilot'
+        : null
+      if (altBackend) {
+        return { backend: altBackend, reason: `Gemini rate limit approached (${usage?.today}/${usage?.limit})` }
+      }
+    }
+
+    // 7. Availability check — fall back if preferred is down
+    if (this.health && !this.health.isAvailable(preferred)) {
+      const fallback = this.health.getFallback(preferred)
+      if (fallback) {
+        return { backend: fallback, reason: `${preferred} unavailable — falling back` }
+      }
+    }
+
+    return { backend: preferred, reason: `pillar preference: ${pillar} → ${preferred}` }
+  }
+
+  /**
+   * Select the best available Ollama model based on what's actually installed.
+   * Queries this.health.status.ollama.models for available models.
+   */
+  _pickBestOllamaModel(preferSmall = false) {
+    const models = this.health?.status?.ollama?.models || []
+    if (models.length === 0) return 'qwen2.5-coder:7b'  // safe default even if not available
+
+    // Sub-workers prefer small/fast models
+    if (preferSmall) {
+      const small = models.find(m => m.includes('7b') || m.includes('3b') || m.includes('mini'))
+      if (small) return small
+    }
+
+    // Preference order for main sessions (highest capability first)
+    const PREFERENCES = [
+      m => m.includes('qwen3-coder') && !m.includes('7b'),
+      m => m.includes('qwen3-coder'),
+      m => m.includes('qwen2.5-coder') && !m.includes('7b'),
+      m => m.includes('deepseek-coder'),
+      m => m.includes('qwen2.5-coder'),
+      m => m.includes('codellama'),
+      () => true   // fallback: first available model
+    ]
+    for (const test of PREFERENCES) {
+      const match = models.find(test)
+      if (match) return match
+    }
+    return models[0]
+  }
+
   _defaultModel(pillar, backend = 'gemini', { recursive, depth, singularityRole } = {}) {
     if (backend === 'ollama') {
-      // Singularity: both Voice and Thinker use the big model
-      if (singularityRole === 'voice' || singularityRole === 'thinker') return 'qwen3-coder:30b'
+      // Singularity: both Voice and Thinker use the best available model
+      if (singularityRole === 'voice' || singularityRole === 'thinker') return this._pickBestOllamaModel(false)
       // Recursive sub-workers (depth > 1) use the small fast model
-      if (recursive && depth > 1) return 'qwen2.5-coder:7b'
-      return 'qwen3-coder:30b'
+      if (recursive && depth > 1) return this._pickBestOllamaModel(true)
+      return this._pickBestOllamaModel(false)
     }
     if (backend === 'codex') return 'gpt-5.1-codex-max'
     if (backend === 'copilot') return 'claude-sonnet-4.6'
     if (backend === 'gemini') return 'flash'
-    // PHASE_MODEL_SUGGESTIONS values are like 'claude-cli:opus' — extract just the model name
-    const suggestion = PHASE_MODEL_SUGGESTIONS[pillar] || 'claude-cli:sonnet'
-    return suggestion.split(':')[1] || 'sonnet'
+    // Claude backend: phase routing is handled by _selectBackend, not model selection
+    return 'sonnet'
   }
 
   /** Get the current turn's accumulated output text efficiently. */

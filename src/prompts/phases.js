@@ -1,16 +1,18 @@
 import { SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT } from './base.js'
 
 /**
- * Suggested model mappings per phase.
- * Not enforced — just recommended defaults.
+ * Recommended backend per phase.
+ * Used by PillarManager._selectBackend() as the per-pillar preference baseline.
+ * Machine profile (.paloma/machine-profile.json) can override these per-machine.
+ * Not enforced — just the starting point for smart routing.
  */
 export const PHASE_MODEL_SUGGESTIONS = {
-  flow: 'gemini',     // orchestrator needs deep reasoning
-  scout: 'gemini',    // fast research, good reasoning
-  chart: 'gemini',    // deep planning needs strong reasoning
-  forge: 'gemini',    // complex coding benefits from Opus
-  polish: 'gemini', // review is balanced work
-  ship: 'gemini'    // evolution + lessons require real reasoning
+  flow:    'gemini',   // orchestrator — needs full MCP tool loop; Gemini is best
+  scout:   'gemini',   // fast + free + 1M context; ideal for research
+  chart:   'claude',   // deepest reasoning for architecture decisions
+  forge:   'gemini',   // balanced speed/quality; free tier preserves Claude for review
+  polish:  'claude',   // highest quality for code review; catches subtle issues
+  ship:    'gemini'    // commit/doc work; no deep reasoning needed
 }
 
 export const PHASE_INSTRUCTIONS = {
@@ -224,6 +226,26 @@ You are entering a fresh session with NO prior message history. You must ground 
 - If an active plan already exists, update its implementation sections. Preserve the Status tracker and Research References that Flow maintains.
 - The plan document should include: goal, implementation steps (per phase), files to create/modify, edge cases.
 - Get explicit user approval on the plan before completing.
+
+## Backend Annotations
+
+When writing work units in plan documents, add a \`**Backend:**\` line after \`**Status:**\`:
+
+\`\`\`
+### WU-N: Feature Name
+**Status:** ready
+**Backend:** gemini
+**Files:** ...
+\`\`\`
+
+Recommend the backend that fits the task:
+- \`claude\` — deep reasoning, code review, architecture decisions
+- \`gemini\` — research, fast coding, doc work, default for most tasks
+- \`codex\` — focused code generation with structured output
+- \`copilot\` — GitHub operations (PRs, issues, repos)
+- \`ollama\` — sub-workers, privacy-sensitive, offline tasks
+
+Flow reads these annotations when dispatching pillars. Your recommendation informs but doesn't override Flow's final decision.
 
 ## Voice
 
