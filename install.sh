@@ -33,16 +33,18 @@ PALOMA_BIN_DIR="$PALOMA_HOME/bin"
 
 FLAG_YES=false
 FLAG_SERVICE=false
+FLAG_SUDO=false
 FLAG_HELP=false
 
 for arg in "$@"; do
   case "$arg" in
     --yes|-y)     FLAG_YES=true ;;
     --service|-s) FLAG_SERVICE=true ;;
+    --sudo)       FLAG_SUDO=true ;;
     --help|-h)    FLAG_HELP=true ;;
     *)
       echo "Unknown option: $arg"
-      echo "Usage: install.sh [--yes] [--service] [--help]"
+      echo "Usage: install.sh [--yes] [--service] [--sudo] [--help]"
       exit 1
       ;;
   esac
@@ -89,6 +91,7 @@ ${C_BOLD}  USAGE${C_RESET}
 ${C_BOLD}  OPTIONS${C_RESET}
     ${C_CYAN}--yes, -y${C_RESET}        Non-interactive mode (accept all defaults)
     ${C_CYAN}--service, -s${C_RESET}    Install as a system service (systemd/launchd)
+    ${C_CYAN}--sudo${C_RESET}           Use sudo to symlink CLI to /usr/local/bin
     ${C_CYAN}--help, -h${C_RESET}       Show this help message
 
 ${C_BOLD}  WHAT IT DOES${C_RESET}
@@ -387,18 +390,16 @@ chmod +x "$PALOMA_BIN_DIR/paloma"
 ok "CLI installed to ${C_CYAN}${PALOMA_BIN_DIR}/paloma${C_RESET}"
 
 # Try to symlink to /usr/local/bin for system-wide access
+# Default: silent-fail, no sudo prompt. Use --sudo to opt in.
 SYMLINK_OK=false
 if [ -d "/usr/local/bin" ]; then
   if [ -w "/usr/local/bin" ]; then
     ln -sf "$PALOMA_BIN_DIR/paloma" /usr/local/bin/paloma
     SYMLINK_OK=true
-  else
-    # Try with sudo
-    if command -v sudo &>/dev/null; then
-      info "Creating system symlink (may prompt for password)..."
-      if sudo ln -sf "$PALOMA_BIN_DIR/paloma" /usr/local/bin/paloma 2>/dev/null; then
-        SYMLINK_OK=true
-      fi
+  elif [ "$FLAG_SUDO" = true ] && command -v sudo &>/dev/null; then
+    info "Creating system symlink with sudo..."
+    if sudo ln -sf "$PALOMA_BIN_DIR/paloma" /usr/local/bin/paloma 2>/dev/null; then
+      SYMLINK_OK=true
     fi
   fi
 fi
