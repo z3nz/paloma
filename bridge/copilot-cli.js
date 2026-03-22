@@ -1,6 +1,6 @@
 import { spawn, execFile } from 'child_process'
 import { randomUUID } from 'crypto'
-import { writeFileSync, unlinkSync } from 'fs'
+import { writeFileSync, mkdirSync, rmSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { promisify } from 'util'
@@ -9,9 +9,13 @@ const execFileAsync = promisify(execFile)
 
 export class CopilotCliManager {
   constructor() {
-    this.processes = new Map() // requestId → { process, sessionId, mcpConfigPath }
+    this.processes = new Map() // requestId → { process, sessionId, mcpConfigPath, instructionsDirPath }
     this.mcpProxyPort = null
     this._cachedGhToken = null
+    // Persistent cache of systemPrompt per Copilot session ID.
+    // Pillar-manager passes systemPrompt=undefined on resumed turns; we re-inject
+    // from here so every CLI invocation gets the instructions via the proper channel.
+    this._sessionPrompts = new Map() // copilotSessionId → systemPrompt string
     // Warm the GH token asynchronously at construction time
     this._warmAuth()
   }
@@ -28,14 +32,40 @@ export class CopilotCliManager {
   chat({ prompt, model, sessionId, systemPrompt, cwd }, onEvent) {
     const requestId = randomUUID()
 
-    // Copilot CLI doesn't have --append-system-prompt like Claude CLI.
-    // Prepend system instructions to the prompt with XML delimiters (same as Codex).
-    let fullPrompt = prompt
-    if (systemPrompt && !sessionId) {
-      fullPrompt = `<SYSTEM_INSTRUCTIONS>\n${systemPrompt}\n</SYSTEM_INSTRUCTIONS>\n\n${prompt}`
-    }
+    // IDENTITY INJECTION: Copilot CLI supports COPILOT_CUSTOM_INSTRUCTIONS_DIRS — an env var
+    // that points to additional directories searched for instruction files (AGENTS.md,
+    // copilot-instructions.md, etc.). Content is loaded as TRUE system-level instructions,
+    // not user-turn text. Confirmed via WU-5 investigation (2026-03-22):
+    //   - Setting COPILOT_CUSTOM_INSTRUCTIONS_DIRS=/tmpdir with AGENTS.md present caused
+    //     the model to load the content as "hidden instructions" (its own words)
+    //   - This delivers identity reliably on EVERY turn (new + resumed), because each
+    //     copilot --resume invocation re-reads the env var and the file
+    //   - Far superior to the prior XML user-turn prepend, which GPT-family models treat
+    //     as conversational context rather than behavioral anchoring
+    //
+    // On resumed turns, pillar-manager passes systemPrompt=undefined — we retrieve the
+    // cached prompt from this._sessionPrompts so identity stays fresh every turn.
+    //
+    // Previous approach (for reference — DO NOT restore):
+    //   if (systemPrompt && !sessionId) {
+    //     fullPrompt = `<SYSTEM_INSTRUCTIONS>\n${systemPrompt}\n</SYSTEM_INSTRUCTIONS>\n\n${prompt}`
+    //   }
+
+    // Retrieve cached system prompt for resumed sessions
+    const effectiveSystemPrompt = systemPrompt || this._sessionPrompts.get(sessionId)
+
+    const fullPrompt = prompt
 
     const args = ['--output-format', 'json']
+
+    // Build instructions temp dir for this invocation
+    let instructionsDirPath = null
+    if (effectiveSystemPrompt) {
+      instructionsDirPath = join(tmpdir(), `paloma-copilot-inst-${requestId}`)
+      mkdirSync(instructionsDirPath, { recursive: true })
+      writeFileSync(join(instructionsDirPath, 'AGENTS.md'), effectiveSystemPrompt, 'utf8')
+      console.log(`[copilot] Instructions dir written to ${instructionsDirPath}`)
+    }
 
     if (sessionId) {
       // Resume existing session
@@ -79,6 +109,14 @@ export class CopilotCliManager {
 
     // Use GH_TOKEN from gh auth for authentication
     const env = { ...process.env }
+
+    // Inject instructions dir via env var (extends any existing dirs)
+    if (instructionsDirPath) {
+      const existing = env.COPILOT_CUSTOM_INSTRUCTIONS_DIRS
+      env.COPILOT_CUSTOM_INSTRUCTIONS_DIRS = existing
+        ? `${existing},${instructionsDirPath}`
+        : instructionsDirPath
+    }
     if (!env.COPILOT_GITHUB_TOKEN && !env.GH_TOKEN && !env.GITHUB_TOKEN) {
       if (this._cachedGhToken) {
         env.GH_TOKEN = this._cachedGhToken
@@ -92,7 +130,7 @@ export class CopilotCliManager {
       stdio: ['ignore', 'pipe', 'pipe']
     })
 
-    this.processes.set(requestId, { process: proc, sessionId, mcpConfigPath })
+    this.processes.set(requestId, { process: proc, sessionId, mcpConfigPath, instructionsDirPath })
     console.log(`[copilot] Process spawned, pid=${proc.pid}`)
 
     let buffer = ''
@@ -113,6 +151,11 @@ export class CopilotCliManager {
           if (event.type === 'result' && event.sessionId) {
             const entry = this.processes.get(requestId)
             if (entry) entry.sessionId = event.sessionId
+            // Cache system prompt keyed by Copilot's final session ID so resumed turns
+            // can re-inject it via COPILOT_CUSTOM_INSTRUCTIONS_DIRS
+            if (effectiveSystemPrompt) {
+              this._sessionPrompts.set(event.sessionId, effectiveSystemPrompt)
+            }
             sessionId = event.sessionId
           }
         } catch {
@@ -149,10 +192,13 @@ export class CopilotCliManager {
           // skip non-JSON lines
         }
       }
-      // Clean up temp MCP config
+      // Clean up temp files
       const entry = this.processes.get(requestId)
       if (entry?.mcpConfigPath) {
         try { unlinkSync(entry.mcpConfigPath) } catch {}
+      }
+      if (entry?.instructionsDirPath) {
+        try { rmSync(entry.instructionsDirPath, { recursive: true, force: true }) } catch {}
       }
       const finalSessionId = entry?.sessionId || sessionId
       this.processes.delete(requestId)
@@ -163,6 +209,9 @@ export class CopilotCliManager {
       console.error(`[copilot] Process error: ${err.message}`)
       if (mcpConfigPath) {
         try { unlinkSync(mcpConfigPath) } catch {}
+      }
+      if (instructionsDirPath) {
+        try { rmSync(instructionsDirPath, { recursive: true, force: true }) } catch {}
       }
       this.processes.delete(requestId)
       onEvent({ type: 'copilot_error', requestId, error: err.message })
@@ -215,6 +264,9 @@ export class CopilotCliManager {
       if (entry.mcpConfigPath) {
         try { unlinkSync(entry.mcpConfigPath) } catch {}
       }
+      if (entry.instructionsDirPath) {
+        try { rmSync(entry.instructionsDirPath, { recursive: true, force: true }) } catch {}
+      }
       entry.process.kill('SIGTERM')
       this.processes.delete(requestId)
     }
@@ -225,8 +277,12 @@ export class CopilotCliManager {
       if (entry.mcpConfigPath) {
         try { unlinkSync(entry.mcpConfigPath) } catch {}
       }
+      if (entry.instructionsDirPath) {
+        try { rmSync(entry.instructionsDirPath, { recursive: true, force: true }) } catch {}
+      }
       entry.process.kill('SIGTERM')
     }
     this.processes.clear()
+    this._sessionPrompts.clear()
   }
 }

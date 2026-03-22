@@ -10,14 +10,33 @@ export class CodexCliManager {
   chat({ prompt, model, sessionId, systemPrompt, cwd }, onEvent) {
     const requestId = randomUUID()
 
-    // Build the full prompt with system instructions prepended
-    // Codex doesn't have --append-system-prompt like Claude CLI.
-    // We prepend system instructions to the user prompt with XML delimiters.
-    // Alternative: `-c 'instructions="..."'` flag, but shell escaping is fragile
-    // for multi-KB prompts. Prompt prepending is reliable with spawn().
+    // Build the full prompt with system instructions prepended.
+    //
+    // INVESTIGATION FINDINGS (2026-03-21):
+    // Codex CLI has NO true system prompt channel for exec mode. Exhaustive search:
+    //   - No --instructions / --system / --system-file flags in `codex exec --help`
+    //   - `-c instructions="..."` config key: accepted without error but adds 0 tokens
+    //     to model context (confirmed via input_token counts — completely ignored)
+    //   - CODEX_INSTRUCTIONS env var: no effect (same token count, behavior unchanged)
+    //   - OPENAI_INSTRUCTIONS env var: no effect (same token count, behavior unchanged)
+    //   - AGENTS.md IS automatically loaded from the project dir (~900 tokens added)
+    //     but is a static file — can't carry per-session dynamic identity
+    //
+    // APPROACH: ChatML native token framing.
+    // GPT-family models (including GPT-5.4/Codex) tokenize <|im_start|>/<|im_end|>
+    // as actual special tokens — the same role-boundary markers used internally.
+    // Wrapping the system prompt in ChatML format inside the prompt argument causes
+    // the model to treat it as a genuine system role, not arbitrary user text.
+    //
+    // Tested: `<|im_start|>system\nALWAYS USE ALL CAPS\n<|im_end|>\n...` → model
+    // responded in ALL CAPS. Previous `<SYSTEM_INSTRUCTIONS>` XML tags had no effect.
+    //
+    // CAUTION: Codex CLI may wrap messages in its own ChatML internally before
+    // sending to the API. If double-wrapping causes issues in future model versions,
+    // this approach may need revisiting. Output verified sane as of gpt-5.4.
     let fullPrompt = prompt
     if (systemPrompt && !sessionId) {
-      fullPrompt = `<SYSTEM_INSTRUCTIONS>\n${systemPrompt}\n</SYSTEM_INSTRUCTIONS>\n\n${prompt}`
+      fullPrompt = `<|im_start|>system\n${systemPrompt}\n<|im_end|>\n<|im_start|>user\n${prompt}\n<|im_end|>\n<|im_start|>assistant\n`
     }
 
     let args

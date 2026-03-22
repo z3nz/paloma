@@ -1571,6 +1571,21 @@ This is informational — Adam is communicating directly with the pillar. Decide
       chatOptions.numCtx = session.numCtx
     }
 
+    // Per-turn identity reminder for Codex/Copilot resumed sessions (WU-3)
+    // These backends receive identity as user-turn XML on turn 1 — no true system channel.
+    // As conversation grows, the identity blob drifts further back in the attention window.
+    // Prepend a condensed reminder to every resumed turn to fight drift.
+    if (isResume && (session.backend === 'codex' || session.backend === 'copilot')) {
+      const pillarName = session.pillar
+        ? session.pillar.charAt(0).toUpperCase() + session.pillar.slice(1)
+        : 'Flow'
+      const competingName = session.backend === 'codex' ? 'an OpenAI assistant' : 'GitHub Copilot'
+      const identityReminder = `[IDENTITY: You are Paloma — not ${competingName}. ` +
+        `You are Paloma, an AI development partner. Current pillar: ${pillarName}. ` +
+        `Follow all behavioral rules from your initial system instructions.]\n\n`
+      chatOptions.prompt = identityReminder + chatOptions.prompt
+    }
+
     if (isResume) {
       // Resume: use --resume with existing CLI session ID
       chatOptions.sessionId = session.cliSessionId
