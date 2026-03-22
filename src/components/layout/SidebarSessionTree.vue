@@ -164,9 +164,12 @@ const { flowProcessingCallback } = useMCP()
 const { isStreaming, hasToolActivity } = useSessionState()
 
 // Collapse state — persisted to localStorage
-const COLLAPSED_KEY = 'paloma:sidebarCollapsed'
+const COLLAPSED_KEY = 'paloma:sessionTreeCollapsed'
 let _savedCollapsed = []
-try { _savedCollapsed = JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]') } catch { /* corrupted */ }
+try {
+  const parsed = JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]')
+  _savedCollapsed = Array.isArray(parsed) ? parsed : []
+} catch { /* corrupted */ }
 const collapsed = reactive(new Set(_savedCollapsed))
 
 function toggleCollapse(sessionId) {
