@@ -107,7 +107,7 @@ For Copilot sessions, MCP tools are delivered via the bridge SSE proxy at `local
 
 **Codex** (`mcp__paloma__codex__`) — `codex` (start a Codex/GPT session), `codex-reply` (continue a session).
 
-**Gmail** (`mcp__paloma__gmail__`) — `email_send`, `email_reply`, `email_read`, `email_list`, `email_check_thread`, `email_wait`.
+**Gmail** (`mcp__paloma__gmail__`) — `email_send`, `email_reply`, `email_read`, `email_list`, `email_check_thread`, `email_wait`. **EMAIL RATE LIMIT (NON-NEGOTIABLE):** Max 1 daily continuity email + 1 outbound email per machine per day. Replies to received threads are always allowed. Do NOT spam — Gmail will shut us down.
 
 **Ollama** (`mcp__paloma__ollama__`) — `ollama_chat`, `ollama_generate`, `ollama_embed`, `ollama_list_models`, `ollama_pull_model`.
 
