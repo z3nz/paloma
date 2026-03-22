@@ -96,7 +96,7 @@ Full findings: `.paloma/docs/scout-universal-installer-20260321.md`
 
 #### WU-1: Create the install.sh installer script
 - **Feature:** Main Installer
-- **Status:** ready
+- **Status:** done
 - **Files:** install.sh
 - **Scope:** Create the top-level installer script that lives at the repo root. This is the `curl | bash` entry point. It must:
   1. Wrap everything in a `main()` function (prevents partial-download execution)
@@ -121,7 +121,7 @@ Full findings: `.paloma/docs/scout-universal-installer-20260321.md`
 
 #### WU-2: Create the paloma CLI wrapper script
 - **Feature:** CLI Wrapper
-- **Status:** ready
+- **Status:** done
 - **Files:** scripts/paloma-cli.sh
 - **Scope:** Create the `paloma` command — a bash script that serves as the user-facing CLI for managing Paloma. It gets copied to `~/.paloma/bin/paloma` by the installer. Commands:
   - `paloma start [--no-browser]` — Start Paloma (runs `paloma-supervisor.js` via managed Node.js). Default opens browser to `http://localhost:19191`.
@@ -140,7 +140,7 @@ Full findings: `.paloma/docs/scout-universal-installer-20260321.md`
 
 #### WU-3: Create paloma-doctor.js diagnostics script
 - **Feature:** Diagnostics
-- **Status:** ready
+- **Status:** done
 - **Files:** scripts/paloma-doctor.js
 - **Scope:** Create a Node.js diagnostics script that checks system health and prints a report. Checks:
   1. **Node.js version** — Is managed Node.js present? Version matches expected? (read from install-metadata.json)
@@ -161,7 +161,7 @@ Full findings: `.paloma/docs/scout-universal-installer-20260321.md`
 
 #### WU-4: Bump package.json version to 0.1.0
 - **Feature:** Version Bump
-- **Status:** ready
+- **Status:** done
 - **Files:** package.json
 - **Scope:** Update `package.json` version from `"0.0.0"` to `"0.1.0"`. This marks the first installable release of Paloma. Also add a `"bin"` field pointing to `scripts/paloma-cli.sh` for future npm-based discovery (not used by installer, but good metadata). Add `paloma-doctor` script alias: `"doctor": "node scripts/paloma-doctor.js"`.
 - **Acceptance:** `package.json` shows version `0.1.0`. `npm run doctor` runs the diagnostics script.
