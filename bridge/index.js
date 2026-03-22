@@ -1,5 +1,14 @@
 import { WebSocketServer } from 'ws'
 import { createServer as createHttpServer } from 'http'
+
+// Global error handlers — prevent unhandled errors from crashing the bridge
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[bridge] Unhandled promise rejection:', reason)
+})
+process.on('uncaughtException', (err) => {
+  console.error('[bridge] Uncaught exception:', err)
+  // Don't exit — the bridge should stay alive. Only fatal errors (like ENOMEM) will kill it.
+})
 import { mkdir, writeFile, readdir, stat, unlink } from 'fs/promises'
 import { writeFileSync, unlinkSync, createReadStream, existsSync } from 'fs'
 import { join, extname } from 'path'
@@ -62,7 +71,22 @@ staleRequestInterval = setInterval(() => {
       pendingToolConfirm.delete(id)
     }
   }
+  // Clean up leaked flowChatBuffers and cliRequestToWs entries
+  // whose CLI processes no longer exist (e.g., process hung and never closed)
+  for (const [reqId] of flowChatBuffers) {
+    if (!cliManager.processes.has(reqId) && !codexManager.processes?.has(reqId) &&
+        !copilotManager.processes?.has(reqId) && !geminiManager.processes?.has(reqId)) {
+      flowChatBuffers.delete(reqId)
+    }
+  }
+  for (const [reqId] of cliRequestToWs) {
+    if (!cliManager.processes.has(reqId) && !codexManager.processes?.has(reqId) &&
+        !copilotManager.processes?.has(reqId) && !geminiManager.processes?.has(reqId)) {
+      cliRequestToWs.delete(reqId)
+    }
+  }
 }, 60000)
+staleRequestInterval.unref() // Don't prevent process exit
 
 async function main() {
   const startTime = Date.now()

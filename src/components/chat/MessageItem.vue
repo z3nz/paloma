@@ -120,6 +120,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { marked } from 'marked'
+import { sanitizeHtml } from '../../utils/sanitize.js'
 import { useSessionState } from '../../composables/useSessionState.js'
 import hljs from '../../utils/highlight.js'
 import { useCostTracking } from '../../composables/useCostTracking.js'
@@ -136,7 +137,8 @@ const emit = defineEmits(['apply-code'])
 const HTML_CACHE_MAX = 300
 const htmlCache = new Map()
 
-// Clear HTML cache when the active session changes to prevent memory accumulation
+// Clear HTML cache when the active session changes to prevent memory accumulation.
+// Module-level watch (runs once, not per-component) — no cleanup needed.
 const { activeId } = useSessionState()
 watch(activeId, () => { htmlCache.clear() })
 
@@ -185,7 +187,7 @@ const renderedHtml = computed(() => {
   }
 
   const blocks = []
-  const html = marked.parse(props.message.content, { breaks: true })
+  const html = sanitizeHtml(marked.parse(props.message.content, { breaks: true }))
 
   const result = html.replace(
     /<pre><code(?: class="language-([^"]+)")?>([\s\S]*?)<\/code><\/pre>/g,

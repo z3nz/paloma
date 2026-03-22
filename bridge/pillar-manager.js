@@ -40,6 +40,7 @@ export class PillarManager {
 
     // Periodic cleanup of terminal sessions (every 5 min)
     this._cleanupInterval = setInterval(() => this._cleanupTerminalSessions(), 5 * 60 * 1000)
+    this._cleanupInterval.unref() // Don't prevent process exit
   }
 
   /**

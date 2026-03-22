@@ -1,13 +1,18 @@
 <template>
-  <div>
+  <nav aria-label="Chat sessions">
     <div v-if="sessionTree.length === 0" class="text-text-muted text-sm text-center py-8 px-4">
       No chats yet. Start a new conversation.
     </div>
 
-    <div v-for="parent in sessionTree" :key="parent.id">
+    <div v-for="parent in sessionTree" :key="parent.id" role="list">
       <!-- Parent row -->
       <div
         @click="$emit('select-session', parent.id)"
+        @keydown.enter="$emit('select-session', parent.id)"
+        role="listitem"
+        tabindex="0"
+        :aria-selected="parent.id === activeSessionId"
+        :aria-label="parent.title + (isStreaming(parent.id) ? ' (streaming)' : '')"
         class="group relative px-3 py-2.5 rounded-md cursor-pointer mb-0.5 transition-colors"
         :class="isParentHighlighted(parent)
           ? 'bg-bg-hover text-text-primary'
@@ -19,6 +24,8 @@
             v-if="parent.children.length > 0"
             @click.stop="toggleCollapse(parent.id)"
             class="shrink-0 w-4 h-4 flex items-center justify-center text-text-muted hover:text-text-primary transition-colors"
+            :aria-expanded="!collapsed.has(parent.id)"
+            :aria-label="collapsed.has(parent.id) ? 'Expand pillars' : 'Collapse pillars'"
           >
             <svg
               width="10" height="10" viewBox="0 0 24 24" fill="currentColor"
@@ -66,6 +73,7 @@
           @click.stop="$emit('delete-session', parent.id)"
           class="absolute top-2 right-2 text-text-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity p-1"
           title="Delete chat"
+          :aria-label="'Delete ' + parent.title"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -126,6 +134,7 @@
             @click.stop="$emit('delete-session', child.id)"
             class="absolute top-1.5 right-1.5 text-text-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity p-0.5"
             title="Delete chat"
+            :aria-label="'Delete ' + childTitle(child)"
           >
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -134,7 +143,7 @@
         </div>
       </div>
     </div>
-  </div>
+  </nav>
 </template>
 
 <script setup>

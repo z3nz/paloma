@@ -92,6 +92,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { marked } from 'marked'
+import { sanitizeHtml } from '../../utils/sanitize.js'
 import MessageItem from './MessageItem.vue'
 import ToolCallGroup from './ToolCallGroup.vue'
 import PillarLoader from '../ui/PillarLoader.vue'
@@ -257,7 +258,7 @@ let throttleTimer = null
 
 function renderAndScroll() {
   const safeContent = closeOpenFences(props.streamingContent)
-  streamingHtmlThrottled.value = marked.parse(safeContent, { breaks: true }) + '<span class="streaming-cursor"></span>'
+  streamingHtmlThrottled.value = sanitizeHtml(marked.parse(safeContent, { breaks: true }) + '<span class="streaming-cursor"></span>')
   if (isNearBottom.value) {
     scrollToBottom('instant')
   }

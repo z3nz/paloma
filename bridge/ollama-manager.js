@@ -7,6 +7,7 @@ export class OllamaManager {
   constructor() {
     this.sessions = new Map()   // sessionId → { messages[], model, tools[], lastActivity }
     this.requests = new Map()   // requestId → { sessionId, abortController }
+    this._cancelled = new Set()  // requestIds explicitly stopped during tool execution window
     this.baseURL = process.env.OLLAMA_HOST || 'http://localhost:11434'
     this.defaultNumCtx = 32768
 
@@ -73,6 +74,13 @@ export class OllamaManager {
    * Called by the bridge after it executes the tool calls.
    */
   continueWithToolResults(requestId, sessionId, assistantMessage, toolResults, onEvent) {
+    // If stop() was called while tools were executing, don't continue
+    if (this._cancelled.has(requestId)) {
+      this._cancelled.delete(requestId)
+      onEvent({ type: 'ollama_done', requestId, sessionId, exitCode: 0 })
+      return
+    }
+
     const session = this.sessions.get(sessionId)
     if (!session) {
       onEvent({ type: 'ollama_error', requestId, error: `Session ${sessionId} not found` })
@@ -308,6 +316,10 @@ export class OllamaManager {
     if (entry) {
       entry.abortController.abort()
       this.requests.delete(requestId)
+    } else {
+      // Request not in active map — may be in the tool execution window.
+      // Mark as cancelled so continueWithToolResults() won't restart streaming.
+      this._cancelled.add(requestId)
     }
   }
 
@@ -317,6 +329,7 @@ export class OllamaManager {
       entry.abortController.abort()
     }
     this.requests.clear()
+    this._cancelled.clear()
     this.sessions.clear()
   }
 

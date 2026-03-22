@@ -33,6 +33,9 @@ export function createMcpBridge() {
   let onEmailDone = null
   let onEmailError = null
   let onSupervisorRestart = null
+  let onSingularityCreated = null
+  let onSingularityReady = null
+  let onSingularityComplete = null
   let restartPending = false
   let pingTimer = null
   let lastPongTime = 0
@@ -66,6 +69,9 @@ export function createMcpBridge() {
     onEmailDone = callbacks.onEmailDone || null
     onEmailError = callbacks.onEmailError || null
     onSupervisorRestart = callbacks.onSupervisorRestart || null
+    onSingularityCreated = callbacks.onSingularityCreated || null
+    onSingularityReady = callbacks.onSingularityReady || null
+    onSingularityComplete = callbacks.onSingularityComplete || null
     url = bridgeUrl
     intentionalClose = false
     _connect()

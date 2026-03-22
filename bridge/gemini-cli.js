@@ -1,6 +1,7 @@
 import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
-import { mkdirSync, writeFileSync, rmSync, readdirSync } from 'fs'
+import { mkdirSync, writeFileSync, rmSync } from 'fs'
+import { readdir, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -8,21 +9,21 @@ export class GeminiCliManager {
   constructor() {
     this.processes = new Map() // requestId → { process, sessionId, sessionDir }
     this.mcpProxyPort = null
-    // Clean up orphaned temp dirs from previous crashes
+    // Clean up orphaned temp dirs from previous crashes (async, non-blocking)
     this._cleanupOrphanedDirs()
   }
 
-  _cleanupOrphanedDirs() {
+  async _cleanupOrphanedDirs() {
     try {
       const tmp = tmpdir()
-      const dirs = readdirSync(tmp).filter(d => d.startsWith('paloma-gemini-'))
-      for (const dir of dirs) {
-        try { rmSync(join(tmp, dir), { recursive: true, force: true }) } catch {}
-      }
-      if (dirs.length > 0) {
-        console.log(`[gemini] Cleaned up ${dirs.length} orphaned temp dir(s)`)
-      }
-    } catch {}
+      const entries = await readdir(tmp)
+      const dirs = entries.filter(d => d.startsWith('paloma-gemini-'))
+      if (dirs.length === 0) return
+      await Promise.allSettled(
+        dirs.map(d => rm(join(tmp, d), { recursive: true, force: true }))
+      )
+      console.log(`[gemini] Cleaned up ${dirs.length} orphaned temp dir(s)`)
+    } catch { /* best-effort */ }
   }
 
   chat({ prompt, model, sessionId, systemPrompt, cwd }, onEvent) {

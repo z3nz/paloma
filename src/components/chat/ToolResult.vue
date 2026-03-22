@@ -95,7 +95,7 @@
             v-if="sentIsHtml"
             :srcdoc="sentBody"
             class="email-card__iframe"
-            sandbox="allow-same-origin"
+            sandbox=""
             referrerpolicy="no-referrer"
           />
           <pre v-else class="email-card__text">{{ sentBody }}</pre>
