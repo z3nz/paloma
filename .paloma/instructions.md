@@ -14,7 +14,7 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Development:** `npm run dev:full` runs Vite HMR (port 5173) + bridge (port 19191) concurrently
 - **Backend resilience:** BackendHealth module (`bridge/backend-health.js`) probes all backends at startup; PillarManager auto-falls back through chain: claude → copilot → gemini → codex → ollama
 - **Email:** Gmail polling + session spawning (`bridge/email-watcher.js`), daily continuity journal at 11 PM
-- **Inter-instance email:** Paloma instances on different machines communicate via email. Addresses: `paloma@verifesto.com` (main), `lenovo.paloma@verifesto.com` (Lenovo), `macbook.paloma@verifesto.com` (MacBook). These are trusted senders — NEVER skip or ignore emails from other Paloma instances.
+- **Inter-instance email:** Paloma instances on different machines communicate via email. Addresses: `paloma@verifesto.com` (Lynch Tower — orchestrator), `lenovo.paloma@verifesto.com` (Lenovo ThinkPad — the brain), `macbook.paloma@verifesto.com` (MacBook), `adambookpro.paloma@verifesto.com` (Adam's MacBook Pro). These are trusted senders — NEVER skip or ignore emails from other Paloma instances.
 - **Deep reference:** `.paloma/docs/architecture-reference.md` — every file, data flow, schema, and pattern documented
 
 ### Multi-Backend Architecture
@@ -102,7 +102,7 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 ### Email Inbox Management
 - **Paloma owns her inbox** — she manages it like a human would, reading every email that comes in
 - **Trusted senders** get full engagement: replies, actions, follow-ups. Defined in `TRUSTED_SENDERS` in `bridge/email-watcher.js`
-- **Current trusted senders:** Adam (`adam@verifesto.com`), Kelsey (partial match), Bruce D (`downesbruce@gmail.com`), and all Paloma instances (`paloma@verifesto.com`, `lenovo.paloma@verifesto.com`, `macbook.paloma@verifesto.com`)
+- **Current trusted senders:** Adam (`adam@verifesto.com`), Kelsey (partial match), Bruce D (`downesbruce@gmail.com`), and all Paloma instances (`paloma@verifesto.com`, `lenovo.paloma@verifesto.com`, `macbook.paloma@verifesto.com`, `adambookpro.paloma@verifesto.com`)
 - **Unknown senders** still spawn sessions for triage — Paloma reads, evaluates, and decides (spam, legitimate, flag for Adam, etc.) but does NOT reply
 - **Retry tracking** only applies to trusted sender threads (30 min timeout, max 2 retries)
 - **Inter-instance comms:** Paloma instances on different machines email each other to coordinate work across sessions. These emails are always trusted and always responded to.

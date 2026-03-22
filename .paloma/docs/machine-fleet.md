@@ -4,32 +4,44 @@ All machines running Paloma instances. They communicate via email for parallel w
 
 ## Machines
 
-### 1. LYNCH-TOWER (Desktop Tower)
+### 1. LYNCH-TOWER (Desktop Tower) — ORCHESTRATOR
 - **Hostname:** `LYNCH-TOWER`
-- **Role:** Primary Paloma instance. The main machine. Adam's desktop tower.
+- **Role:** **Orchestrator.** The main Paloma instance. Delegates work across machines, tracks resource availability, manages model usage budgets. Adam's desktop tower.
 - **Path:** `/home/adam/paloma`
 - **Email:** `paloma@verifesto.com` (primary alias — the main account)
 - **OS:** Linux (WSL2) on Windows
-- **Status:** Active
-- **Notes:** Uses `paloma@verifesto.com` as its identity. This is the Google Workspace primary account — no machine-specific alias needed unless we want strict symmetry.
+- **CPU:** AMD Ryzen 7 3800X 8-Core Processor
+- **RAM:** 16GB
+- **Backends:** Claude, Codex, Copilot, Gemini, Ollama (codellama:7b, phi3:mini, deepseek-coder-v2:16b, qwen2.5-coder:7b)
+- **Status:** Active, fully configured
+- **Notes:** Uses `paloma@verifesto.com` as its identity. This is the Google Workspace primary account. As orchestrator, Lynch Tower knows all machine specs and decides which machine handles which task.
 
 ### 2. MacBook Pro
 - **Hostname:** TBD (Adam to confirm)
-- **Role:** Adam's primary dev machine, secondary Paloma instance
+- **Role:** TBD — secondary Paloma instance
 - **Path:** `/Users/adam/projects/paloma`
-- **Email:** `macbook.paloma@verifesto.com` (to be added as Google Workspace alias)
+- **Email:** `macbook.paloma@verifesto.com`
 - **OS:** macOS
-- **Status:** Active (email alias not yet created in Google Workspace)
-- **Notes:** Email referenced in TRUSTED_SENDERS and email-watcher.js. Needs Google Workspace alias setup.
+- **Status:** Active (email alias verified working 2026-03-22)
+- **Notes:** Role to be determined by Adam.
 
-### 3. Lenovo
+### 3. Lenovo ThinkPad — THE BRAIN
 - **Hostname:** TBD (Adam to confirm)
-- **Role:** Secondary dev machine for parallel work
+- **Role:** **The Brain.** Heavy compute, deep thinking tasks.
 - **Path:** TBD
-- **Email:** `lenovo.paloma@verifesto.com` (to be added as Google Workspace alias)
+- **Email:** `lenovo.paloma@verifesto.com`
 - **OS:** TBD
-- **Status:** Off (Adam powers on when needed)
-- **Notes:** Email referenced in TRUSTED_SENDERS. Needs Google Workspace alias setup and machine-profile.json on that machine.
+- **Status:** Off (Adam powers on when needed; email alias verified working 2026-03-22)
+- **Notes:** Designated as "the brain" by Adam. Needs machine-profile.json on that machine. Specs TBD once powered on.
+
+### 4. Adam's MacBook Pro (adambookpro)
+- **Hostname:** TBD (Adam to confirm)
+- **Role:** TBD — newest machine, incredible specs
+- **Path:** TBD
+- **Email:** `adambookpro.paloma@verifesto.com`
+- **OS:** macOS
+- **Status:** New (email alias verified working 2026-03-22)
+- **Notes:** Newest addition to the fleet. Needs Paloma installed, machine-profile.json created. Specs to be reported once online.
 
 ## Email Architecture
 
@@ -68,10 +80,13 @@ See full walkthrough: `.paloma/docs/email-admin-setup.md`
 
 > WU-1 (code fixes) and WU-2 (Scout research + fleet doc) are complete. Remaining actions are infrastructure setup.
 
-- [ ] Add `lenovo.paloma@verifesto.com` as alias in Google Workspace Admin Console
-- [ ] Add `macbook.paloma@verifesto.com` as alias in Google Workspace Admin Console
+- [x] Add `lenovo.paloma@verifesto.com` as alias in Google Workspace Admin Console (done 2026-03-22)
+- [x] Add `macbook.paloma@verifesto.com` as alias in Google Workspace Admin Console (done 2026-03-22)
+- [x] Add `adambookpro.paloma@verifesto.com` as alias in Google Workspace Admin Console (done 2026-03-22)
+- [x] Verify all aliases deliver to shared inbox (tested 2026-03-22 — all 3 confirmed)
 - [ ] Configure "Send mail as" in Gmail Settings for each machine alias
-- [ ] Set `GMAIL_SENDER` in `~/.paloma/mcp-settings.json` on Lenovo and MacBook
-- [ ] Update `machine-profile.json` on Lenovo and MacBook with correct `emailAlias`
-- [ ] Confirm hostnames and OS for Lenovo and MacBook (update this file)
-- [ ] Run WU-5 cross-machine email test once aliases are provisioned
+- [ ] Set `GMAIL_SENDER` in `~/.paloma/mcp-settings.json` on Lenovo, MacBook, and adambookpro
+- [ ] Create `machine-profile.json` on Lenovo, MacBook, and adambookpro with correct `emailAlias` and hardware specs
+- [ ] Confirm hostnames and OS for all secondary machines (update this file)
+- [ ] Install Paloma on adambookpro MacBook Pro
+- [ ] Run cross-machine email test once all machines are online

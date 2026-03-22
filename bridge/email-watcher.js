@@ -32,9 +32,10 @@ const TRUSTED_SENDERS = [
   'adam@verifesto.com',         // Adam
   'kelsey',                     // Kelsey (partial match — catches any address)
   'downesbruce@gmail.com',     // Bruce D
-  'paloma@verifesto.com',      // Paloma (main)
-  'lenovo.paloma@verifesto.com', // Paloma on Lenovo
+  'paloma@verifesto.com',      // Paloma (main — Lynch Tower)
+  'lenovo.paloma@verifesto.com', // Paloma on Lenovo ThinkPad
   'macbook.paloma@verifesto.com', // Paloma on MacBook
+  'adambookpro.paloma@verifesto.com', // Paloma on Adam's MacBook Pro
 ]
 
 // All known Paloma email aliases — used for reply detection across machines
@@ -42,6 +43,7 @@ const PALOMA_ALIASES = [
   'paloma@verifesto.com',
   'lenovo.paloma@verifesto.com',
   'macbook.paloma@verifesto.com',
+  'adambookpro.paloma@verifesto.com',
 ]
 
 const THREAD_TRACKER_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours before thread entries expire
