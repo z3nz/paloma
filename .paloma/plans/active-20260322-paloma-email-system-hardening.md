@@ -25,20 +25,20 @@ Cloudflare email routing, Gmail Send-As, fleet discovery. Requires Scout researc
 
 ## Work Units
 
-#### WU-1: Fix all 5 code-level email issues: (1) Add emailAlias field to machine-profile
+#### WU-1: Fix all 5 code-level email issues: recipient filtering, machine identity, sender
 - **Feature:** Tier 1 — Email Watcher Hardening
-- **Status:** complete
+- **Status:** completed
 - **Files:** bridge/email-watcher.js, mcp-servers/gmail.js, .paloma/machine-profile.json
-- **Scope:** Fix all 5 code-level email issues: (1) Add emailAlias field to machine-profile.json, (2) Filter poll query by recipient using machine alias, (3) Read GMAIL_SENDER from machine profile instead of hardcoding, (4) Persist seenIds to ~/.paloma/email-seen-ids.json across restarts, (5) Fix _isThreadReplied to detect replies from ANY Paloma alias (not just paloma@verifesto.com). The daily continuity email must be preserved exactly as-is.
+- **Scope:** Fix all 5 code-level email issues: recipient filtering, machine identity, sender address, seenIds persistence, multi-alias reply detection.
 - **Acceptance:** Email watcher only processes emails addressed to this machine's alias. seenIds survive bridge restarts. Replies from any Paloma alias are detected. Sender address matches machine identity. Daily continuity email unchanged.
-
-#### WU-2: Scout research: (1) Investigate current Cloudflare email routing rules for verif
+- **Result:** Committed in 40a59b6. All 5 fixes shipped: recipient filtering by emailAlias, seenIds persistence to disk, PALOMA_ALIASES for reply detection, gmail.js reads machine profile, graceful fallbacks for missing config.
+#### WU-2: Scout research: Cloudflare email routing, Gmail aliases, fleet discovery, naming
 - **Feature:** Tier 2 — Multi-Machine Email Infrastructure
-- **Status:** pending
+- **Status:** completed
 - **Files:** .paloma/docs/scout-email-infrastructure-20260322.md, .paloma/docs/machine-fleet.md
-- **Scope:** Scout research: (1) Investigate current Cloudflare email routing rules for verifesto.com, (2) Determine what's needed for per-machine aliases (catch-all vs individual rules), (3) Document Gmail Send-As requirements for outbound from aliases, (4) Check current DNS MX/routing state, (5) Produce a concrete implementation plan for Tier 2 Forge work.
-- **Acceptance:** Scout doc produced with: current Cloudflare email routing state, exact steps for alias setup, Gmail Send-As requirements, and recommended naming convention. Ready for Chart to produce a buildable plan.
-
+- **Scope:** Scout research: Cloudflare email routing, Gmail aliases, fleet discovery, naming conventions.
+- **Acceptance:** Scout doc produced with implementation steps. Ready for Chart.
+- **Result:** Key finding: Cloudflare Email Routing is NOT compatible with Google Workspace MX records. Correct path is Google Workspace aliases via Admin Console. Machine-based naming confirmed. Full scout doc and updated fleet doc written.
 ## Implementation Notes (WU-1)
 
 **Files modified:**
