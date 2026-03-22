@@ -220,12 +220,23 @@ export class EmailWatcher {
           userId: 'me',
           id: ref.id,
           format: 'full',
-          metadataHeaders: ['From', 'Subject', 'Date']
+          metadataHeaders: ['From', 'Subject', 'Date', 'To', 'Delivered-To']
         })
 
         const from = this._getHeader(msg.data, 'From') || 'Unknown'
         const subject = this._getHeader(msg.data, 'Subject') || '(no subject)'
         const body = this._extractBody(msg.data) || msg.data.snippet || ''
+
+        // Header-level recipient gate (secondary filter — query-level to: is unreliable with Workspace aliases)
+        if (this.emailAlias) {
+          const toHeader = (this._getHeader(msg.data, 'To') || '').toLowerCase()
+          const deliveredTo = (this._getHeader(msg.data, 'Delivered-To') || '').toLowerCase()
+          const alias = this.emailAlias.toLowerCase()
+          if (!toHeader.includes(alias) && !deliveredTo.includes(alias)) {
+            console.log(`[email-watcher] Skipping email not addressed to ${this.emailAlias}: "${subject}" (to: ${toHeader})`)
+            continue
+          }
+        }
 
         const trusted = this._isTrustedSender(from)
         console.log(`[email-watcher] New email from ${from} (${trusted ? 'trusted' : 'unknown'}): ${subject}`)
