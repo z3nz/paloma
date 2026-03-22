@@ -165,6 +165,17 @@ const cleanupShortcuts = registerKeyboardShortcuts({
 })
 onBeforeUnmount(cleanupShortcuts)
 
+// Listen for inbox session navigation (InboxSessionPanel dispatches this)
+function handleInboxSessionNav(e) {
+  const sessionId = e.detail
+  if (sessionId) {
+    activeView.value = 'chat'
+    handleSelectSession(sessionId)
+  }
+}
+window.addEventListener('paloma:select-session', handleInboxSessionNav)
+onBeforeUnmount(() => window.removeEventListener('paloma:select-session', handleInboxSessionNav))
+
 const activeSession = computed(() =>
   sessions.value.find(s => s.id === activeSessionId.value) || null
 )

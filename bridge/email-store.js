@@ -1,5 +1,5 @@
 import { google } from 'googleapis'
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { homedir } from 'node:os'
