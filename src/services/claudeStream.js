@@ -326,10 +326,11 @@ export async function* streamCopilotChat(sendFn, options) {
 
       if (event.type === 'agent_message' && event.text) {
         yield { type: 'content', text: event.text }
-      } else if (event.type === 'tool_call') {
-        let text = `**Tool:** ${event.tool}\n`
-        if (event.arguments) text += `\`\`\`json\n${JSON.stringify(event.arguments, null, 2)}\n\`\`\`\n`
-        yield { type: 'content', text }
+      } else if (event.type === 'tool_use') {
+        const tu = event.tool_use || {}
+        yield { type: 'tool_use', id: tu.id, name: tu.name, input: tu.input || {} }
+      } else if (event.type === 'tool_result') {
+        yield { type: 'tool_result', toolUseId: event.toolUseId, content: event.content }
       } else if (event.type === 'result' && event.subtype === 'done') {
         continue
       }

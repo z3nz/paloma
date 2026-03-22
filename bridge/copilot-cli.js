@@ -242,15 +242,43 @@ export class CopilotCliManager {
       // Only emit if there were no deltas (e.g., tool-only turns).
       // The pillar manager accumulates text from deltas, so this is just for completeness.
     } else if (event.type === 'assistant.tool_call' && event.data) {
-      // Tool call events
+      const toolId = randomUUID()
+      const toolName = event.data.toolName || event.data.tool || ''
+      const args = event.data.arguments || {}
+      const status = event.data.status || 'started'
+
+      // Emit tool_use so the UI shows the tool call in the activity panel
       onEvent({
         type: 'copilot_stream',
         requestId,
         event: {
-          type: 'tool_call',
-          tool: event.data.toolName || event.data.tool || '',
-          arguments: event.data.arguments || {},
-          status: event.data.status || 'started'
+          type: 'tool_use',
+          tool_use: { id: toolId, name: toolName, input: args }
+        }
+      })
+
+      // If status indicates completion, also emit tool_result
+      if (status === 'completed' || status === 'finished' || status === 'done') {
+        const resultContent = event.data.result || event.data.output || ''
+        onEvent({
+          type: 'copilot_stream',
+          requestId,
+          event: {
+            type: 'tool_result',
+            toolUseId: toolId,
+            content: typeof resultContent === 'string' ? resultContent : JSON.stringify(resultContent)
+          }
+        })
+      }
+    } else if (event.type === 'assistant.tool_result' && event.data) {
+      // Future-proofing: handle separate tool_result events if Copilot ever emits them
+      onEvent({
+        type: 'copilot_stream',
+        requestId,
+        event: {
+          type: 'tool_result',
+          toolUseId: event.data.toolCallId || event.data.id || '',
+          content: event.data.result || event.data.output || event.data.content || ''
         }
       })
     }
