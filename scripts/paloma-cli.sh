@@ -28,14 +28,19 @@ fi
 # Colors & Output Helpers
 # ─────────────────────────────────────────────────────────
 
-C_RESET='\033[0m'
-C_BOLD='\033[1m'
-C_DIM='\033[2m'
-C_MAGENTA='\033[95m'
-C_CYAN='\033[96m'
-C_GREEN='\033[32m'
-C_YELLOW='\033[33m'
-C_RED='\033[31m'
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  C_RESET='\033[0m'
+  C_BOLD='\033[1m'
+  C_DIM='\033[2m'
+  C_MAGENTA='\033[95m'
+  C_CYAN='\033[96m'
+  C_GREEN='\033[32m'
+  C_YELLOW='\033[33m'
+  C_RED='\033[31m'
+else
+  C_RESET='' C_BOLD='' C_DIM='' C_MAGENTA='' C_CYAN=''
+  C_GREEN='' C_YELLOW='' C_RED=''
+fi
 
 ok()   { echo -e "  ${C_GREEN}✔${C_RESET} $1"; }
 warn() { echo -e "  ${C_YELLOW}▲${C_RESET} $1"; }
@@ -282,7 +287,7 @@ cmd_update() {
   fi
 
   info "Building frontend..."
-  npx vite build
+  "$npm_bin" exec vite build
   ok "Frontend built"
 
   echo ""

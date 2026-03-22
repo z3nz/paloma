@@ -152,7 +152,7 @@ function checkNodeJs() {
       pass(`System Node.js: ${sysVersion}`)
     } else {
       fail('No Node.js found (managed or system)')
-      info('Install with: curl -fsSL https://raw.githubusercontent.com/adam/paloma/main/install.sh | bash')
+      info('Install with: curl -fsSL https://raw.githubusercontent.com/z3nz/paloma/main/install.sh | bash')
     }
   }
 
@@ -276,7 +276,7 @@ function checkAiBackends() {
     {
       name: 'Gemini CLI',
       cmd: 'gemini --version 2>/dev/null',
-      install: 'npm install -g @anthropic-ai/gemini-cli',
+      install: 'npm install -g @google/gemini-cli',
     },
     {
       name: 'Ollama',

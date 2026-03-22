@@ -6,7 +6,7 @@
 # ║  No prerequisites beyond curl and git.                              ║
 # ║                                                                     ║
 # ║  Usage:                                                             ║
-# ║    curl -fsSL https://raw.githubusercontent.com/adam/paloma/main/install.sh | bash  ║
+# ║    curl -fsSL https://raw.githubusercontent.com/z3nz/paloma/main/install.sh | bash  ║
 # ║    bash install.sh [--yes] [--service] [--help]                     ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
@@ -20,7 +20,7 @@ set -euo pipefail
 
 NODE_VERSION="22.14.0"
 PALOMA_VERSION="0.1.0"
-PALOMA_REPO="https://github.com/adam/paloma.git"
+PALOMA_REPO="https://github.com/z3nz/paloma.git"
 
 PALOMA_HOME="${PALOMA_HOME:-$HOME/.paloma}"
 PALOMA_APP="$PALOMA_HOME/app"
