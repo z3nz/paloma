@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
-import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT } from '../src/prompts/base.js'
+import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT, SINGULARITY_QUINN_PROMPT, SINGULARITY_WORKER_PROMPT } from '../src/prompts/base.js'
 import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
 import { Persistence } from './persistence.js'
 
@@ -150,10 +150,13 @@ export class PillarManager {
     const resolvedBackend = selection.backend
     console.log(`[pillar] Backend selection for ${pillar}: ${selection.backend} (${selection.reason})`)
 
-    // Singularity dual-mind: spawn Voice + Thinker concurrently
+    // Singularity dual-mind: spawn Voice + Thinker concurrently (legacy mode)
     if (recursive && (depth || 0) === 0 && resolvedBackend === 'ollama' && !singularityRole) {
       return this._spawnSingularityGroup({ pillar, prompt, model, flowRequestId, planFile, backend: resolvedBackend, parentPillarId })
     }
+
+    // Quinn mode: singularityRole === 'quinn' spawns directly (no dual-mind)
+    // Workers are spawned by Quinn via spawn_worker tool
 
     const pillarId = randomUUID()
     const cliSessionId = randomUUID()
@@ -230,8 +233,8 @@ export class PillarManager {
       _fallbackAttempted: false,    // prevents infinite retry loops
       // Singularity dual-mind fields
       singularityGroupId: null,     // UUID linking Voice ↔ Thinker
-      singularityRole: singularityRole || null,  // 'voice' | 'thinker' | null
-      numCtx: singularityRole ? 65536 : null,  // Singularity sessions get 64K context
+      singularityRole: singularityRole || null,  // 'voice' | 'thinker' | 'quinn' | 'worker' | null
+      numCtx: (singularityRole === 'quinn' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536 : (singularityRole === 'worker' ? 32768 : null),
       _voiceStreamBuffer: '',       // Voice only: buffer for <to-thinker> tag detection
       _receivedThinkerMessages: 0   // Voice only: count of [THINKER] messages received
     }
@@ -696,6 +699,25 @@ export class PillarManager {
    * Build Ollama-format tool list from MCP servers + pillar tools.
    */
   _buildOllamaTools(session) {
+    // Quinn gets ONLY spawn_worker — that's the entire game
+    if (session.singularityRole === 'quinn') {
+      console.log(`[pillar] Built 1 Ollama tool for Quinn session (spawn_worker only)`)
+      return [{
+        type: 'function',
+        function: {
+          name: 'spawn_worker',
+          description: 'Create a smaller version of yourself to interact with the world. Your worker has full access to files, git, shell, web, search, memory, and voice. Describe what you need it to do. It will venture out, complete the task, and return with what it found.',
+          parameters: {
+            type: 'object',
+            properties: {
+              task: { type: 'string', description: 'What should your worker do? Be specific — include file paths, search terms, or questions. The more focused the quest, the better the treasure.' }
+            },
+            required: ['task']
+          }
+        }
+      }]
+    }
+
     const tools = []
 
     // MCP server tools
@@ -717,10 +739,12 @@ export class PillarManager {
       }
     }
 
-    // Pillar orchestration tools — so Qwen can spawn sub-instances
-    tools.push(...PillarManager.getOllamaPillarToolDefs())
+    // Workers don't need pillar orchestration tools — they're the hands, not the brain
+    if (session.singularityRole !== 'worker') {
+      tools.push(...PillarManager.getOllamaPillarToolDefs())
+    }
 
-    console.log(`[pillar] Built ${tools.length} Ollama tools for ${session.pillar} session`)
+    console.log(`[pillar] Built ${tools.length} Ollama tools for ${session.singularityRole || session.pillar} session`)
     return tools
   }
 
@@ -768,7 +792,32 @@ export class PillarManager {
         let content
 
         // Handle pillar tools directly
-        if (toolName === 'pillar_spawn') {
+        if (toolName === 'spawn_worker') {
+          // Quinn's spawn_worker — create a 7B worker with all MCP tools
+          const workerTask = toolArgs.task || toolArgs.prompt || JSON.stringify(toolArgs)
+          console.log(`[quinn] Spawning worker for task: ${workerTask.slice(0, 100)}...`)
+
+          const childArgs = {
+            pillar: 'forge',  // workers use forge pillar (they build/do things)
+            prompt: workerTask,
+            backend: 'ollama',
+            parentPillarId: session.pillarId,
+            singularityRole: 'worker',
+            depth: (session.depth || 0) + 1
+          }
+          const spawnResult = await this.spawn(childArgs)
+          const childPillarId = spawnResult.pillarId
+
+          console.log(`[quinn] Worker ${childPillarId.slice(0, 8)} spawned — waiting for completion`)
+
+          // Wait for worker to complete (resolved in _handleCliEvent)
+          const childOutput = await new Promise((resolve) => {
+            this._pendingChildCompletions.set(childPillarId, resolve)
+          })
+
+          content = childOutput || '(worker returned empty-handed)'
+          console.log(`[quinn] Worker ${childPillarId.slice(0, 8)} returned — ${content.length} chars of treasure`)
+        } else if (toolName === 'pillar_spawn') {
           // Spawn child and WAIT for completion — blocking spawn
           const childArgs = {
             ...toolArgs,
@@ -2226,6 +2275,10 @@ This is informational — Adam is communicating directly with the pillar. Decide
 
   _defaultModel(pillar, backend = 'gemini', { recursive, depth, singularityRole } = {}) {
     if (backend === 'ollama') {
+      // Quinn: the conscious mind — uses the best available model (30B)
+      if (singularityRole === 'quinn') return this._pickBestOllamaModel(false)
+      // Worker: Quinn's hands — uses the small fast model (7B)
+      if (singularityRole === 'worker') return this._pickBestOllamaModel(true)
       // Singularity: both Voice and Thinker use the best available model
       if (singularityRole === 'voice' || singularityRole === 'thinker') return this._pickBestOllamaModel(false)
       // Recursive sub-workers (depth > 1) use the small fast model
@@ -2275,10 +2328,10 @@ This is informational — Adam is communicating directly with the pillar. Decide
     // Ollama sessions use the condensed prompt (fits smaller context windows)
     let prompt = backend === 'ollama' ? OLLAMA_INSTRUCTIONS : BASE_INSTRUCTIONS
 
-    // Singularity sessions (Voice/Thinker) get a drastically stripped system prompt:
+    // Singularity sessions (Voice/Thinker/Quinn/Worker) get a drastically stripped system prompt:
     // OLLAMA_INSTRUCTIONS + project instructions + role prompt ONLY.
     // No plans, no roots, no phase instructions — saves ~25K tokens of context budget.
-    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker'
+    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'worker'
 
     // Claude CLI reads CLAUDE.md automatically, which includes instructions.md and roots
     // via @ references. Including them again here would duplicate ~43KB of content and
@@ -2337,7 +2390,11 @@ This is informational — Adam is communicating directly with the pillar. Decide
     }
 
     // Inject singularity prompts based on role
-    if (singularityRole === 'voice') {
+    if (singularityRole === 'quinn') {
+      prompt += '\n\n' + SINGULARITY_QUINN_PROMPT
+    } else if (singularityRole === 'worker') {
+      prompt += '\n\n' + SINGULARITY_WORKER_PROMPT
+    } else if (singularityRole === 'voice') {
       prompt += '\n\n' + SINGULARITY_VOICE_PROMPT
     } else if (singularityRole === 'thinker') {
       prompt += '\n\n' + SINGULARITY_THINKER_PROMPT
