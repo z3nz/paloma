@@ -717,6 +717,23 @@ async function main() {
                 ollamaTools.push(tool)
                 toolRouteMap.set(tool.function.name, { _pillar: true })
               }
+
+              // Add spawn_worker tool — Quinn's only tool for self-spawning singularity mode
+              ollamaTools.push({
+                type: 'function',
+                function: {
+                  name: 'spawn_worker',
+                  description: 'Create a smaller version of yourself to interact with the world. Your worker has full access to files, git, shell, web, search, memory, and voice. Describe what you need it to do.',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      task: { type: 'string', description: 'What should your worker do? Be specific — include file paths, search terms, or questions.' }
+                    },
+                    required: ['task']
+                  }
+                }
+              })
+              toolRouteMap.set('spawn_worker', { _pillar: true, _spawnWorker: true })
             }
 
             console.log(`[ollama] Passing ${ollamaTools.length} tools to model (essential servers + pillar tools)`)
@@ -762,14 +779,42 @@ async function main() {
                 // Pillar tools — route through MCP proxy's pillar handler
                 if (route?._pillar) {
                   try {
-                    console.log(`[ollama] Executing pillar tool: ${toolName}`)
-                    const result = await mcpProxy._handlePillarTool(toolName, toolArgs, null)
-                    const content = result.content?.map(c => c.text || JSON.stringify(c)).join('\n') || ''
-                    results.push({ content })
-                    safeSend({
-                      type: 'ollama_stream', id: msg.id,
-                      event: { type: 'tool_result', toolUseId: toolId, content }
-                    })
+                    // spawn_worker — Quinn's self-spawning: create a 7B worker with all MCP tools
+                    if (route._spawnWorker) {
+                      const workerTask = toolArgs.task || toolArgs.prompt || JSON.stringify(toolArgs)
+                      console.log(`[quinn] Browser: Spawning worker for task: ${workerTask.slice(0, 100)}...`)
+
+                      const spawnResult = await pillarManager.spawn({
+                        pillar: 'forge',
+                        prompt: workerTask,
+                        backend: 'ollama',
+                        singularityRole: 'worker',
+                        depth: 1
+                      })
+                      const childPillarId = spawnResult.pillarId
+
+                      // Wait for worker to complete
+                      const childOutput = await new Promise((resolve) => {
+                        pillarManager._pendingChildCompletions.set(childPillarId, resolve)
+                      })
+
+                      const content = childOutput || '(worker returned empty-handed)'
+                      console.log(`[quinn] Browser: Worker ${childPillarId.slice(0, 8)} returned — ${content.length} chars`)
+                      results.push({ content })
+                      safeSend({
+                        type: 'ollama_stream', id: msg.id,
+                        event: { type: 'tool_result', toolUseId: toolId, content: content.slice(0, 500) + (content.length > 500 ? '...' : '') }
+                      })
+                    } else {
+                      console.log(`[ollama] Executing pillar tool: ${toolName}`)
+                      const result = await mcpProxy._handlePillarTool(toolName, toolArgs, null)
+                      const content = result.content?.map(c => c.text || JSON.stringify(c)).join('\n') || ''
+                      results.push({ content })
+                      safeSend({
+                        type: 'ollama_stream', id: msg.id,
+                        event: { type: 'tool_result', toolUseId: toolId, content }
+                      })
+                    }
                   } catch (e) {
                     console.error(`[ollama] Pillar tool error (${toolName}):`, e.message)
                     const errContent = `Error executing ${toolName}: ${e.message}`
