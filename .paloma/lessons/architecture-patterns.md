@@ -63,3 +63,19 @@
 - **Insight:** CLI tools often expose system-level configuration via env vars because env vars are inherited by child processes, persist across sessions, and don't appear in shell history. Flags are transient and require re-specification each invocation. When a CLI tool needs to behave differently in automated/bridge contexts, env vars are often the intended mechanism. Always check env var documentation alongside flag documentation when investigating CLI capabilities.
 - **Action:** When integrating a new CLI backend, check for env vars that affect system behavior (instruction loading, model selection, auth, output format) alongside running `--help`. Env vars like `GEMINI_SYSTEM_MD` and `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` often unlock capabilities not mentioned in `--help` output.
 - **Applied:** N/A — awareness for future CLI integrations
+
+---
+
+### Lesson: Bridge-level event capture for offline browser hydration
+- **Context:** Email sessions handled while the browser is closed leave no trace in IndexedDB, making them invisible in the inbox.
+- **Insight:** Capturing raw CLI events at the bridge level (`EmailStore.addSessionEvent`) and exposing them via a history API allows the frontend to "hydrate" missing sessions on demand. This ensures full transparency for autonomous work, even if the user opens the browser hours later.
+- **Action:** For any autonomous backend activity (emails, cron jobs, etc.), always persist the event stream on the bridge. Provide a REST endpoint for the frontend to fetch and map these events into local storage.
+- **Applied:** YES — implemented in `bridge/email-store.js` and `useSessions.js`
+
+---
+
+### Lesson: Phase-aware model routing improves precision and cost
+- **Context:** Previous routing was mostly Gemini-first, which is fast but sometimes lacks the deep reasoning needed for Flow (orchestration) or the surgical precision for Forge (code edits).
+- **Insight:** Explicitly routing Flow and Forge/Polish to Claude (with Opus for high-stakes edits) while keeping Scout/Chart/Ship on Gemini Pro balances cost, speed, and intelligence. Gemini Pro is excellent for high-volume research and documentation, while Claude Opus is non-negotiable for complex refactoring.
+- **Action:** Maintain a `PHASE_MODEL_SUGGESTIONS` map and use it as the primary routing signal in `PillarManager`. Default to "Pro" for Gemini and "Opus" for high-precision pillars.
+- **Applied:** YES — updated `pillar-manager.js` and `phases.js`
