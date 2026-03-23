@@ -75,25 +75,32 @@ Updated `_handleCliEvent` to monitor for `sessionId` in all stream events. Captu
 - **Defensive Recovery:** Added robust error handling in `_loadState` to handle malformed or missing state files gracefully.
 
 ## Work Units (Remaining)
-**Status:** ready
+### WU-3: CLI Resumption Tool
+**Status:** completed
 **Backend:** gemini
 **Files:**
 - `bridge/pillar-manager.js`
 - `bridge/mcp-proxy-server.js` (if exposed as tool)
 
 **Scope:**
-Implement the `pillar_resume` logic. It should take an `interrupted` session, look up its `cliSessionId`, and restart a CLI turn using `--resume`.
+Implemented the `pillar_resume` logic. It takes an `interrupted` session, looks up its `cliSessionId`, and restarts a CLI turn using `--resume` flag with the existing state. Exposed as a tool for Ollama and Flow CLI.
 
 ### WU-4: Frontend Continuity & UX
-**Status:** ready
+**Status:** completed
 **Backend:** gemini
 **Files:**
 - `src/services/mcpBridge.js`
 - `src/composables/useMCP.js`
-- `src/components/Sidebar.vue` (or equivalent)
+- `src/components/layout/SidebarSessionTree.vue`
 
 **Scope:**
-Update the frontend to handle bridge reconnections gracefully. Avoid full reloads when possible. Re-sync with the bridge's persisted pillar list and show "Resume" buttons for interrupted tasks.
+Updated the frontend to handle bridge reconnections gracefully without a full page reload. Added UI to show "Resume" buttons for interrupted tasks, which call the `resumePillar` method propagating back to `PillarManager`.
+
+## Implementation Notes
+
+- **Resume Tool Integration**: Created `resumeSession` method in `PillarManager`. Integrated it correctly to be callable by Flow via the new `pillar_resume` MCP tool and directly from the UI via websockets (`resumePillar`).
+- **Frontend Graceful Reconnection**: Prevented `window.location.reload()` on supervisor restarts. `useMCP.js` now clears the `restartPending` state properly on WebSocket reconnection, avoiding destructive unhandled disruptions.
+- **Pillar Tracking on UI**: `SidebarSessionTree.vue` now properly reflects the `interrupted` status state and provides a manual action for Adam to resume an interrupted process.
 
 ## Edge Cases
 - **Tool calls mid-restart:** If a tool call was in progress, it will be lost. The resumed session may need to be informed that the tool execution failed.
