@@ -19,8 +19,8 @@ Adam's insight: The reason the Singularity hasn't worked is because we've been t
 
 - [x] Chart — Write Quinn's story prompt + technical design
 - [x] Forge — Build spawn_worker tool, wire into pillar-manager
-- [ ] Polish — Test with real questions
-- [ ] Ship — Commit, push, document
+- [x] Polish — Debug JSON-as-text spawning bug, fix tool resolution
+- [ ] Ship — Test again, commit final, document
 
 ## Work Units
 
@@ -46,8 +46,12 @@ Adam's insight: The reason the Singularity hasn't worked is because we've been t
 **Files:** `bridge/pillar-manager.js`
 **Scope:** New spawn mode: `singularityMode: 'quinn'`. Suppresses all tools except spawn_worker. Uses stripped system prompt (no plans/roots). 64K context. Streams to Adam.
 
-### WU-5: Integration Test
-**Status:** pending
+### WU-5: Integration Test & Bug Fixes
+**Status:** completed
 **Depends on:** WU-4
-**Files:** manual
+**Files:** `bridge/index.js`, `bridge/ollama-manager.js`
 **Scope:** Spawn Quinn, ask a real question, verify worker spawning + synthesis.
+**Result:** Adam tested and it worked well, but the model wrote tool calls as JSON text instead of native function calls. Root cause investigation found TWO bugs:
+1. **`spawn_worker` missing from browser route map** — `bridge/index.js` built the `toolRouteMap` without `spawn_worker`, so even when the text parser caught JSON-as-text, the execution path returned "Unknown tool". Fixed by adding `spawn_worker` to the browser Ollama tool list and route map, with proper execution handler that spawns a 7B worker via pillarManager.
+2. **Hallucinated tool name prefixes** — The model wrote `brave-web-search__brave_web_search` instead of `brave-search__brave_web_search`. The `_resolveToolName()` fuzzy matcher couldn't handle cases where the function name was correct but the server prefix was fabricated. Fixed by adding function-name extraction: extract the part after the last `__` and match against known tools' function names.
+**Commits:** `fea9dab` (spawn_worker in browser), `87c90f4` (fuzzy name resolution)
