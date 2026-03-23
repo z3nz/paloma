@@ -70,7 +70,8 @@ Updated `_handleCliEvent` to monitor for `sessionId` in all stream events. Captu
 
 - **Persistence Utility:** Created `bridge/persistence.js` to handle JSON serialization with debouncing (default 2s) to prevent excessive disk I/O during high-frequency stream events.
 - **Interrupted Status:** Sessions recovered during `_loadState` that were previously `running` or `streaming` are automatically transitioned to `interrupted`. This signal will be used by the frontend to offer resumption.
-- **Buffer Recovery:** `flowChatBuffers` is now synced between `index.js` and `PillarManager`, allowing the main Flow chat to recover its streaming text after a bridge restart.
+- **Buffer Recovery Fix:** `flowChatBuffers` map is now passed to the `PillarManager` constructor from `index.js`, ensuring it is initialized *before* `_loadState()` resolves. This fixes a race condition where the buffer was lost on restart.
+- **Early Session ID Fix:** Updated `gemini-cli.js` and `codex-cli.js` to emit `sessionId` at the top-level of their early stream events, matching `PillarManager._handleCliEvent`'s expected schema for early capture.
 - **Defensive Recovery:** Added robust error handling in `_loadState` to handle malformed or missing state files gracefully.
 
 ## Work Units (Remaining)
