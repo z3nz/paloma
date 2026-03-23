@@ -41,6 +41,9 @@ llama.cpp/
 # Vite temp files
 vite.config.js.timestamp-*
 
+# Bridge state persistence
+.paloma/bridge-state.json
+
 # Per-machine local context (not shared across machines)
 .paloma/local-machine.md
 .paloma/machine-profile.json

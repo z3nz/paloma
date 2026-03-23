@@ -3,6 +3,7 @@ import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT } from '../src/prompts/base.js'
 import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
+import { Persistence } from './persistence.js'
 
 const MAX_RUNTIME_MS = 30 * 60 * 1000 // 30 minutes
 const MAX_NOTIFICATION_QUEUE = 50
@@ -31,7 +32,7 @@ const PRIVACY_TASK_SIGNALS = [
  * status/output for Flow's polling tools.
  */
 export class PillarManager {
-  constructor(backends, { projectRoot, broadcast, mcpManager, health }) {
+  constructor(backends, { projectRoot, broadcast, mcpManager, health, flowChatBuffers }) {
     this.backends = backends   // { claude: ClaudeCliManager, codex: CodexCliManager, copilot: CopilotCliManager, ollama: OllamaManager }
     this.cliManager = backends.claude // backward compat for Flow notifications
     this.projectRoot = projectRoot
@@ -40,6 +41,7 @@ export class PillarManager {
     this.health = health || null // BackendHealth instance for fallback logic
     this.pillars = new Map()   // pillarId → PillarSession
     this.flowSession = null          // points to the most recently registered Flow session
+    this.flowChatBuffers = flowChatBuffers || null // Map of flowChatBuffers from index.js (for persistence)
     this.notificationCooldown = new Map() // pillarId → timestamp of last notification
     this.notificationCount = 0 // notifications sent in current minute
     this.notificationWindowStart = Date.now()
@@ -47,13 +49,77 @@ export class PillarManager {
     this._pendingNotifications = [] // queued notifications for non-browser Flow (Copilot/Codex CLI)
     this._singularityGroups = new Map() // singularityGroupId → { voicePillarId, thinkerPillarId, voiceReady, thinkerReady, ... }
 
+    // Persistence setup
+    const statePath = join(this.projectRoot, '.paloma', 'bridge-state.json')
+    this.persistence = new Persistence(statePath, { debounceMs: 2000 })
+    this._loadState()
+
     // Periodic cleanup of terminal sessions (every 5 min)
     this._cleanupInterval = setInterval(() => this._cleanupTerminalSessions(), 5 * 60 * 1000)
     this._cleanupInterval.unref() // Don't prevent process exit
   }
 
   /**
+   * Persist active pillars and flow buffers to disk.
+   */
+  async _saveState() {
+    try {
+      const data = {
+        pillars: Array.from(this.pillars.entries()).map(([id, session]) => {
+          // Serialize only what's needed for recovery (exclude Map and non-serializable fields)
+          const { timeoutTimer, _pendingChildCompletions, ...serializable } = session
+          return [id, serializable]
+        }),
+        flowChatBuffers: this.flowChatBuffers ? Array.from(this.flowChatBuffers.entries()) : []
+      }
+      await this.persistence.save(data)
+    } catch (err) {
+      console.error('[pillar] Failed to trigger state save:', err)
+    }
+  }
+
+  /**
+   * Load persisted state from disk.
+   * Status mapping: sessions that were 'running' or 'streaming' at time of save 
+   * become 'interrupted' (since their child processes are gone).
+   */
+  async _loadState() {
+    try {
+      const data = await this.persistence.load()
+      if (!data) return
+
+      if (data.pillars) {
+        for (const [id, sessionData] of data.pillars) {
+          const session = Array.isArray(sessionData) ? sessionData[1] : sessionData
+          const idToStore = Array.isArray(sessionData) ? sessionData[0] : id
+
+          // Restore interrupted status for active sessions
+          if (session.status === 'running' || session.currentlyStreaming) {
+            session.status = 'interrupted'
+            session.currentlyStreaming = false
+            session.cliRequestId = null
+          }
+          this.pillars.set(idToStore, session)
+        }
+        if (data.pillars.length > 0) {
+          console.log(`[pillar] Recovered ${data.pillars.length} sessions from bridge-state.json`)
+        }
+      }
+
+      // Restore flowChatBuffers (will be re-registered by index.js)
+      if (data.flowChatBuffers && this.flowChatBuffers) {
+        for (const [id, buf] of data.flowChatBuffers) {
+          this.flowChatBuffers.set(id, buf)
+        }
+      }
+    } catch (err) {
+      console.error('[pillar] Failed to load bridge state:', err)
+    }
+  }
+
+  /**
    * Resolve a CLI session ID and backend from a CLI request ID by checking all backend process maps.
+
    * This allows us to find which CLI session spawned a pillar, regardless of backend.
    */
   _resolveCliSessionFromRequest(requestId) {
@@ -171,6 +237,7 @@ export class PillarManager {
     }
 
     this.pillars.set(pillarId, session)
+    this._saveState()
 
     // Broadcast fallback event if we switched backends
     if (fallbackFrom) {
@@ -252,6 +319,7 @@ export class PillarManager {
     session.status = 'running'
     session.currentlyStreaming = true
     session.lastActivity = new Date().toISOString()
+    this._saveState()
 
     // Notify browser about the new user message
     this.broadcast({
@@ -378,6 +446,7 @@ export class PillarManager {
     session.currentlyStreaming = false
     session.lastActivity = new Date().toISOString()
     session.messageQueue = [] // clear queued messages to prevent memory leak
+    this._saveState()
 
     // Finalize any current output
     const stoppedOutput = this._flushOutput(session)
@@ -402,6 +471,7 @@ export class PillarManager {
     const session = this.pillars.get(pillarId)
     if (session) {
       session.dbSessionId = dbSessionId
+      this._saveState()
     }
   }
 
@@ -1135,7 +1205,7 @@ export class PillarManager {
   /**
    * Register Flow's session for callback notifications.
    */
-  registerFlowSession({ cliSessionId, dbSessionId, model, cwd, wsClient }) {
+  registerFlowSession({ cliSessionId, dbSessionId, model, cwd, wsClient, flowChatBuffers }) {
     if (this.flowSession && this.flowSession.cliSessionId !== cliSessionId) {
       console.warn('[pillar] Overwriting existing Flow session:', this.flowSession.cliSessionId, '→', cliSessionId)
       // Drain any queued notifications to prevent silent loss
@@ -1154,6 +1224,8 @@ export class PillarManager {
       notificationQueue: [],
       cliRequestId: null // set when notifying, cleared when done
     }
+    if (flowChatBuffers) this.flowChatBuffers = flowChatBuffers
+    this._saveState()
   }
 
   /**
@@ -1722,6 +1794,14 @@ This is informational — Adam is communicating directly with the pillar. Decide
     const isDone = event.type === 'claude_done' || event.type === 'codex_done' || event.type === 'copilot_done' || event.type === 'gemini_done' || event.type === 'ollama_done'
     const isError = event.type === 'claude_error' || event.type === 'codex_error' || event.type === 'copilot_error' || event.type === 'gemini_error' || event.type === 'ollama_error'
 
+    // Early session ID capture (WU-2)
+    if (event.sessionId && event.sessionId !== session.cliSessionId) {
+      const oldId = session.cliSessionId
+      session.cliSessionId = event.sessionId
+      console.log(`[pillar] Captured session ID early for ${session.pillar}: ${oldId.slice(0, 8)} -> ${session.cliSessionId.slice(0, 8)}`)
+      this._saveState()
+    }
+
     if (isStream) {
       const cliEvent = event.event
 
@@ -1799,6 +1879,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
       session.currentlyStreaming = false
       session.cliRequestId = null
       session.lastActivity = new Date().toISOString()
+      this._saveState()
 
       // Layer 2: Fast-fail retry — if session died quickly with no output, try fallback
       const isStartupFailure = event.exitCode !== 0
@@ -1886,6 +1967,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
         session.turnCount++
         session.status = 'running'
         session.currentlyStreaming = true
+        this._saveState()
 
         // Notify browser about the queued user message
         this.broadcast({
@@ -1898,6 +1980,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
         this._startCliTurn(session, nextMessage, null, true)
       } else {
         session.status = 'idle'
+        this._saveState()
 
         // Singularity: nudge idle sessions to prevent deadlock
         if (session.singularityRole && session.singularityGroupId) {
@@ -1954,10 +2037,11 @@ This is informational — Adam is communicating directly with the pillar. Decide
           return
         }
       }
-
       session.status = 'error'
+      this._saveState()
 
       const errorOutput = this._flushOutput(session)
+
       if (errorOutput) {
         session.output.push(errorOutput)
       }
@@ -2006,7 +2090,10 @@ This is informational — Adam is communicating directly with the pillar. Decide
     session.model = this._defaultModel(session.pillar, fallbackBackend, { recursive: session.recursive, depth: session.depth })
     session.currentlyStreaming = true
     session.status = 'running'
+    this._saveState()
+
     session.outputChunks = []
+
     session._cachedOutput = ''
     session.startTime = Date.now() // reset so the fallback gets its own 15s window
 

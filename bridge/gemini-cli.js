@@ -173,7 +173,8 @@ export class GeminiCliManager {
         onEvent({
           type: 'gemini_stream',
           requestId,
-          event: { type: 'session_id', sessionId: event.session_id }
+          event: { type: 'session_id', sessionId: event.session_id },
+          sessionId: event.session_id
         })
       }
       return // Don't forward init events

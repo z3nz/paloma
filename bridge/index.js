@@ -388,7 +388,8 @@ async function main() {
     projectRoot: process.cwd(),
     broadcast,
     mcpManager: manager,
-    health
+    health,
+    flowChatBuffers
   })
   mcpProxy.pillarManager = pillarManager
 
@@ -582,7 +583,8 @@ async function main() {
             dbSessionId: msg.dbSessionId,
             model: msg.model,
             cwd: msg.cwd,
-            wsClient: ws
+            wsClient: ws,
+            flowChatBuffers // Pass the buffers Map for persistence
           })
           // Re-map any active CLI requests to the new WS (reconnect after page refresh)
           const buf = flowChatBuffers.get(msg.cliSessionId)

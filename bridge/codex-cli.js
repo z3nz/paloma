@@ -94,7 +94,8 @@ export class CodexCliManager {
             onEvent({
               type: 'codex_stream',
               requestId,
-              event: { type: 'session_id', sessionId: threadId }
+              event: { type: 'session_id', sessionId: threadId },
+              sessionId: threadId
             })
           }
         } catch {
