@@ -1490,6 +1490,9 @@ This is informational — Adam is communicating directly with the pillar. Decide
    * Clean up all pillar sessions on shutdown.
    */
   shutdown() {
+    // Flush any pending debounced state to disk before tearing down
+    if (this.persistence) this.persistence.flush()
+
     if (this._cleanupInterval) {
       clearInterval(this._cleanupInterval)
       this._cleanupInterval = null
