@@ -38,7 +38,7 @@
           />
           
           <!-- Linked Session -->
-          <InboxSessionPanel v-if="message.sessionId" :session-id="message.sessionId" :message-id="message.messageId" />
+          <InboxSessionPanel v-if="message.sessionId" :session-id="message.sessionId" :message-id="message.messageId" :message="message" />
         </div>
       </template>
     </div>

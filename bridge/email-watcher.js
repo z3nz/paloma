@@ -386,6 +386,8 @@ export class EmailWatcher {
     const { requestId, sessionId } = this.cliManager.chat(
       { prompt, model: 'opus' },
       (event) => {
+        // Persist event history for offline browser hydration
+        emailStore.addSessionEvent(sessionId, event)
         // Broadcast all events to browser so the chat appears live
         this.broadcast({ ...event, emailTriggered: true, emailSubject: subject })
       }
@@ -513,6 +515,8 @@ export class EmailWatcher {
     const { sessionId } = this.cliManager.chat(
       { prompt, model: 'opus' },
       (event) => {
+        // Persist event history for offline browser hydration
+        emailStore.addSessionEvent(sessionId, event)
         this.broadcast({ ...event, emailTriggered: true, emailSubject: `Daily Continuity — ${today}` })
       }
     )
@@ -627,6 +631,8 @@ export class EmailWatcher {
     const { requestId, sessionId } = this.cliManager.chat(
       { prompt, model: 'opus' },
       (event) => {
+        // Persist event history for offline browser hydration
+        emailStore.addSessionEvent(sessionId, event)
         this.broadcast({ ...event, emailTriggered: true, emailSubject: entry.subject })
       }
     )

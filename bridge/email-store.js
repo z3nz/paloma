@@ -12,6 +12,7 @@ export class EmailStore {
   constructor() {
     this.threads = new Map() // threadId -> Thread object
     this.messages = new Map() // messageId -> Message object
+    this.sessionEvents = new Map() // sessionId -> Array of events
     this.messagesByThread = new Map() // threadId -> Set of messageIds
     this.saveTimeout = null
     this.load()
@@ -23,6 +24,7 @@ export class EmailStore {
         const data = JSON.parse(readFileSync(STORE_PATH, 'utf8'))
         this.threads = new Map(Object.entries(data.threads || {}))
         this.messages = new Map(Object.entries(data.messages || {}))
+        this.sessionEvents = new Map(Object.entries(data.sessionEvents || {}))
         
         // Rebuild messagesByThread index
         this.messagesByThread.clear()
@@ -47,6 +49,7 @@ export class EmailStore {
         const data = {
           threads: Object.fromEntries(this.threads),
           messages: Object.fromEntries(this.messages),
+          sessionEvents: Object.fromEntries(this.sessionEvents),
           updatedAt: new Date().toISOString()
         }
         await writeFile(STORE_PATH, JSON.stringify(data, null, 2))
@@ -84,6 +87,31 @@ export class EmailStore {
       this.messages.set(messageId, msg)
       this.save()
     }
+  }
+
+  addSessionEvent(sessionId, event) {
+    if (!sessionId) return
+    
+    if (!this.sessionEvents.has(sessionId)) {
+      this.sessionEvents.set(sessionId, [])
+    }
+    
+    const events = this.sessionEvents.get(sessionId)
+    events.push({
+      ...event,
+      timestamp: event.timestamp || new Date().toISOString()
+    })
+    
+    // Limit events per session to prevent massive bloat (e.g., 500 events)
+    if (events.length > 500) {
+      events.shift()
+    }
+    
+    this.save()
+  }
+
+  getSessionEvents(sessionId) {
+    return this.sessionEvents.get(sessionId) || null
   }
 
   _updateThread(threadId) {

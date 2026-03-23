@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT } from '../src/prompts/base.js'
-import { PHASE_INSTRUCTIONS } from '../src/prompts/phases.js'
+import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
 
 const MAX_RUNTIME_MS = 30 * 60 * 1000 // 30 minutes
 const MAX_NOTIFICATION_QUEUE = 50
@@ -2079,7 +2079,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
 
     // 5. Per-pillar preference from machine profile
     const preferences = this.health?.machineProfile?.preferences || {}
-    let preferred = preferences[pillar] || preferences.default || 'gemini'
+    let preferred = preferences[pillar] || preferences.default || PHASE_MODEL_SUGGESTIONS[pillar] || 'gemini'
 
     // 6. Gemini rate limit pre-emption
     if (preferred === 'gemini' && this.health?.isGeminiApproachingLimit?.()) {
@@ -2144,8 +2144,10 @@ This is informational — Adam is communicating directly with the pillar. Decide
     }
     if (backend === 'codex') return 'gpt-5.1-codex-max'
     if (backend === 'copilot') return 'claude-sonnet-4.6'
-    if (backend === 'gemini') return 'flash'
-    // Claude backend: phase routing is handled by _selectBackend, not model selection
+    if (backend === 'gemini') return 'pro'  // Pro is default — Adam has pro subscription
+    // Claude backend: Opus for Forge (max precision), Sonnet for others
+    if (pillar === 'forge') return 'opus'
+    if (pillar === 'polish') return 'opus'
     return 'sonnet'
   }
 

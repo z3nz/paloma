@@ -4,6 +4,9 @@ import db from '../services/db.js'
 const sessions = ref([])
 const activeSessionId = ref(Number(sessionStorage.getItem('paloma:activeSessionId')) || null)
 
+// Prevent concurrent hydration of the same session (race condition guard)
+const _pendingHydrations = new Map()
+
 export function useSessions() {
   async function recoverOrphanedSessions(projectPath) {
     const orphans = await db.sessions
@@ -175,6 +178,150 @@ export function useSessions() {
     return topLevel
   })
 
+  async function hydrateSessionFromBridge(cliSessionId, messageId, emailContext = null) {
+    if (!cliSessionId) return null
+    const pillarId = `email:${messageId}`
+    
+    // If hydration is already in progress for this pillarId, return the same promise
+    if (_pendingHydrations.has(pillarId)) return _pendingHydrations.get(pillarId)
+    
+    const promise = (async () => {
+      // 1. Check if session already exists by pillarId
+      const existing = await db.sessions.where('pillarId').equals(pillarId).first()
+      if (existing) return existing.id
+      
+      // 2. Fetch history from bridge
+      const wsUrl = localStorage.getItem('paloma:mcpBridgeUrl') || 'ws://localhost:19191'
+      const baseUrl = wsUrl.replace(/^ws/, 'http')
+      
+      try {
+        const resp = await fetch(`${baseUrl}/api/emails/session/${cliSessionId}/history`)
+        if (!resp.ok) return null
+        const { events } = await resp.json()
+        if (!events || events.length === 0) return null
+        
+        // 3. Create session in IndexedDB
+        const id = await db.sessions.add({
+          projectPath: 'paloma',
+          title: emailContext?.subject || 'Email Session',
+          model: 'claude-cli:opus',
+          phase: 'flow',
+          pillarId,
+          source: 'email',
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        })
+        
+        // 4. Map events to messages
+        await mapEventsToMessages(id, events, emailContext)
+        
+        // 5. Reload sessions
+        await loadSessions('paloma')
+        return id
+      } catch (err) {
+        console.error('[hydrate] Failed to hydrate session:', err)
+        return null
+      }
+    })()
+    
+    _pendingHydrations.set(pillarId, promise)
+    promise.finally(() => _pendingHydrations.delete(pillarId))
+    return promise
+  }
+
+  async function mapEventsToMessages(dbSessionId, events, emailContext = null) {
+    // If we have emailContext, create the initial user message if it's not in the events
+    if (emailContext) {
+      const summary = [`From: ${emailContext.from}`, `Subject: ${emailContext.subject}`, '', emailContext.body || ''].join('\n')
+      await db.messages.add({
+        sessionId: dbSessionId,
+        role: 'user',
+        content: summary,
+        timestamp: Date.now()
+      })
+    }
+
+    // Claude CLI emits both streaming events (content_block_*) AND a final complete
+    // 'assistant' event. If the final event is present, skip streaming events to
+    // avoid duplicating text and tool activities.
+    const hasAssistantEvent = events.some(w => {
+      const e = w.event || w
+      return e.type === 'assistant' && e.message?.content
+    })
+
+    let assistantText = ''
+    let toolActivities = []
+
+    for (const wrapper of events) {
+      const event = wrapper.event || wrapper // Support both wrapped and direct formats
+      
+      if (event.type === 'assistant' && event.message?.content) {
+        for (const block of event.message.content) {
+          if (block.type === 'text' && block.text) {
+            assistantText += block.text
+          } else if (block.type === 'tool_use') {
+            toolActivities.push({
+              id: block.id,
+              name: block.name,
+              input: block.input,
+              status: 'done'
+            })
+          }
+        }
+      } else if (!hasAssistantEvent && event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+        // Fallback: only use streaming events if no final assistant event exists
+        const block = event.content_block
+        toolActivities.push({
+          id: block.id,
+          name: block.name,
+          input: block.input || {},
+          status: 'done'
+        })
+      } else if (!hasAssistantEvent && event.type === 'content_block_delta') {
+        // Fallback: only use streaming events if no final assistant event exists
+        if (event.delta?.type === 'text_delta' && event.delta.text) {
+          assistantText += event.delta.text
+        }
+      } else if (event.type === 'user' && event.message?.content) {
+        // Handle tool results
+        for (const block of event.message.content) {
+          if (block.type === 'tool_result') {
+            const activity = toolActivities.find(a => a.id === block.tool_use_id)
+            let resultStr = ''
+            try {
+              resultStr = Array.isArray(block.content)
+                ? block.content.map(c => c.text || '').join('')
+                : typeof block.content === 'string' ? block.content : JSON.stringify(block.content)
+            } catch { resultStr = '[Error serializing tool result]' }
+
+            if (activity) activity.result = resultStr
+
+            await db.messages.add({
+              sessionId: dbSessionId,
+              role: 'tool',
+              toolCallId: block.tool_use_id,
+              toolName: activity?.name || 'unknown',
+              toolArgs: activity?.input || {},
+              content: resultStr,
+              timestamp: Date.now()
+            })
+          }
+        }
+      }
+    }
+
+    // Final assistant message
+    if (assistantText || toolActivities.length > 0) {
+      await db.messages.add({
+        sessionId: dbSessionId,
+        role: 'assistant',
+        content: assistantText,
+        toolActivity: toolActivities.length ? toolActivities : undefined,
+        timestamp: Date.now()
+      })
+    }
+  }
+
   return {
     sessions,
     sessionTree,
@@ -186,6 +333,7 @@ export function useSessions() {
     findFlowSession,
     updateSession,
     deleteSession,
-    setActiveSession
+    setActiveSession,
+    hydrateSessionFromBridge
   }
 }

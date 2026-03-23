@@ -4,8 +4,9 @@
     :style="{ borderColor: phaseColor }"
   >
     <div 
-      class="flex items-center justify-between cursor-pointer group"
-      @click="isExpanded = !isExpanded"
+      class="flex items-center justify-between group"
+      :class="{ 'cursor-pointer': session && !loading }"
+      @click="session && !loading && (isExpanded = !isExpanded)"
     >
       <div class="flex items-center gap-2">
         <div 
@@ -18,12 +19,18 @@
         </div>
         <div class="flex flex-col">
           <span class="text-[11px] font-bold text-[--color-text-primary] uppercase tracking-wider">Paloma handled this email</span>
-          <span v-if="session" class="text-[10px] text-[--color-text-muted] font-medium">
+          <span v-if="loading" class="text-[10px] text-[--color-text-muted] font-medium animate-pulse">
+            Hydrating session from bridge...
+          </span>
+          <span v-else-if="session" class="text-[10px] text-[--color-text-muted] font-medium">
             {{ session.phase }} phase &bull; {{ messages.length }} messages
+          </span>
+          <span v-else class="text-[10px] text-[--color-text-muted] font-medium">
+            Details unavailable (browser was offline)
           </span>
         </div>
       </div>
-      <div class="flex items-center gap-2 text-[10px] text-[--color-text-muted] group-hover:text-[--color-text-primary] transition-colors pr-2">
+      <div v-if="session && !loading" class="flex items-center gap-2 text-[10px] text-[--color-text-muted] group-hover:text-[--color-text-primary] transition-colors pr-2">
         <span>{{ isExpanded ? 'Collapse' : 'Show details' }}</span>
         <svg 
           width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
@@ -78,15 +85,20 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import db from '../../services/db.js'
+import { useSessions } from '../../composables/useSessions.js'
 
 const props = defineProps({
   sessionId: { type: [Number, String], default: null },
-  messageId: { type: String, default: null }
+  messageId: { type: String, default: null },
+  message: { type: Object, default: null }
 })
 
 const isExpanded = ref(false)
+const loading = ref(false)
 const session = ref(null)
 const messages = ref([])
+
+const { hydrateSessionFromBridge } = useSessions()
 
 onMounted(async () => {
   try {
@@ -106,20 +118,31 @@ onMounted(async () => {
       }
     }
 
+    // Strategy 3: Hydrate from bridge if session not found locally
+    if (!dbSession && props.sessionId && props.messageId) {
+      loading.value = true
+      const hydratedId = await hydrateSessionFromBridge(props.sessionId, props.messageId, props.message)
+      if (hydratedId) {
+        dbSession = await db.sessions.get(hydratedId)
+      }
+      loading.value = false
+    }
+
     if (!dbSession) return
 
     session.value = dbSession
     messages.value = await db.messages.where('sessionId').equals(dbSession.id).toArray()
   } catch (err) {
-    console.warn('[InboxSessionPanel] Failed to load session:', err.message)
+    console.warn('[InboxSessionPanel] Failed to load/hydrate session:', err.message)
+    loading.value = false
   }
 })
 
 const toolCalls = computed(() => {
-  // Messages with role 'assistant' might have tool_calls or be part of a tool interaction
+  // toolActivity = hydrated sessions, tool_calls/toolCalls = live sessions
   return messages.value
-    .filter(m => m.role === 'assistant' && (m.tool_calls || m.toolCalls))
-    .flatMap(m => m.tool_calls || m.toolCalls)
+    .filter(m => m.role === 'assistant' && (m.toolActivity || m.tool_calls || m.toolCalls))
+    .flatMap(m => m.toolActivity || m.tool_calls || m.toolCalls)
 })
 
 const assistantResponse = computed(() => {

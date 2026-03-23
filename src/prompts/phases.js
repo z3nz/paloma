@@ -7,12 +7,12 @@ import { SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT } from './base.js'
  * Not enforced — just the starting point for smart routing.
  */
 export const PHASE_MODEL_SUGGESTIONS = {
-  flow:    'gemini',   // orchestrator — needs full MCP tool loop; Gemini is best
-  scout:   'gemini',   // fast + free + 1M context; ideal for research
-  chart:   'claude',   // deepest reasoning for architecture decisions
-  forge:   'gemini',   // balanced speed/quality; free tier preserves Claude for review
-  polish:  'claude',   // highest quality for code review; catches subtle issues
-  ship:    'gemini'    // commit/doc work; no deep reasoning needed
+  flow:    'claude',   // orchestrator — needs MCP tool loop for pillar management
+  scout:   'gemini',   // Gemini Pro — fast, 1M context, great at research synthesis
+  chart:   'gemini',   // Gemini Pro — strong architectural reasoning
+  forge:   'claude',   // Claude Opus — max precision for code edits (non-negotiable)
+  polish:  'claude',   // Claude Opus — highest quality for code review
+  ship:    'gemini'    // Gemini Pro — commit/doc work, speed is fine here
 }
 
 export const PHASE_INSTRUCTIONS = {

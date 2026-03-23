@@ -227,17 +227,31 @@ async function main() {
     if (pathname.startsWith('/api/emails/') && req.method === 'GET') {
       try {
         const parts = pathname.split('/')
-        const threadId = parts[parts.length - 1]
 
-        if (threadId === 'stats') {
+        // GET /api/emails/session/:sessionId/history
+        if (parts.length >= 6 && parts[3] === 'session' && parts[5] === 'history') {
+          const sessionId = parts[4]
+          const events = emailStore.getSessionEvents(sessionId)
+          if (events) {
+            res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
+            res.end(JSON.stringify({ sessionId, events }))
+          } else {
+            res.writeHead(404, { 'Content-Type': 'application/json', ...corsHeaders })
+            res.end(JSON.stringify({ error: 'Session not found' }))
+          }
+          return
+        }
+
+        const lastPart = parts[parts.length - 1]
+        if (lastPart === 'stats') {
           const result = emailStore.getStats()
           res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
           res.end(JSON.stringify(result))
           return
         }
 
-        if (threadId) {
-          const result = emailStore.getThread(threadId)
+        if (lastPart) {
+          const result = emailStore.getThread(lastPart)
           if (result) {
             res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
             res.end(JSON.stringify(result))
