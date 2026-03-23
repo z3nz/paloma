@@ -455,6 +455,17 @@ export class OllamaManager {
       // Exact suffix match: rawName = 'read_text_file', known = 'filesystem__read_text_file'
       if (known.endsWith(rawName) && known[known.length - rawName.length - 1] === '_') return known
     }
+    // Function name extraction: model may hallucinate server prefix but get function name right
+    // e.g. "brave-web-search__brave_web_search" → extract "brave_web_search" → match "brave-search__brave_web_search"
+    const lastDunder = rawName.lastIndexOf('__')
+    if (lastDunder > 0) {
+      const funcName = rawName.slice(lastDunder + 2)
+      for (const known of toolNames) {
+        const knownLastDunder = known.lastIndexOf('__')
+        const knownFunc = knownLastDunder > 0 ? known.slice(knownLastDunder + 2) : known
+        if (funcName === knownFunc) return known
+      }
+    }
     return null
   }
 
