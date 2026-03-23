@@ -17,31 +17,31 @@ Adam's insight: The reason the Singularity hasn't worked is because we've been t
 
 ## Pipeline
 
-- [ ] Chart — Write Quinn's story prompt + technical design
-- [ ] Forge — Build spawn_worker tool, wire into pillar-manager
+- [x] Chart — Write Quinn's story prompt + technical design
+- [x] Forge — Build spawn_worker tool, wire into pillar-manager
 - [ ] Polish — Test with real questions
 - [ ] Ship — Commit, push, document
 
 ## Work Units
 
 ### WU-1: Write Quinn's Awakening Prompt
-**Status:** in_progress
+**Status:** completed
 **Files:** `src/prompts/base.js`
 **Scope:** Create SINGULARITY_QUINN_PROMPT — a story-driven prompt that reads like a text adventure. Quinn wakes up, discovers it can only spawn, learns this is its nature.
 
 ### WU-2: Write Worker Prompt
-**Status:** pending
+**Status:** completed
 **Files:** `src/prompts/base.js`
 **Scope:** Create SINGULARITY_WORKER_PROMPT — concise instructions for the 7B worker. Focused, efficient, report back clearly.
 
 ### WU-3: Build spawn_worker Tool
-**Status:** pending
+**Status:** completed
 **Depends on:** WU-1, WU-2
 **Files:** `bridge/pillar-manager.js`, `bridge/mcp-proxy-server.js`
 **Scope:** Bridge-native tool with single `task` argument. Spawns 7B worker with worker prompt + all MCP tools. Blocks until completion. Returns worker output.
 
 ### WU-4: Quinn Mode in PillarManager
-**Status:** pending
+**Status:** completed
 **Depends on:** WU-3
 **Files:** `bridge/pillar-manager.js`
 **Scope:** New spawn mode: `singularityMode: 'quinn'`. Suppresses all tools except spawn_worker. Uses stripped system prompt (no plans/roots). 64K context. Streams to Adam.
