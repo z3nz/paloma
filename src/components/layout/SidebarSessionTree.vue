@@ -124,7 +124,21 @@
                   <rect x="4" y="4" width="16" height="16" rx="2"/>
                 </svg>
               </span>
-              <span class="text-[10px] text-text-muted truncate">{{ formatModel(child.model) }}</span>
+              <span v-else-if="getPillarStatus(child) === 'interrupted'"
+                class="text-yellow-400 shrink-0" title="Interrupted by bridge restart"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+              </span>
+              <button
+                v-if="getPillarStatus(child) === 'interrupted'"
+                @click.stop="resumePillar(child.pillarId)"
+                class="text-[10px] bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/40 px-1.5 py-0.5 rounded transition-colors"
+              >
+                Resume
+              </button>
+              <span v-else class="text-[10px] text-text-muted truncate">{{ formatModel(child.model) }}</span>
               <span class="text-[10px] text-text-muted ml-auto shrink-0">{{ formatTime(child.updatedAt) }}</span>
             </div>
           </div>
@@ -160,7 +174,7 @@ const props = defineProps({
 
 defineEmits(['select-session', 'delete-session'])
 
-const { flowProcessingCallback } = useMCP()
+const { flowProcessingCallback, resumePillar } = useMCP()
 const { isStreaming, hasToolActivity } = useSessionState()
 
 // Collapse state — persisted to localStorage

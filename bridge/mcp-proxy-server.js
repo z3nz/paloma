@@ -212,6 +212,18 @@ export class McpProxyServer {
       })
 
       tools.push({
+        name: 'pillar_resume',
+        description: 'Resume an interrupted pillar session. Use this after a bridge restart to continue an interrupted task using the captured session ID.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pillarId: { type: 'string', description: 'The pillar session ID to resume' }
+          },
+          required: ['pillarId']
+        }
+      })
+
+      tools.push({
         name: 'pillar_stop',
         description: 'Stop a running pillar session. Kills the CLI process if running.',
         inputSchema: {
@@ -419,6 +431,9 @@ export class McpProxyServer {
           break
         case 'pillar_list':
           result = this.pillarManager.list()
+          break
+        case 'pillar_resume':
+          result = await this.pillarManager.resumeSession(args)
           break
         case 'pillar_stop':
           result = this.pillarManager.stop(args)

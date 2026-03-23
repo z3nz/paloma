@@ -600,6 +600,15 @@ async function main() {
         // Frontend asking for active pillars (e.g., after reconnect to rebuild session map)
         const result = pillarManager ? pillarManager.list() : { pillars: [] }
         ws.send(JSON.stringify({ type: 'pillar_list_result', id: msg.id, pillars: result.pillars }))
+      } else if (msg.type === 'pillar_resume') {
+        if (pillarManager) {
+          try {
+            const result = await pillarManager.resumeSession({ pillarId: msg.pillarId })
+            ws.send(JSON.stringify({ type: 'pillar_resume_result', id: msg.id, result }))
+          } catch (e) {
+            ws.send(JSON.stringify({ type: 'error', id: msg.id, message: e.message }))
+          }
+        }
       } else if (msg.type === 'pillar_db_session_id') {
         // Frontend created the IndexedDB session — store the ID on the pillar
         if (pillarManager) {

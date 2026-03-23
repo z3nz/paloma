@@ -1,0 +1,5 @@
+### Lesson: Bridge Restart Session Resumption
+- **Context:** We implemented session persistence to survive bridge restarts, capturing CLI session IDs early and passing them to `--resume` upon restarting the turned.
+- **Insight:** Vue's default behavior for supervisor restarts is a hard `window.location.reload()`. This is destructive. By intercepting the restart signal and reconnecting the WebSocket gracefully, we preserve the frontend state and allow users to manually resume interrupted processes. Also, Ollama's conversation history is in-memory and lost on bridge restarts, so we correctly blocked resumption for that specific backend.
+- **Action:** Add `pillar_resume` MCP tool and graceful frontend reconnects.
+- **Applied:** YES — `pillar_resume` added to `PillarManager` and `src/prompts/base.js`. Frontend updated to use `resumePillar` and clear pending restarts instead of reloading.

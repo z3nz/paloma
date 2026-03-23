@@ -299,6 +299,69 @@ export class PillarManager {
   }
 
   /**
+   * Resume an interrupted pillar session.
+   */
+  async resumeSession({ pillarId }) {
+    const session = this.pillars.get(pillarId)
+    if (!session) {
+      return { pillarId, status: 'error', message: `No pillar session found with id ${pillarId}` }
+    }
+
+    if (session.status !== 'interrupted') {
+      return { pillarId, status: 'error', message: `Session is ${session.status}, not interrupted. Only interrupted sessions can be resumed.` }
+    }
+
+    if (!session.cliSessionId) {
+      return { pillarId, status: 'error', message: `Cannot resume: no session ID captured for this session.` }
+    }
+
+    // Verify backend is available
+    if (this.health && !this.health.isAvailable(session.backend)) {
+      return { pillarId, status: 'error', message: `Cannot resume: backend ${session.backend} is currently unavailable.` }
+    }
+
+    // Ollama sessions cannot be resumed — conversation history is in-memory and lost on restart
+    if (session.backend === 'ollama') {
+      return { pillarId, status: 'error', message: `Cannot resume Ollama sessions after bridge restart: conversation history is lost. Consider re-spawning.` }
+    }
+
+    session.turnCount++
+    session.status = 'running'
+    session.currentlyStreaming = true
+    session.lastActivity = new Date().toISOString()
+    this._saveState()
+
+    const systemPrompt = await this._buildSystemPrompt(session.pillar, {
+      planFilter: session._planFile,
+      recursive: session.recursive,
+      depth: session.depth,
+      backend: session.backend,
+      singularityRole: session.singularityRole
+    })
+
+    const prompt = "[SYSTEM: You were interrupted by a bridge restart. Continue where you left off. Check the plan document for current status.]\n\nContinue."
+
+    // Notify browser about the resumption message
+    this.broadcast({
+      type: 'pillar_message_saved',
+      pillarId,
+      role: 'user',
+      content: prompt
+    })
+
+    this._startCliTurn(session, prompt, systemPrompt, true)
+
+    // Set timeout
+    session.timeoutTimer = setTimeout(() => {
+      try { this._timeout(pillarId) } catch (e) {
+        console.error(`[pillar] Timeout handler error for ${pillarId}:`, e.message)
+      }
+    }, MAX_RUNTIME_MS)
+
+    return { pillarId, status: 'resumed', message: `${this._capitalize(session.pillar)} session resumed.` }
+  }
+
+  /**
    * Send a follow-up message to a running pillar session.
    */
   sendMessage({ pillarId, message }) {
@@ -631,6 +694,20 @@ export class PillarManager {
       {
         type: 'function',
         function: {
+          name: 'pillar_resume',
+          description: 'Resume an interrupted sub-instance session using its captured session ID.',
+          parameters: {
+            type: 'object',
+            properties: {
+              pillarId: { type: 'string', description: 'The session ID to resume' }
+            },
+            required: ['pillarId']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
           name: 'pillar_stop',
           description: 'Stop a running sub-instance session.',
           parameters: {
@@ -846,6 +923,8 @@ export class PillarManager {
           content = JSON.stringify(this.getStatus(toolArgs), null, 2)
         } else if (toolName === 'pillar_list') {
           content = JSON.stringify(this.list(), null, 2)
+        } else if (toolName === 'pillar_resume') {
+          content = JSON.stringify(await this.resumeSession(toolArgs), null, 2)
         } else if (toolName === 'pillar_stop') {
           content = JSON.stringify(this.stop(toolArgs), null, 2)
         } else if (toolName === 'pillar_stop_tree') {
@@ -1850,7 +1929,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
     if (event.sessionId && event.sessionId !== session.cliSessionId) {
       const oldId = session.cliSessionId
       session.cliSessionId = event.sessionId
-      console.log(`[pillar] Captured session ID early for ${session.pillar}: ${oldId.slice(0, 8)} -> ${session.cliSessionId.slice(0, 8)}`)
+      console.log(`[pillar] Captured session ID early for ${session.pillar}: ${oldId ? oldId.slice(0, 8) : 'null'} -> ${session.cliSessionId.slice(0, 8)}`)
       this._saveState()
     }
 

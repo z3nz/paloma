@@ -95,11 +95,9 @@ export function createMcpBridge() {
       reconnectAttempt = 0
       lastPongTime = Date.now()
       onStateChange?.('connected')
-      // If reconnecting after a supervisor restart, reload to get fresh build
       if (restartPending) {
         restartPending = false
-        window.location.reload()
-        return
+        // Let onStateChange('connected') handle the resync
       }
       // Auto-discover tools on connect
       discover().catch((e) => {
@@ -302,6 +300,12 @@ export function createMcpBridge() {
         if (p) {
           pending.delete(msg.id)
           p.resolve(msg.pillars)
+        }
+      } else if (msg.type === 'pillar_resume_result' && msg.id) {
+        const p = pending.get(msg.id)
+        if (p) {
+          pending.delete(msg.id)
+          p.resolve(msg.result)
         }
       } else if (msg.type === 'pillar_queued') {
         // Spawn queue: pillar is waiting for a slot. Log for now — future: show in sidebar.
@@ -558,11 +562,22 @@ export function createMcpBridge() {
     })
   }
 
+  function resumePillar(pillarId) {
+    const id = crypto.randomUUID()
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject })
+      _send({ type: 'pillar_resume', id, pillarId }).catch((e) => {
+        pending.delete(id)
+        reject(e)
+      })
+    })
+  }
+
   function sendPillarUserMessage(pillarId, message) {
     _send({ type: 'pillar_user_message', pillarId, message })
   }
 
-  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendGeminiChat, stopGeminiChat, sendOllamaChat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, sendPillarUserMessage, getState }
+  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendGeminiChat, stopGeminiChat, sendOllamaChat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, resumePillar, sendPillarUserMessage, getState }
 }
 
 // Enable HMR boundary — errors here don't cascade to full reload

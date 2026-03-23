@@ -236,6 +236,7 @@ export function useMCP() {
         connected.value = state === 'connected'
         // On reconnect, rebuild pillarSessionMap from IndexedDB + active backend pillars
         if (state === 'connected') {
+          restartPending.value = false
           try {
             await _reconcilePillarSessions()
           } catch (e) {
@@ -1043,6 +1044,26 @@ export function useMCP() {
     return bridge.exportChats(projectPath, sessions)
   }
 
+  async function resumePillar(pillarId) {
+    if (!bridge || !connected.value) return { status: 'error', message: 'Bridge not connected' }
+    try {
+      const result = await bridge.resumePillar(pillarId)
+      // Update UI state immediately before list re-sync
+      if (result.status === 'resumed' || result.status === 'running') {
+        pillarStatuses.set(pillarId, 'running')
+        const dbSessionId = pillarSessionMap.get(pillarId)
+        if (dbSessionId) {
+          const { getState } = useSessionState()
+          const state = getState(dbSessionId)
+          state.streaming.value = true
+        }
+      }
+      return result
+    } catch (e) {
+      return { status: 'error', message: e.message }
+    }
+  }
+
   return {
     connected,
     connectionState,
@@ -1074,6 +1095,7 @@ export function useMCP() {
     getEnabledTools,
     getAutoExecuteServers,
     registerFlowSession,
+    resumePillar,
     sendPillarUserMessage,
     flowProcessingCallback,
     emailStoreUpdateTrigger,
