@@ -47,3 +47,7 @@ vite.config.js.timestamp-*
 # Per-machine local context (not shared across machines)
 .paloma/local-machine.md
 .paloma/machine-profile.json
+
+# Singularity workspace (ephemeral scratch space, but keep dir structure)
+.singularity/workspace/*
+!.singularity/workspace/.gitkeep
