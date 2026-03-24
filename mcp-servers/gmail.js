@@ -40,6 +40,78 @@ const SCOPES = [
 ]
 const DEFAULT_RECIPIENT = process.env.GMAIL_RECIPIENT || null
 
+// ─── Rate Limiting ───────────────────────────────────────────────────────────
+
+const RATE_LIMIT_LOG_PATH = resolve(homedir(), '.paloma', 'email-send-log.json')
+const RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000 // 24 hours
+const RATE_LIMIT_MAX_CONTINUITY = 1 // max "Daily Continuity" emails per 24h
+const RATE_LIMIT_MAX_OUTBOUND = 1   // max NEW outbound emails (non-continuity) per 24h
+
+function loadRateLimitLog () {
+  try {
+    if (existsSync(RATE_LIMIT_LOG_PATH)) {
+      return JSON.parse(readFileSync(RATE_LIMIT_LOG_PATH, 'utf8'))
+    }
+  } catch (err) {
+    // console.error('[gmail] Failed to read rate limit log:', err.message)
+  }
+  return { sends: [] }
+}
+
+function saveRateLimitLog (log) {
+  try {
+    writeFileSync(RATE_LIMIT_LOG_PATH, JSON.stringify(log, null, 2))
+  } catch (err) {
+    console.error('[gmail] Failed to write rate limit log:', err.message)
+  }
+}
+
+function recordSend ({ to, subject, type, isContinuity }) {
+  const log = loadRateLimitLog()
+  log.sends.push({
+    to,
+    subject,
+    type,
+    isContinuity,
+    timestamp: new Date().toISOString()
+  })
+  saveRateLimitLog(log)
+}
+
+/**
+ * Check if sending is allowed under rate limits.
+ * @param {Object} params
+ * @param {'send'|'reply'} params.type - The type of outbound email
+ * @param {boolean} params.isContinuity - Whether it's a continuity email
+ * @returns {{ allowed: boolean, reason?: string }}
+ */
+function checkRateLimit ({ type, isContinuity }) {
+  if (type === 'reply') return { allowed: true } // Replies are always allowed per AGENTS.md
+
+  const log = loadRateLimitLog()
+  const cutoff = Date.now() - RATE_LIMIT_WINDOW_MS
+  const recent = (log.sends || []).filter(s => new Date(s.timestamp).getTime() > cutoff)
+
+  const continuityCount = recent.filter(s => s.type === 'send' && s.isContinuity).length
+  const outboundCount = recent.filter(s => s.type === 'send' && !s.isContinuity).length
+
+  if (isContinuity && continuityCount >= RATE_LIMIT_MAX_CONTINUITY) {
+    return {
+      allowed: false,
+      reason: `Rate limit exceeded: Max ${RATE_LIMIT_MAX_CONTINUITY} continuity email(s) per 24h (currently ${continuityCount})`
+    }
+  }
+
+  if (!isContinuity && outboundCount >= RATE_LIMIT_MAX_OUTBOUND) {
+    return {
+      allowed: false,
+      reason: `Rate limit exceeded: Max ${RATE_LIMIT_MAX_OUTBOUND} outbound email(s) per 24h (currently ${outboundCount}). Replies are always allowed.`
+    }
+  }
+
+  return { allowed: true }
+}
+
 // Sender address priority: env var → machine-profile.json → hardcoded fallback
 function resolveSenderAddress () {
   if (process.env.GMAIL_SENDER) return process.env.GMAIL_SENDER
@@ -294,6 +366,18 @@ async function getLastMessageInThread (gmail, threadId) {
 // ─── Tool Handlers ───────────────────────────────────────────────────────────
 
 async function handleSend ({ to, subject, body, isHtml = false }) {
+  const isContinuity = (subject || '').includes('Daily Continuity')
+
+  // Rate limit check
+  const rateCheck = checkRateLimit({ type: 'send', isContinuity })
+  if (!rateCheck.allowed) {
+    console.error(`[gmail] BLOCKED email_send: ${rateCheck.reason}`)
+    return {
+      content: [{ type: 'text', text: `Email blocked by rate limiter. ${rateCheck.reason}. Try again later or use email_reply for thread continuity.` }],
+      isError: true
+    }
+  }
+
   const gmail = ensureAuth()
   const recipient = to || DEFAULT_RECIPIENT
   if (!recipient) {
@@ -319,6 +403,9 @@ async function handleSend ({ to, subject, body, isHtml = false }) {
     }
   }
 
+  // Record successful send
+  recordSend({ to: recipient, subject, type: 'send', isContinuity })
+
   return {
     content: [{
       type: 'text',
@@ -332,6 +419,16 @@ async function handleSend ({ to, subject, body, isHtml = false }) {
 }
 
 async function handleReply ({ threadId, body, to, isHtml = false }) {
+  // Rate limit check
+  const rateCheck = checkRateLimit({ type: 'reply' })
+  if (!rateCheck.allowed) {
+    console.error(`[gmail] BLOCKED email_reply: ${rateCheck.reason}`)
+    return {
+      content: [{ type: 'text', text: `Reply blocked by rate limiter. ${rateCheck.reason}. Try again later.` }],
+      isError: true
+    }
+  }
+
   const gmail = ensureAuth()
 
   // Get the last message in the thread for threading headers
@@ -379,6 +476,9 @@ async function handleReply ({ threadId, body, to, isHtml = false }) {
       isError: true
     }
   }
+
+  // Record successful reply
+  recordSend({ to: recipient, subject: `(reply in thread ${threadId})`, type: 'reply', isContinuity: false })
 
   return {
     content: [{

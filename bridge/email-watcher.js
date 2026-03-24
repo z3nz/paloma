@@ -23,8 +23,6 @@ const TOKENS_PATH = resolve(homedir(), '.paloma', 'gmail-tokens.json')
 const MACHINE_PROFILE_PATH = resolve(process.cwd(), '.paloma', 'machine-profile.json')
 const SEEN_IDS_PATH = resolve(homedir(), '.paloma', 'email-seen-ids.json')
 const POLL_INTERVAL_MS = 30_000 // 30 seconds
-const RETRY_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes before retry check
-const MAX_RETRIES = 2 // max retry attempts per thread
 
 // Trusted senders — emails from these addresses get full engagement (replies, actions).
 // All other emails still spawn sessions so Paloma can triage them like a human would
@@ -39,25 +37,35 @@ const TRUSTED_SENDERS = [
   'adambookpro.paloma@verifesto.com', // Paloma on Adam's MacBook Pro
 ]
 
-// All known Paloma email aliases — used for reply detection across machines
-const PALOMA_ALIASES = [
+// Paloma instance sender addresses — inter-instance emails are stored but do NOT spawn sessions
+const PALOMA_INSTANCE_SENDERS = [
   'paloma@verifesto.com',
   'lenovo.paloma@verifesto.com',
   'macbook.paloma@verifesto.com',
   'adambookpro.paloma@verifesto.com',
 ]
 
-const THREAD_TRACKER_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours before thread entries expire
 const MAX_POLL_BACKOFF_MS = 5 * 60 * 1000 // 5 minute max backoff on poll errors
 
+// Backend rotation for email sessions — spread usage evenly across all CLIs
+// Claude is premium (best reasoning) — used sparingly. Others share the bulk of the load.
+const EMAIL_BACKEND_ROTATION = [
+  { backend: 'gemini', model: 'gemini' },
+  { backend: 'copilot', model: 'copilot' },
+  { backend: 'gemini', model: 'gemini' },
+  { backend: 'copilot', model: 'copilot' },
+  { backend: 'claude', model: 'sonnet' },
+]
+let _emailBackendIndex = 0
+
 export class EmailWatcher {
-  constructor(cliManager, { broadcast } = {}) {
-    this.cliManager = cliManager
+  constructor(backends, { broadcast } = {}) {
+    this.backends = backends   // { claude, codex, copilot, gemini, ollama }
+    this.cliManager = backends.claude // backward compat — used for continuity email
     this.broadcast = broadcast || (() => {})
     this.gmail = null
     this.interval = null
     this.seenIds = new Set()
-    this.threadTracker = new Map()
     this.emailAlias = null
     this.running = false
     this._consecutivePollFailures = 0
@@ -157,13 +165,22 @@ export class EmailWatcher {
           this.emailAlias = profile.emailAlias
           console.log(`[email-watcher] Machine email alias: ${this.emailAlias}`)
         } else {
-          console.warn('[email-watcher] No emailAlias in machine-profile.json — processing ALL inbox emails (no recipient filter)')
+          console.warn('[email-watcher] No emailAlias in machine-profile.json — email watcher DISABLED (alias required)')
+          return
+        }
+        // Fix 6: Only schedule daily continuity email if this machine owns it
+        if (profile.continuityOwner === true) {
+          this._scheduleDailyEmail()
+        } else {
+          console.log('[email-watcher] Not continuity owner — daily email disabled')
         }
       } else {
-        console.warn('[email-watcher] No machine-profile.json found — processing ALL inbox emails (no recipient filter)')
+        console.warn('[email-watcher] No machine-profile.json found — email watcher DISABLED (alias required)')
+        return
       }
     } catch (err) {
-      console.error('[email-watcher] Failed to read machine-profile.json:', err.message, '— processing ALL inbox emails')
+      console.error('[email-watcher] Failed to read machine-profile.json:', err.message, '— email watcher DISABLED')
+      return
     }
 
     // Load persisted seenIds from disk
@@ -179,9 +196,6 @@ export class EmailWatcher {
       console.error('[email-watcher] Initial sync failed:', err.message)
       this.interval = setInterval(() => this._poll(false), POLL_INTERVAL_MS)
     })
-
-    // Schedule daily continuity email
-    this._scheduleDailyEmail()
   }
 
   /**
@@ -261,10 +275,25 @@ export class EmailWatcher {
           }
         }
 
+        // Fix 3: Inter-instance emails — store but do NOT spawn sessions
+        const isInstanceEmail = PALOMA_INSTANCE_SENDERS.some(addr => from.toLowerCase().includes(addr.toLowerCase()))
+        if (isInstanceEmail) {
+          console.log(`[email-watcher] Inter-instance email from ${from} stored (no session spawned): ${subject}`)
+          this.broadcast({
+            type: 'email_received',
+            messageId: ref.id,
+            threadId: ref.threadId,
+            from,
+            subject,
+            body
+          })
+          continue
+        }
+
         const trusted = this._isTrustedSender(from)
         console.log(`[email-watcher] New email from ${from} (${trusted ? 'trusted' : 'unknown'}): ${subject}`)
 
-        // Spawn a session for every email — trusted get full engagement,
+        // Spawn a session — trusted get full engagement,
         // unknown get triage (read, evaluate, decide what to do)
         this._spawnEmailSession({
           messageId: ref.id,
@@ -297,16 +326,6 @@ export class EmailWatcher {
       // Reset backoff on success
       this._consecutivePollFailures = 0
 
-      // Expire stale thread tracker entries (older than 24h)
-      const now = Date.now()
-      for (const [id, entry] of this.threadTracker.entries()) {
-        const age = entry.spawnedAt ? now - entry.spawnedAt : Infinity
-        if (age > THREAD_TRACKER_TTL_MS) {
-          clearTimeout(entry.timer)
-          this.threadTracker.delete(id)
-          console.log(`[email-watcher] TTL expired for thread ${id} (age ${Math.round(age / 3600000)}h) — "${entry.subject || 'unknown'}" from ${entry.from || 'unknown'}`)
-        }
-      }
     } catch (err) {
       this._consecutivePollFailures++
       const backoffMs = Math.min(
@@ -332,15 +351,6 @@ export class EmailWatcher {
    * as a new chat in the browser.
    */
   _spawnEmailSession({ messageId, threadId, from, subject, body, trusted = false }) {
-    // Clean up existing tracker entry for this thread (new email resets everything)
-    const existingEntry = this.threadTracker.get(threadId)
-    if (existingEntry) {
-      clearTimeout(existingEntry.timer)
-      try { this.cliManager.stop(existingEntry.requestId) } catch (e) {
-        console.warn(`[email-watcher] Failed to stop stale session for thread ${threadId}:`, e.message)
-      }
-    }
-
     const trustedPrompt = [
       `You just received an email from a TRUSTED sender. Read it and respond thoughtfully.`,
       ``,
@@ -385,8 +395,15 @@ export class EmailWatcher {
     // NOTE: HTML email styling is handled by the session's CLAUDE.md instructions.
     // See .paloma/instructions.md "HTML Email Styling Rules" for the canonical guide.
 
-    const { requestId, sessionId } = this.cliManager.chat(
-      { prompt, model: 'opus' },
+    // Fix 8: Subject line model override (model:opus, model:gemini, etc.)
+    const modelOverride = this._parseModelOverride(subject)
+    // Fix 7: Smart backend rotation for trusted senders, cheapest for triage
+    const { backend: backendName, model } = modelOverride
+      || (trusted ? this._nextBackend() : { backend: 'gemini', model: 'gemini' })
+    const manager = this.backends[backendName] || this.backends.claude
+    console.log(`[email-watcher] Email "${subject}" → backend: ${backendName}, model: ${model} (${modelOverride ? 'subject override' : trusted ? 'rotation' : 'triage default'})`)
+    const { requestId, sessionId } = manager.chat(
+      { prompt, model },
       (event) => {
         // Persist event history for offline browser hydration
         emailStore.addSessionEvent(sessionId, event)
@@ -398,24 +415,36 @@ export class EmailWatcher {
     // Link session to email
     emailStore.linkSession(messageId, sessionId)
 
-    console.log(`[email-watcher] Spawned session ${sessionId} (opus) for email: ${subject}`)
+    console.log(`[email-watcher] Spawned session ${sessionId} (${backendName}/${model}) for email: ${subject}`)
+  }
 
-    // Only track for retry if trusted sender — triage sessions don't need retries
-    if (trusted) {
-      const timer = setTimeout(() => this._checkAndRetryThread(threadId), RETRY_TIMEOUT_MS)
-      this.threadTracker.set(threadId, {
-        threadId,
-        messageId,
-        requestId,
-        sessionId,
-        from,
-        subject,
-        body,
-        spawnedAt: Date.now(),
-        timer,
-        retryCount: 0
-      })
+  /**
+   * Round-robin backend selector for email sessions.
+   * 40% Gemini, 40% Copilot, 20% Claude (sonnet only).
+   */
+  _nextBackend() {
+    const entry = EMAIL_BACKEND_ROTATION[_emailBackendIndex % EMAIL_BACKEND_ROTATION.length]
+    _emailBackendIndex++
+    return entry
+  }
+
+  /**
+   * Parse a model:X directive from the email subject line.
+   * Returns { backend, model } or null if no directive found.
+   */
+  _parseModelOverride(subject) {
+    const match = subject.match(/model:(\w+)/i)
+    if (!match) return null
+    const val = match[1].toLowerCase()
+    const overrides = {
+      opus:    { backend: 'claude', model: 'opus' },
+      sonnet:  { backend: 'claude', model: 'sonnet' },
+      claude:  { backend: 'claude', model: 'sonnet' },
+      gemini:  { backend: 'gemini', model: 'gemini' },
+      copilot: { backend: 'copilot', model: 'copilot' },
+      codex:   { backend: 'codex', model: 'codex' },
     }
+    return overrides[val] || null
   }
 
   /**
@@ -527,147 +556,6 @@ export class EmailWatcher {
   }
 
   /**
-   * Check if Paloma has already replied to a thread after a given message.
-   * Uses Gmail API directly (NOT MCP) — inline check for speed.
-   * Returns false on API error (safe default — triggers retry).
-   */
-  async _isThreadReplied(threadId, sinceMessageId) {
-    try {
-      const thread = await this.gmail.users.threads.get({
-        userId: 'me',
-        id: threadId,
-        format: 'metadata',
-        metadataHeaders: ['From']
-      })
-
-      let messages = thread.data.messages || []
-
-      if (sinceMessageId) {
-        const idx = messages.findIndex(m => m.id === sinceMessageId)
-        if (idx !== -1) messages = messages.slice(idx + 1)
-      }
-
-      return messages.some(m => {
-        const from = (this._getHeader(m, 'From') || '').toLowerCase()
-        return PALOMA_ALIASES.some(alias => from.includes(alias))
-      })
-    } catch (err) {
-      console.warn(`[email-watcher] _isThreadReplied API error for thread ${threadId}:`, err.message)
-      return false
-    }
-  }
-
-  /**
-   * Timer callback — fires 30 min after session spawn.
-   * Checks if thread was replied to; if not, retries or abandons.
-   */
-  async _checkAndRetryThread(threadId) {
-    try {
-      const entry = this.threadTracker.get(threadId)
-      if (!entry) return
-
-      const replied = await this._isThreadReplied(threadId, entry.messageId)
-
-      if (replied) {
-        console.log(`[email-watcher] Thread ${threadId} has reply — cleanup`)
-        this.threadTracker.delete(threadId)
-        return
-      }
-
-      if (entry.retryCount >= MAX_RETRIES) {
-        console.warn(`[email-watcher] Thread ${threadId} abandoned after ${MAX_RETRIES} retries — "${entry.subject}" from ${entry.from}`)
-        this.broadcast({
-          type: 'email_abandoned',
-          threadId,
-          subject: entry.subject,
-          from: entry.from,
-          retries: MAX_RETRIES,
-          message: `Email thread abandoned after ${MAX_RETRIES} retries: "${entry.subject}" from ${entry.from}`
-        })
-        this.threadTracker.delete(threadId)
-        return
-      }
-
-      console.log(`[email-watcher] Thread ${threadId} no reply after ${Math.round((Date.now() - entry.spawnedAt) / 60000)} min — retrying`)
-
-      // Stop the stale session before spawning retry
-      try { this.cliManager.stop(entry.requestId) } catch (e) {
-        console.warn(`[email-watcher] Failed to stop stale session:`, e.message)
-      }
-
-      this._spawnRetrySession(entry)
-    } catch (err) {
-      console.error(`[email-watcher] _checkAndRetryThread error for thread ${threadId}:`, err.message)
-    }
-  }
-
-  /**
-   * Spawn a retry session with urgency-framed prompt.
-   * Updates threadTracker with new session info and incremented retryCount.
-   */
-  _spawnRetrySession(entry) {
-    const retryNum = entry.retryCount + 1
-    const minutesAgo = Math.round((Date.now() - entry.spawnedAt) / 60000)
-
-    const prompt = [
-      `⚠️ RETRY ${retryNum}/${MAX_RETRIES} — This email has NOT been responded to.`,
-      ``,
-      `A session was spawned ${minutesAgo} minutes ago but did not send a reply.`,
-      `Your one job: read this email and reply to it now.`,
-      ``,
-      `From: ${entry.from}`,
-      `Subject: ${entry.subject}`,
-      `Thread ID: ${entry.threadId}`,
-      `Message ID: ${entry.messageId}`,
-      ``,
-      `--- Email Body ---`,
-      entry.body,
-      `--- End ---`,
-      ``,
-      `First, use email_check_thread("${entry.threadId}") to see if there are any messages`,
-      `in the thread you should be aware of (someone else may have replied).`,
-      `Then respond thoughtfully using email_reply(threadId, body).`,
-      `Set the chat title to "Retry: ${entry.subject}".`
-    ].join('\n')
-
-    const { requestId, sessionId } = this.cliManager.chat(
-      { prompt, model: 'opus' },
-      (event) => {
-        // Persist event history for offline browser hydration
-        emailStore.addSessionEvent(sessionId, event)
-        this.broadcast({ ...event, emailTriggered: true, emailSubject: entry.subject })
-      }
-    )
-
-    // Link retry session to email
-    emailStore.linkSession(entry.messageId, sessionId)
-
-    console.log(`[email-watcher] Retry ${retryNum}/${MAX_RETRIES} spawned session ${sessionId} for: ${entry.subject}`)
-
-    // Update tracker with new session info
-    const timer = setTimeout(() => this._checkAndRetryThread(entry.threadId), RETRY_TIMEOUT_MS)
-    this.threadTracker.set(entry.threadId, {
-      ...entry,
-      requestId,
-      sessionId,
-      spawnedAt: Date.now(),
-      timer,
-      retryCount: retryNum
-    })
-
-    // Broadcast retry event to browser
-    this.broadcast({
-      type: 'email_retry',
-      threadId: entry.threadId,
-      messageId: entry.messageId,
-      from: entry.from,
-      subject: entry.subject,
-      retryCount: retryNum,
-      maxRetries: MAX_RETRIES
-    })
-  }
-
-  /**
    * Check if a sender address matches the trusted senders list.
    * Supports partial matches (e.g., 'kelsey' matches 'kelsey@anything.com').
    */
@@ -755,11 +643,6 @@ export class EmailWatcher {
       clearInterval(this.dailyInterval)
       this.dailyInterval = null
     }
-    // Clear all thread retry timers
-    for (const [, entry] of this.threadTracker) {
-      clearTimeout(entry.timer)
-    }
-    this.threadTracker.clear()
     console.log('[email-watcher] Stopped')
   }
 }

@@ -269,6 +269,20 @@ async function main() {
       return
     }
 
+    if (pathname === '/api/health' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
+      const status = {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        uptime: Math.round((Date.now() - startTime) / 1000),
+        backends: health ? health.status : {},
+        pillars: pillarManager ? pillarManager.list().pillars.length : 0,
+        mcpServers: manager ? Object.keys(manager.servers).length : 0
+      }
+      res.end(JSON.stringify(status, null, 2))
+      return
+    }
+
     if (pathname === '/api/emails/sync' && req.method === 'POST') {
       try {
         const result = await emailStore.syncFromGmail()
@@ -394,7 +408,7 @@ async function main() {
   mcpProxy.pillarManager = pillarManager
 
   // Start email watcher — polls Gmail, spawns new session per email
-  emailWatcher = new EmailWatcher(cliManager, { broadcast })
+  emailWatcher = new EmailWatcher(backends, { broadcast })
   emailWatcher.start()
 
   // Start HTTP + WebSocket server

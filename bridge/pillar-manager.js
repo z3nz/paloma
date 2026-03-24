@@ -10,6 +10,7 @@ const MAX_NOTIFICATION_QUEUE = 50
 const MAX_CONCURRENT_OLLAMA = 4
 const MAX_OLLAMA_TOOL_ROUNDS = 50 // Higher than browser's 20 — recursive spawning needs room
 const MAX_QUINN_WORKERS = 8 // Cap on workers a single Quinn session can spawn — prevents runaway recursion
+const MAX_SYSTEM_PROMPT_BYTES = 120000 // Conservative 128KB limit for CLI arguments (MAX_ARG_STRLEN)
 export const OLLAMA_ALLOWED_SERVERS = new Set([
   'filesystem', 'git', 'shell', 'web', 'brave-search',
   'voice', 'memory', 'fs-extra'
@@ -159,7 +160,10 @@ export class PillarManager {
     // Quinn mode: singularityRole === 'quinn' spawns directly (no dual-mind)
     // Workers are spawned by Quinn via spawn_worker tool
 
-    const pillarId = randomUUID()
+    let pillarId = randomUUID()
+    while (this.pillars.has(pillarId)) {
+      pillarId = randomUUID()
+    }
     const cliSessionId = randomUUID()
     let finalBackend = resolvedBackend
 
@@ -1883,6 +1887,14 @@ This is informational — Adam is communicating directly with the pillar. Decide
   // --- Internal methods ---
 
   _startCliTurn(session, prompt, systemPrompt, isResume = false) {
+    // Hard-validate system prompt size (QW-5)
+    if (systemPrompt) {
+      const bytes = Buffer.byteLength(systemPrompt, 'utf-8')
+      if (bytes > MAX_SYSTEM_PROMPT_BYTES) {
+        throw new Error(`System prompt is too large (${(bytes / 1024).toFixed(0)}KB). Max is ${(MAX_SYSTEM_PROMPT_BYTES / 1024).toFixed(0)}KB. Consider reducing active plans.`)
+      }
+    }
+
     session.outputChunks = []
     session._cachedOutput = ''
     const manager = this.backends[session.backend] || this.backends.claude
