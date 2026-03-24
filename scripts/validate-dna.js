@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 /**
- * Validates Paloma's DNA files (src/prompts/base.js, src/prompts/phases.js).
+ * Validates Paloma's DNA files and bridge entry point.
  *
- * These files export template literals. Unescaped backticks inside them
- * cause SyntaxError at import time, which crashes:
- *   - The Vite build (frontend won't compile)
- *   - The bridge (bridge/index.js imports pillar-manager → prompts)
- *   - Everything downstream
+ * Catches two classes of bridge-breaking errors:
+ *   1. SyntaxError in DNA files (unescaped backticks in template literals)
+ *   2. Missing export errors (pillar-manager imports something DNA doesn't export)
  *
- * This script is called by the pre-commit hook and can be run standalone.
+ * Called by the pre-commit hook and can be run standalone.
  * Exit 0 = clean, Exit 1 = broken.
  */
 
@@ -24,7 +22,14 @@ const DNA_FILES = [
   'src/prompts/phases.js',
 ]
 
+// Files that import from DNA — validate their imports resolve
+const CONSUMERS = [
+  'bridge/pillar-manager.js',
+]
+
 let failed = false
+
+// ── Step 1: Validate DNA files parse correctly ──────────────────────
 
 for (const rel of DNA_FILES) {
   const abs = join(ROOT, rel)
@@ -32,21 +37,16 @@ for (const rel of DNA_FILES) {
   try {
     source = readFileSync(abs, 'utf8')
   } catch {
-    // File doesn't exist in this commit — skip
     continue
   }
 
-  // Quick syntactic check: try to evaluate the module source as JS
-  // We use dynamic import with a data URI to avoid filesystem caching issues
   try {
-    // Node can syntax-check via --check, but for ESM we just try to import
     await import(abs)
     console.log(`  ✔ ${rel}`)
   } catch (err) {
     if (err instanceof SyntaxError) {
       console.error(`  ✖ ${rel} — SyntaxError: ${err.message}`)
 
-      // Try to find the offending line
       const lines = source.split('\n')
       const match = err.message.match(/(\d+):(\d+)/)
       if (match) {
@@ -60,13 +60,11 @@ for (const rel of DNA_FILES) {
         }
       }
 
-      // Extra: scan for common unescaped backtick patterns
+      // Scan for common unescaped backtick patterns
       const unescaped = []
       for (let i = 0; i < lines.length; i++) {
-        const line = lines[i]
-        // Line starts with backtick (very likely unescaped inline code)
-        if (/^`[a-zA-Z_]/.test(line)) {
-          unescaped.push({ line: i + 1, text: line.trimEnd() })
+        if (/^`[a-zA-Z_]/.test(lines[i])) {
+          unescaped.push({ line: i + 1, text: lines[i].trimEnd() })
         }
       }
       if (unescaped.length > 0) {
@@ -79,16 +77,65 @@ for (const rel of DNA_FILES) {
       console.error(`\n    FIX: Escape all backticks inside template literals: \` → \\\``)
       failed = true
     } else {
-      // Non-syntax errors (missing deps, etc.) — don't block commit
       console.log(`  ⚠ ${rel} — ${err.message} (non-syntax, allowing)`)
     }
   }
 }
 
+// ── Step 2: Validate consumer imports resolve ───────────────────────
+
+for (const rel of CONSUMERS) {
+  const abs = join(ROOT, rel)
+  let source
+  try {
+    source = readFileSync(abs, 'utf8')
+  } catch {
+    continue
+  }
+
+  // Extract named imports from DNA files
+  for (const dnaFile of DNA_FILES) {
+    const dnaRel = '../' + dnaFile  // relative from bridge/
+    const dnaAbs = join(ROOT, dnaFile)
+
+    // Find import lines that reference this DNA file
+    const importRegex = new RegExp(
+      `import\\s*\\{([^}]+)\\}\\s*from\\s*['"](?:\\.\\.\\/)?(${dnaFile.replace(/[/.]/g, '\\$&')}|${dnaRel.replace(/[/.]/g, '\\$&')})['"]`
+    )
+    const match = source.match(importRegex)
+    if (!match) continue
+
+    const importedNames = match[1].split(',').map(s => s.trim()).filter(Boolean)
+
+    // Load the DNA module and check each import exists
+    let dnaModule
+    try {
+      dnaModule = await import(dnaAbs)
+    } catch {
+      // DNA file itself is broken — already caught in step 1
+      continue
+    }
+
+    for (const name of importedNames) {
+      if (!(name in dnaModule)) {
+        console.error(`  ✖ ${rel} imports '${name}' from ${dnaFile} — but that export does not exist`)
+        console.error(`    Available exports: ${Object.keys(dnaModule).join(', ')}`)
+        console.error(`    FIX: Either add 'export const ${name} = ...' to ${dnaFile}, or remove it from the import in ${rel}`)
+        failed = true
+      }
+    }
+
+    if (!failed) {
+      console.log(`  ✔ ${rel} → ${dnaFile} imports OK`)
+    }
+  }
+}
+
+// ── Result ──────────────────────────────────────────────────────────
+
 if (failed) {
   console.error('\n  DNA validation FAILED — commit blocked.')
-  console.error('  base.js and phases.js are template literals.')
-  console.error('  ALL backticks inside them must be escaped: ` → \\`\n')
+  console.error('  Fix the errors above before committing.\n')
   process.exit(1)
 } else {
   console.log('  DNA validation passed.')

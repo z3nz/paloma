@@ -258,15 +258,15 @@ fi
 PRECOMMIT_FILE="$PALOMA_DIR/.git/hooks/pre-commit"
 cat > "$PRECOMMIT_FILE" <<'ENDHOOK'
 #!/bin/bash
-# Paloma pre-commit hook: validate DNA files before allowing commit.
+# Paloma pre-commit hook: validate DNA files and their consumers.
 STAGED=$(git diff --cached --name-only)
-if echo "$STAGED" | grep -qE '^src/prompts/(base|phases)\.js$'; then
-  echo "[pre-commit] DNA files changed — validating..."
+if echo "$STAGED" | grep -qE '^(src/prompts/(base|phases)\.js|bridge/pillar-manager\.js)$'; then
+  echo "[pre-commit] DNA/bridge files changed — validating..."
   node scripts/validate-dna.js
   if [ $? -ne 0 ]; then
     echo ""
-    echo "[pre-commit] ❌ BLOCKED: DNA files have syntax errors."
-    echo "             Fix the unescaped backticks before committing."
+    echo "[pre-commit] ❌ BLOCKED: DNA validation failed."
+    echo "             Fix the errors above before committing."
     exit 1
   fi
 fi
