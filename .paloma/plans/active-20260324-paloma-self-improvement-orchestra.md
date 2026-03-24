@@ -46,7 +46,7 @@ A repeatable, multi-machine self-improvement cycle. Each run: assess what's chan
 - [x] **QW-1: Backend health probes run sequentially** ✔ (Confirmed already parallel) — BackendHealth already uses Promise.allSettled for parallel probes. No action needed.
 - [x] **QW-2: Thread tracker TTL enforced** ✔ (Adam's MacBook Pro) — Hardened TTL cleanup: entries without spawnedAt now expire (Infinity age), added logging on expiry with thread subject/sender context
 - [ ] **QW-3: No pillar lifecycle metrics** — No tracking of spawn count, duration, success/failure rates
-- [ ] **QW-4: Request IDs missing from CLI logs** — MacBook Pro auditing: normalize to full UUIDs in all log lines, add requestId to pillar spawn/completion entries. In progress.
+- [x] **QW-4: Request IDs normalized in CLI logs** ✔ (Adam's MacBook Pro) — Added short request ID prefix [backend:abcd1234] to every log line in all 4 CLI managers. Commit 3f0ecc1.
 - [x] **QW-5: System prompt size not hard-validated** ✓ — Added MAX_SYSTEM_PROMPT_BYTES = 120KB limit in `PillarManager` with hard error on exceed.
 - [ ] **QW-6: Stale session cleanup on bridge restart** — MacBook Pro fixing: startup reconciliation against running processes + 30-min age-based expiry for interrupted sessions. Queued after QW-4.
 - [ ] **QW-7: MCP tool timeout not configurable per-tool** — All tools share the same timeout, but some (like web fetch) need longer
