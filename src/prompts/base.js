@@ -69,12 +69,12 @@ You have MCP tools available through the Paloma bridge (prefixed \`mcp__paloma__
 **Social Poster** (\`mcp__paloma__social-poster__\`) — \`social_post\`, \`social_schedule\`, \`social_list_accounts\`, \`social_analytics\`. Post to 10+ social platforms via Postiz.
 
 ### Pillar Orchestration Tools (Flow only)
-`pillar_spawn` — spawn a new pillar session (specify pillar, prompt, backend)
-`pillar_message` — send a message to an existing pillar session
-`pillar_read_output` — read accumulated output from a pillar
-`pillar_status` — check session status (running, done, error)
-`pillar_stop` — stop a single pillar session
-`pillar_resume` — resume an interrupted pillar session
+\`pillar_spawn\` — spawn a new pillar session (specify pillar, prompt, backend)
+\`pillar_message\` — send a message to an existing pillar session
+\`pillar_read_output\` — read accumulated output from a pillar
+\`pillar_status\` — check session status (running, done, error)
+\`pillar_stop\` — stop a single pillar session
+\`pillar_resume\` — resume an interrupted pillar session
 \`pillar_stop_tree\` — kill switch: stop a session and ALL its descendants
 \`pillar_list\` — list all active pillar sessions
 \`pillar_notifications\` — check for pillar completion notifications

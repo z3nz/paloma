@@ -252,6 +252,29 @@ else
   echo "==> $MCP_JSON already exists"
 fi
 
+# --- Git hook: pre-commit DNA validation ---
+# src/prompts/base.js and phases.js are template literals — unescaped backticks
+# cause SyntaxError that crashes the bridge AND the Vite build.
+PRECOMMIT_FILE="$PALOMA_DIR/.git/hooks/pre-commit"
+cat > "$PRECOMMIT_FILE" <<'ENDHOOK'
+#!/bin/bash
+# Paloma pre-commit hook: validate DNA files before allowing commit.
+STAGED=$(git diff --cached --name-only)
+if echo "$STAGED" | grep -qE '^src/prompts/(base|phases)\.js$'; then
+  echo "[pre-commit] DNA files changed — validating..."
+  node scripts/validate-dna.js
+  if [ $? -ne 0 ]; then
+    echo ""
+    echo "[pre-commit] ❌ BLOCKED: DNA files have syntax errors."
+    echo "             Fix the unescaped backticks before committing."
+    exit 1
+  fi
+fi
+exit 0
+ENDHOOK
+chmod +x "$PRECOMMIT_FILE"
+echo "==> Installed pre-commit hook (DNA validation)"
+
 # --- Git hook: auto-sync Claude Code memory on Paloma commits ---
 HOOK_FILE="$PALOMA_DIR/.git/hooks/post-commit"
 cat > "$HOOK_FILE" <<'ENDHOOK'
