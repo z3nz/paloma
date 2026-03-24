@@ -91,6 +91,9 @@ export class CopilotCliManager {
 
     // Inject MCP config if proxy is available
     let mcpConfigPath = null
+    if (!this.mcpProxyPort) {
+      console.warn(`[copilot] WARNING: mcpProxyPort not set — session ${requestId} will spawn WITHOUT MCP tools`)
+    }
     if (this.mcpProxyPort) {
       mcpConfigPath = join(tmpdir(), `paloma-copilot-mcp-${requestId}.json`)
       const mcpConfig = {

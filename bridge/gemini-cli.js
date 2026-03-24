@@ -34,6 +34,9 @@ export class GeminiCliManager {
     mkdirSync(join(sessionDir, '.gemini'), { recursive: true })
 
     // Write MCP config as .gemini/settings.json in the temp cwd
+    if (!this.mcpProxyPort) {
+      console.warn(`[gemini] WARNING: mcpProxyPort not set — session ${requestId} will spawn WITHOUT MCP tools`)
+    }
     if (this.mcpProxyPort) {
       const settings = {
         mcp: {
@@ -147,7 +150,7 @@ export class GeminiCliManager {
       onEvent({ type: 'gemini_error', requestId, error: err.message })
     })
 
-    return { requestId, sessionId: sessionId || null }
+    return { requestId, sessionId: sessionId || requestId }
   }
 
   /**

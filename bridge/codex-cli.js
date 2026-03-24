@@ -51,6 +51,9 @@ export class CodexCliManager {
       if (model) args.push('-m', model)
 
       // Inject MCP proxy config so Codex gets all of Paloma's tools
+      if (!this.mcpProxyPort) {
+        console.warn(`[codex] WARNING: mcpProxyPort not set — session will spawn WITHOUT MCP tools`)
+      }
       if (this.mcpProxyPort) {
         args.push('-c', `mcp_servers.paloma.url="http://localhost:${this.mcpProxyPort}/mcp?cliRequestId=${requestId}"`)
         console.log(`[codex] MCP proxy injected via -c flag (port ${this.mcpProxyPort})`)
@@ -66,7 +69,7 @@ export class CodexCliManager {
       stdio: ['ignore', 'pipe', 'pipe']
     })
 
-    let threadId = sessionId || null
+    let threadId = sessionId || randomUUID()
     this.processes.set(requestId, { process: proc, threadId })
     console.log(`[codex] Process spawned, pid=${proc.pid}`)
 

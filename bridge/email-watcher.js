@@ -300,9 +300,11 @@ export class EmailWatcher {
       // Expire stale thread tracker entries (older than 24h)
       const now = Date.now()
       for (const [id, entry] of this.threadTracker.entries()) {
-        if (entry.spawnedAt && now - entry.spawnedAt > THREAD_TRACKER_TTL_MS) {
+        const age = entry.spawnedAt ? now - entry.spawnedAt : Infinity
+        if (age > THREAD_TRACKER_TTL_MS) {
           clearTimeout(entry.timer)
           this.threadTracker.delete(id)
+          console.log(`[email-watcher] TTL expired for thread ${id} (age ${Math.round(age / 3600000)}h) — "${entry.subject || 'unknown'}" from ${entry.from || 'unknown'}`)
         }
       }
     } catch (err) {

@@ -38,6 +38,9 @@ export class ClaudeCliManager {
 
     // Inject MCP config if proxy is available
     let mcpConfigPath = null
+    if (!this.mcpProxyPort) {
+      console.warn(`[cli] WARNING: mcpProxyPort not set — session ${requestId} will spawn WITHOUT MCP tools`)
+    }
     if (this.mcpProxyPort) {
       mcpConfigPath = join(tmpdir(), `paloma-mcp-${requestId}.json`)
       const mcpConfig = {
