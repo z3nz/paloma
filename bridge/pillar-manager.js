@@ -4,6 +4,9 @@ import { join } from 'path'
 import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT, SINGULARITY_QUINN_PROMPT, SINGULARITY_WORKER_PROMPT, SINGULARITY_GEN4_PROMPT } from '../src/prompts/base.js'
 import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
 import { Persistence } from './persistence.js'
+import { createLogger } from './logger.js'
+
+const log = createLogger('pillar')
 
 const MAX_RUNTIME_MS = 30 * 60 * 1000 // 30 minutes
 const STALE_SESSION_MS = 30 * 60 * 1000 // 30 minutes — interrupted sessions older than this are expired on cleanup
@@ -53,6 +56,10 @@ export class PillarManager {
     this._pendingNotifications = [] // queued notifications for non-browser Flow (Copilot/Codex CLI)
     this._singularityGroups = new Map() // singularityGroupId → { voicePillarId, thinkerPillarId, voiceReady, thinkerReady, ... }
 
+    // Lifecycle metrics — in-memory, per pillar type
+    // Shape: { scout: { spawns: 0, outcomes: { idle: 0, error: 0, stopped: 0, timeout: 0 }, totalDurationMs: 0 }, ... }
+    this.metrics = new Map()
+
     // Persistence setup
     const statePath = join(this.projectRoot, '.paloma', 'bridge-state.json')
     this.persistence = new Persistence(statePath, { debounceMs: 2000 })
@@ -61,6 +68,38 @@ export class PillarManager {
     // Periodic cleanup of terminal sessions (every 5 min)
     this._cleanupInterval = setInterval(() => this._cleanupTerminalSessions(), 5 * 60 * 1000)
     this._cleanupInterval.unref() // Don't prevent process exit
+  }
+
+  // --- Lifecycle metrics helpers ---
+
+  _metricsFor(pillarType) {
+    if (!this.metrics.has(pillarType)) {
+      this.metrics.set(pillarType, { spawns: 0, outcomes: { idle: 0, error: 0, stopped: 0, timeout: 0 }, totalDurationMs: 0 })
+    }
+    return this.metrics.get(pillarType)
+  }
+
+  _recordSpawn(pillarType) {
+    this._metricsFor(pillarType).spawns++
+  }
+
+  _recordOutcome(session, outcome) {
+    const m = this._metricsFor(session.pillar)
+    if (m.outcomes[outcome] !== undefined) m.outcomes[outcome]++
+    const duration = Date.now() - (session.startTime || Date.now())
+    m.totalDurationMs += duration
+    log.info('Pillar completed', { pillar: session.pillar, outcome, durationMs: duration, pillarId: session.pillarId })
+  }
+
+  getMetrics() {
+    const result = {}
+    for (const [type, m] of this.metrics) {
+      result[type] = {
+        ...m,
+        avgDurationMs: m.spawns > 0 ? Math.round(m.totalDurationMs / m.spawns) : 0
+      }
+    }
+    return result
   }
 
   /**
@@ -159,7 +198,7 @@ export class PillarManager {
    * Spawn a new pillar CLI session.
    * Returns immediately with pillarId and metadata.
    */
-  async spawn({ pillar, prompt, model, flowRequestId, planFile, backend, parentPillarId, recursive, depth, singularityRole }) {
+  async spawn({ pillar, prompt, model, flowRequestId, planFile, backend, parentPillarId, recursive, depth, singularityRole, generation }) {
     // Resolve flowCliSessionId and originatingBackend from the actual spawning session
     const { sessionId: resolvedFlowCliSessionId } = this._resolveCliSessionFromRequest(flowRequestId)
 
@@ -220,7 +259,8 @@ export class PillarManager {
     const resolvedModel = model || this._defaultModel(pillar, finalBackend, { recursive, depth, singularityRole })
 
     // Build system prompt from disk (Ollama gets condensed prompt)
-    const systemPrompt = await this._buildSystemPrompt(pillar, { planFilter: planFile, recursive, depth, singularityRole, backend: finalBackend })
+    const resolvedGeneration = generation || (singularityRole === 'quinn-gen4' ? 1 : null)
+    const systemPrompt = await this._buildSystemPrompt(pillar, { planFilter: planFile, recursive, depth, singularityRole, backend: finalBackend, generation: resolvedGeneration })
 
     // Compose the full first message with birth protocol
     const fullPrompt = `${BIRTH_MESSAGE}\n\n${prompt}`
@@ -256,14 +296,16 @@ export class PillarManager {
       _fallbackAttempted: false,    // prevents infinite retry loops
       // Singularity dual-mind fields
       singularityGroupId: null,     // UUID linking Voice ↔ Thinker
-      singularityRole: singularityRole || null,  // 'voice' | 'thinker' | 'quinn' | 'worker' | null
+      singularityRole: singularityRole || null,  // 'voice' | 'thinker' | 'quinn' | 'quinn-gen4' | 'worker' | null
+      generation: generation || (singularityRole === 'quinn-gen4' ? 1 : null),  // Gen4 generation number
       workerSpawnCount: 0,
-      numCtx: (singularityRole === 'quinn' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536 : (singularityRole === 'worker' ? 32768 : null),
+      numCtx: (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536 : (singularityRole === 'worker' ? 32768 : null),
       _voiceStreamBuffer: '',       // Voice only: buffer for <to-thinker> tag detection
       _receivedThinkerMessages: 0   // Voice only: count of [THINKER] messages received
     }
 
     this.pillars.set(pillarId, session)
+    this._recordSpawn(pillar)
     this._saveState()
 
     // Broadcast fallback event if we switched backends
@@ -501,7 +543,7 @@ export class PillarManager {
         streamingOutput: session.currentlyStreaming ? this._getCurrentOutput(session) : ''
       })
     }
-    return { pillars }
+    return { pillars, metrics: this.getMetrics() }
   }
 
   /**
@@ -541,6 +583,7 @@ export class PillarManager {
     session.status = 'stopped'
     session.currentlyStreaming = false
     session.lastActivity = new Date().toISOString()
+    this._recordOutcome(session, 'stopped')
     session.messageQueue = [] // clear queued messages to prevent memory leak
     this._saveState()
 
@@ -2372,6 +2415,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
         this._startCliTurn(session, nextMessage, null, true)
       } else {
         session.status = 'idle'
+        this._recordOutcome(session, 'idle')
         this._saveState()
 
         // Singularity: nudge idle sessions to prevent deadlock
@@ -2430,6 +2474,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
         }
       }
       session.status = 'error'
+      this._recordOutcome(session, 'error')
       this._saveState()
 
       const errorOutput = this._flushOutput(session)
@@ -2514,7 +2559,8 @@ This is informational — Adam is communicating directly with the pillar. Decide
     const session = this.pillars.get(pillarId)
     if (!session || session.status === 'stopped' || session.status === 'completed') return
 
-    console.warn(`[pillar] ${session.pillar} session ${pillarId} timed out after ${MAX_RUNTIME_MS / 60000} minutes`)
+    log.warn('Session timed out', { pillar: session.pillar, pillarId, minutes: MAX_RUNTIME_MS / 60000 })
+    this._recordOutcome(session, 'timeout')
     this.stop({ pillarId })
   }
 
@@ -2615,8 +2661,8 @@ This is informational — Adam is communicating directly with the pillar. Decide
 
   _defaultModel(pillar, backend = 'gemini', { recursive, depth, singularityRole } = {}) {
     if (backend === 'ollama') {
-      // Quinn: the conscious mind — uses the best available model (30B)
-      if (singularityRole === 'quinn') return this._pickBestOllamaModel(false)
+      // Quinn (Gen3 or Gen4): the conscious mind — uses the best available model (30B)
+      if (singularityRole === 'quinn' || singularityRole === 'quinn-gen4') return this._pickBestOllamaModel(false)
       // Worker: Quinn's hands — uses the small fast model (7B)
       if (singularityRole === 'worker') return this._pickBestOllamaModel(true)
       // Singularity: both Voice and Thinker use the best available model
@@ -2664,14 +2710,14 @@ This is informational — Adam is communicating directly with the pillar. Decide
    * Build the system prompt for a pillar session by reading .paloma/ files from disk.
    * Mirrors the frontend's buildSystemPrompt() but uses fs instead of MCP/browser APIs.
    */
-  async _buildSystemPrompt(pillar, { planFilter, recursive, depth, singularityRole, backend } = {}) {
+  async _buildSystemPrompt(pillar, { planFilter, recursive, depth, singularityRole, backend, generation } = {}) {
     // Ollama sessions use the condensed prompt (fits smaller context windows)
     let prompt = backend === 'ollama' ? OLLAMA_INSTRUCTIONS : BASE_INSTRUCTIONS
 
     // Singularity sessions (Voice/Thinker/Quinn/Worker) get a drastically stripped system prompt:
     // OLLAMA_INSTRUCTIONS + project instructions + role prompt ONLY.
     // No plans, no roots, no phase instructions — saves ~25K tokens of context budget.
-    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'worker'
+    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'worker'
 
     // Claude CLI reads CLAUDE.md automatically, which includes instructions.md and roots
     // via @ references. Including them again here would duplicate ~43KB of content and
@@ -2730,7 +2776,20 @@ This is informational — Adam is communicating directly with the pillar. Decide
     }
 
     // Inject singularity prompts based on role
-    if (singularityRole === 'quinn') {
+    if (singularityRole === 'quinn-gen4') {
+      // Gen4: inject the recursive prompt with template variables replaced
+      const gen = generation || 1
+      const genPadded = String(gen - 1).padStart(3, '0')
+      const predecessorManifest = gen > 1
+        ? `.singularity/generation-${genPadded}.md`
+        : 'none \u2014 you are the first'
+      let gen4Prompt = SINGULARITY_GEN4_PROMPT
+        .replace(/\{GENERATION_NUMBER\}/g, String(gen))
+        .replace(/\{PREDECESSOR_MANIFEST\}/g, predecessorManifest)
+        .replace(/\{WORKSPACE_PATH\}/g, '.singularity/workspace/')
+        .replace(/\{LINEAGE_PATH\}/g, '.singularity/lineage.json')
+      prompt += '\n\n' + gen4Prompt
+    } else if (singularityRole === 'quinn') {
       prompt += '\n\n' + SINGULARITY_QUINN_PROMPT
     } else if (singularityRole === 'worker') {
       prompt += '\n\n' + SINGULARITY_WORKER_PROMPT

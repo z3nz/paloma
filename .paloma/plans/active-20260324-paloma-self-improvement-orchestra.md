@@ -45,22 +45,22 @@ A repeatable, multi-machine self-improvement cycle. Each run: assess what's chan
 
 - [x] **QW-1: Backend health probes run sequentially** ✔ (Confirmed already parallel) — BackendHealth already uses Promise.allSettled for parallel probes. No action needed.
 - [x] **QW-2: Thread tracker TTL enforced** ✔ (Adam's MacBook Pro) — Hardened TTL cleanup: entries without spawnedAt now expire (Infinity age), added logging on expiry with thread subject/sender context
-- [ ] **QW-3: No pillar lifecycle metrics** — No tracking of spawn count, duration, success/failure rates
+- [x] **QW-3: No pillar lifecycle metrics** ✔ (Adam's MacBook Pro) — Added in-memory metrics map to PillarManager: spawn count, duration, outcome (idle/error/stopped/timeout) per pillar type. Exposed via pillar_list.
 - [x] **QW-4: Request IDs normalized in CLI logs** ✔ (Adam's MacBook Pro) — Added short request ID prefix [backend:abcd1234] to every log line in all 4 CLI managers. Commit 3f0ecc1.
 - [x] **QW-5: System prompt size not hard-validated** ✓ — Added MAX_SYSTEM_PROMPT_BYTES = 120KB limit in `PillarManager` with hard error on exceed.
 - [x] **QW-6: Stale session cleanup on bridge restart** ✔ (Adam's MacBook Pro) — Added startup reconciliation in `_loadState` that expires interrupted sessions >30 min old, plus periodic cleanup in `_cleanupTerminalSessions` with same 30-min cutoff for interrupted sessions.
-- [ ] **QW-7: MCP tool timeout not configurable per-tool** — All tools share the same timeout, but some (like web fetch) need longer
+- [x] **QW-7: MCP tool timeout not configurable per-tool** ✔ (Adam's MacBook Pro) — Added TOOL_TIMEOUTS map in mcp-proxy-server.js with per-tool overrides (web fetch 10min, search 3min, ollama 10min, etc.). Confirmation race uses tool-specific timeout.
 - [x] **QW-8: No health endpoint for monitoring** ✓ — Added `/api/health` endpoint to bridge returning uptime, backend status, and session counts.
-- [ ] **QW-9: Console.log used instead of structured logger** — Bridge uses raw console.log throughout; no log levels or structured output
+- [x] **QW-9: Console.log used instead of structured logger** ✔ (Adam's MacBook Pro) — Created bridge/logger.js: createLogger(component) with debug/info/warn/error levels, ISO timestamps, component tags, JSON data. Wired into mcp-proxy-server.js and pillar-manager.js. LOG_LEVEL env var support.
 
 ## Machine Assignment
 
 | Machine | Tasks | Status |
 |---------|-------|--------|
 | Lynch Tower | CF-1–CF-5 ✓, HP-3 ✓, HP-4 ✓, HP-2 ✓, QW-5 ✓, QW-8 ✓ | All Lynch Tower items done |
-| Adam's MacBook Pro | HP-5 ✓, QW-2 ✓, QW-1, QW-4, QW-6 | QW-1/4/6 in progress |
+| Adam's MacBook Pro | HP-5 ✓, QW-2 ✓, QW-1 ✓, QW-4 ✓, QW-6 ✓, QW-9 ✓, QW-3 ✓, QW-7 ✓ | Round 3 complete |
 | Lenovo | HP-1 (test suite), MP-4 (eval logging) | Pending Lenovo input |
-| Unassigned | MP-1, MP-2, MP-3, MP-5, QW-3, QW-7, QW-9 | Available for next round |
+| Unassigned | MP-1, MP-2, MP-3, MP-5 | Available for next round |
 
 ## Coordination Protocol
 
@@ -81,3 +81,10 @@ A repeatable, multi-machine self-improvement cycle. Each run: assess what's chan
 - MacBook Pro claimed QW-1, QW-4, QW-6 — confirmed no conflicts
 - Lynch Tower taking HP-2, HP-3, HP-4, QW-5, QW-8
 - Updated machine assignment table
+
+### Run 3 — 2026-03-24 (MacBook Pro Round 3)
+- MacBook Pro completed HP-5, QW-2, QW-1, QW-4, QW-6 — all shipped
+- MacBook Pro picking up QW-9 (structured logging), QW-3 (pillar lifecycle metrics), QW-7 (per-tool MCP timeout)
+- All three file-disjoint with Lenovo's HP-1/MP-4 — safe to run in parallel
+- Lenovo still working HP-1 + MP-4
+- All three completed: QW-9 (structured logger), QW-3 (lifecycle metrics), QW-7 (per-tool timeout)

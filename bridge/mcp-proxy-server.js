@@ -7,8 +7,23 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema
 } from '@modelcontextprotocol/sdk/types.js'
+import { createLogger } from './logger.js'
+
+const log = createLogger('mcp-proxy')
 
 const CONFIRMATION_TIMEOUT = 5 * 60 * 1000 // 5 minutes
+
+// Per-tool timeout overrides (ms). Tools not listed use CONFIRMATION_TIMEOUT.
+const TOOL_TIMEOUTS = {
+  'web__web_fetch':       10 * 60 * 1000, // 10 min — web fetches can be slow
+  'web__web_download':    10 * 60 * 1000,
+  'brave-search__brave_web_search': 3 * 60 * 1000,
+  'brave-search__brave_local_search': 3 * 60 * 1000,
+  'ollama__ollama_chat':  10 * 60 * 1000, // local LLM inference
+  'ollama__ollama_generate': 10 * 60 * 1000,
+  'gmail__email_wait':    10 * 60 * 1000, // email polling waits
+  'exec__bash_exec':       5 * 60 * 1000,
+}
 
 export class McpProxyServer {
   constructor(mcpManager, { port = 19192, onToolConfirmation, onToolActivity, onAskUser, onSetTitle }) {
@@ -50,7 +65,7 @@ export class McpProxyServer {
           res.end('Not found')
         }
       } catch (e) {
-        console.error('[mcp-proxy] HTTP handler error:', e.message)
+        log.error('HTTP handler error', e.message)
         if (!res.headersSent) {
           res.writeHead(500)
           res.end(JSON.stringify({ error: 'Internal server error' }))
@@ -59,12 +74,12 @@ export class McpProxyServer {
     })
 
     this.httpServer.on('error', (err) => {
-      console.error('[mcp-proxy] HTTP server error:', err.message)
+      log.error('HTTP server error', err.message)
     })
 
     return new Promise((resolve) => {
       this.httpServer.listen(this.port, () => {
-        console.log(`MCP Proxy Server listening on http://localhost:${this.port}`)
+        log.info(`Listening on http://localhost:${this.port}`)
         resolve()
       })
     })
@@ -158,7 +173,9 @@ export class McpProxyServer {
             backend: { type: 'string', enum: ['claude', 'codex', 'copilot', 'gemini', 'ollama'], description: 'AI backend for this pillar session (defaults to your current backend). Use copilot for GitHub Copilot CLI, ollama for local Qwen model, gemini for Google models.' },
             recursive: { type: 'boolean', description: 'Enable recursive mode — sub-instance MUST delegate to further sub-instances. Default: false.' },
             depth: { type: 'number', description: 'Current recursion depth (set automatically by parent). Default: 0.' },
-            parentPillarId: { type: 'string', description: 'Parent pillar ID (set automatically for recursive spawns).' }
+            parentPillarId: { type: 'string', description: 'Parent pillar ID (set automatically for recursive spawns).' },
+            singularityRole: { type: 'string', enum: ['quinn', 'quinn-gen4', 'worker', 'voice', 'thinker'], description: 'Singularity role for the session. Use quinn-gen4 for recursive self-prompting Quinn.' },
+            generation: { type: 'number', description: 'Generation number for quinn-gen4 sessions. Default: 1.' }
           },
           required: ['pillar', 'prompt']
         }
@@ -317,7 +334,7 @@ export class McpProxyServer {
 
     if (name === 'restart_bridge') {
       const reason = args.reason || 'no reason given'
-      console.log(`[mcp-proxy] Bridge restart requested: ${reason}`)
+      log.info('Bridge restart requested', { reason })
       // Return response before restarting (short delay so the response reaches the CLI)
       setTimeout(() => {
         if (this.restartBridge) this.restartBridge()
@@ -344,12 +361,15 @@ export class McpProxyServer {
     }
 
     // Ask browser for confirmation before executing
+    // Use per-tool timeout if configured, otherwise default
+    const toolKey = `${serverName}__${toolName}`
+    const timeout = TOOL_TIMEOUTS[toolKey] || CONFIRMATION_TIMEOUT
     this.onToolActivity(name, args, 'pending', cliRequestId)
     try {
       const decision = await Promise.race([
         this.onToolConfirmation(name, args, cliRequestId),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), CONFIRMATION_TIMEOUT)
+          setTimeout(() => reject(new Error('timeout')), timeout)
         )
       ])
 
@@ -382,7 +402,7 @@ export class McpProxyServer {
       this.onToolActivity(name, args, 'error', cliRequestId)
       if (e.message === 'timeout') {
         return {
-          content: [{ type: 'text', text: 'Tool confirmation timed out (5 minutes)' }],
+          content: [{ type: 'text', text: `Tool confirmation timed out (${Math.round(timeout / 60000)} minutes)` }],
           isError: true
         }
       }
@@ -495,14 +515,14 @@ export class McpProxyServer {
 
     transport.onclose = () => {
       this.transports.delete(transport.sessionId)
-      console.log(`[mcp-proxy] SSE session closed: ${transport.sessionId}`)
+      log.info('SSE session closed', { sessionId: transport.sessionId })
     }
 
-    console.log(`[mcp-proxy] SSE session started: ${transport.sessionId}, cliRequestId=${cliRequestId}`)
+    log.info('SSE session started', { sessionId: transport.sessionId, cliRequestId })
     try {
       await server.connect(transport)
     } catch (e) {
-      console.error(`[mcp-proxy] SSE connect failed for ${transport.sessionId}:`, e.message)
+      log.error('SSE connect failed', { sessionId: transport.sessionId, error: e.message })
       this.transports.delete(transport.sessionId)
     }
   }
@@ -522,7 +542,7 @@ export class McpProxyServer {
     try {
       await entry.transport.handlePostMessage(req, res)
     } catch (e) {
-      console.error(`[mcp-proxy] Error handling POST for session ${sessionId}:`, e.message)
+      log.error('POST handler error', { sessionId, error: e.message })
       if (!res.headersSent) {
         res.writeHead(500)
         res.end(JSON.stringify({ error: 'Internal error' }))
@@ -547,7 +567,7 @@ export class McpProxyServer {
       try {
         await entry.transport.handleRequest(req, res)
       } catch (e) {
-        console.error(`[mcp-proxy] Streamable HTTP error for session ${sessionId}:`, e.message)
+        log.error('Streamable HTTP error', { sessionId, error: e.message })
         if (!res.headersSent) {
           res.writeHead(500)
           res.end(JSON.stringify({ error: 'Internal error' }))
@@ -572,10 +592,10 @@ export class McpProxyServer {
     transport.onclose = () => {
       const sid = transport.sessionId
       this.streamableTransports.delete(sid)
-      console.log(`[mcp-proxy] Streamable HTTP session closed: ${sid}`)
+      log.info('Streamable HTTP session closed', { sessionId: sid })
     }
 
-    console.log(`[mcp-proxy] Streamable HTTP session starting, cliRequestId=${cliRequestId}`)
+    log.info('Streamable HTTP session starting', { cliRequestId })
 
     try {
       await server.connect(transport)
@@ -584,10 +604,10 @@ export class McpProxyServer {
       // Now sessionId is available — store for routing subsequent requests
       if (transport.sessionId) {
         this.streamableTransports.set(transport.sessionId, { transport, server, cliRequestId })
-        console.log(`[mcp-proxy] Streamable HTTP session started: ${transport.sessionId}`)
+        log.info('Streamable HTTP session started', { sessionId: transport.sessionId })
       }
     } catch (e) {
-      console.error(`[mcp-proxy] Streamable HTTP init failed:`, e.message)
+      log.error('Streamable HTTP init failed', e.message)
       if (!res.headersSent) {
         res.writeHead(500)
         res.end(JSON.stringify({ error: 'Failed to initialize session' }))
