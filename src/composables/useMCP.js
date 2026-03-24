@@ -499,21 +499,24 @@ export function useMCP() {
       },
       onFlowNotificationStart(msg) {
         // Store metadata for tagging the saved message when done
+        // Use dbSessionId from bridge to route to the CORRECT session
         pendingNotificationMeta = {
           notificationType: msg.notificationType,
           pillar: msg.pillar,
-          pillarId: msg.pillarId
+          pillarId: msg.pillarId,
+          dbSessionId: msg.dbSessionId || activeFlowDbSessionId
         }
         flowProcessingCallback.value = true
       },
-      onFlowNotificationStream(event) {
-        // Flow callback response streaming — route to the registered Flow session
-        if (!activeFlowDbSessionId) {
-          console.warn('[mcp] Flow notification stream but no registered Flow session')
+      onFlowNotificationStream(event, msg) {
+        // Flow callback response streaming — route to the specific session from the start event
+        const targetDbSessionId = msg?.dbSessionId || pendingNotificationMeta?.dbSessionId || activeFlowDbSessionId
+        if (!targetDbSessionId) {
+          console.warn('[mcp] Flow notification stream but no target session')
           return
         }
         const { getState } = useSessionState()
-        const state = getState(activeFlowDbSessionId)
+        const state = getState(targetDbSessionId)
         state.streaming.value = true
 
         // Accumulate text content (same logic as pillar stream)
@@ -529,18 +532,19 @@ export function useMCP() {
           }
         }
       },
-      async onFlowNotificationDone() {
-        // Flow callback response complete — save as assistant message
-        if (!activeFlowDbSessionId) return
+      async onFlowNotificationDone(msg) {
+        // Flow callback response complete — save as assistant message to the CORRECT session
+        const meta = pendingNotificationMeta || {}
+        const targetDbSessionId = msg?.dbSessionId || meta.dbSessionId || activeFlowDbSessionId
+        if (!targetDbSessionId) return
         const { updateSession } = useSessions()
         const { getState } = useSessionState()
-        const state = getState(activeFlowDbSessionId)
+        const state = getState(targetDbSessionId)
         const content = state.streamingContent.value
 
         if (content) {
-          const meta = pendingNotificationMeta || {}
           const dbMsg = {
-            sessionId: activeFlowDbSessionId,
+            sessionId: targetDbSessionId,
             role: 'assistant',
             content,
             model: 'claude-cli:opus',
@@ -554,7 +558,7 @@ export function useMCP() {
           const msgId = await db.messages.add(dbMsg)
           dbMsg.id = msgId
           state.messages.value.push(dbMsg)
-          await updateSession(activeFlowDbSessionId, {})
+          await updateSession(targetDbSessionId, {})
         }
 
         pendingNotificationMeta = null
@@ -562,13 +566,15 @@ export function useMCP() {
         state.streaming.value = false
         state.streamingContent.value = ''
       },
-      onFlowNotificationError(error) {
-        console.error('[mcp] Flow notification error:', error)
+      onFlowNotificationError(msg) {
+        const errorText = typeof msg === 'string' ? msg : msg?.error || 'unknown'
+        console.error('[mcp] Flow notification error:', errorText)
+        const targetDbSessionId = msg?.dbSessionId || pendingNotificationMeta?.dbSessionId || activeFlowDbSessionId
         pendingNotificationMeta = null
         flowProcessingCallback.value = false
-        if (!activeFlowDbSessionId) return
+        if (!targetDbSessionId) return
         const { getState } = useSessionState()
-        const state = getState(activeFlowDbSessionId)
+        const state = getState(targetDbSessionId)
         state.streaming.value = false
         state.streamingContent.value = ''
       },

@@ -525,8 +525,8 @@ async function main() {
               if (event.type === 'claude_done' || event.type === 'claude_error') {
                 cliRequestToWs.delete(requestId)
                 flowChatBuffers.delete(sessionId)
-                if (pillarManager?.flowSession?.cliSessionId === sessionId) {
-                  pillarManager.onFlowTurnComplete()
+                if (pillarManager?._findFlowSessionByCli?.(sessionId)) {
+                  pillarManager.onFlowTurnComplete(sessionId)
                 }
               }
               if (targetWs.readyState !== 1) return // OPEN
@@ -969,6 +969,21 @@ async function main() {
       // Remove all CLI request mappings for this socket
       for (const [id, mappedWs] of cliRequestToWs) {
         if (mappedWs === ws) cliRequestToWs.delete(id)
+      }
+      // Clean up flow sessions that used this WS
+      if (pillarManager) {
+        for (const [dbSessionId, session] of pillarManager.flowSessions) {
+          if (session.wsClient === ws) {
+            console.log(`[bridge] Removing Flow session ${dbSessionId} (WS closed)`)
+            pillarManager.flowSessions.delete(dbSessionId)
+            // Update convenience pointer if it was pointing to this session
+            if (pillarManager.flowSession?.dbSessionId === dbSessionId) {
+              // Point to the most recent remaining session, or null
+              const remaining = [...pillarManager.flowSessions.values()]
+              pillarManager.flowSession = remaining.length > 0 ? remaining[remaining.length - 1] : null
+            }
+          }
+        }
       }
       console.log('Client disconnected')
     })

@@ -324,11 +324,11 @@ export function createMcpBridge() {
       } else if (msg.type === 'flow_notification_start') {
         onFlowNotificationStart?.(msg)
       } else if (msg.type === 'flow_notification_stream') {
-        onFlowNotificationStream?.(msg.event)
+        onFlowNotificationStream?.(msg.event, msg)
       } else if (msg.type === 'flow_notification_done') {
-        onFlowNotificationDone?.()
+        onFlowNotificationDone?.(msg)
       } else if (msg.type === 'flow_notification_error') {
-        onFlowNotificationError?.(msg.error)
+        onFlowNotificationError?.(msg)
       } else if (msg.type === 'error' && msg.id) {
         const p = pending.get(msg.id)
         if (p) {

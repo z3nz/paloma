@@ -42,7 +42,8 @@ export class PillarManager {
     this.mcpManager = mcpManager || null // for Ollama tool execution
     this.health = health || null // BackendHealth instance for fallback logic
     this.pillars = new Map()   // pillarId → PillarSession
-    this.flowSession = null          // points to the most recently registered Flow session
+    this.flowSessions = new Map()    // dbSessionId → flowSessionData (supports multiple concurrent Flow chats)
+    this.flowSession = null          // convenience pointer to the most recently registered Flow session
     this.flowChatBuffers = flowChatBuffers || null // Map of flowChatBuffers from index.js (for persistence)
     this.notificationCooldown = new Map() // pillarId → timestamp of last notification
     this.notificationCount = 0 // notifications sent in current minute
@@ -230,6 +231,8 @@ export class PillarManager {
       timeoutTimer: null,
       dbSessionId: null,       // set by frontend via WS event
       parentPillarId: parentPillarId || null,
+      flowCliSessionId: null, // set below after resolving
+      flowDbSessionId: null,  // set below after resolving
       recursive: recursive || false,
       depth: depth || 0,
       _toolRounds: 0,          // Ollama tool call round counter
@@ -260,12 +263,17 @@ export class PillarManager {
       })
     }
 
-    // Notify browser to create the session in IndexedDB
-    // Use the resolvedFlowCliSessionId from the actual spawning session,
-    // falling back to the globally registered Flow session for backward compat.
+    // Resolve which Flow session spawned this pillar
     const finalFlowCliSessionId = resolvedFlowCliSessionId
       || this.flowSession?.cliSessionId
       || null
+    // Find the flow session by CLI session ID to get the correct dbSessionId
+    const spawningFlowSession = this._findFlowSessionByCli(finalFlowCliSessionId) || this.flowSession
+    const finalFlowDbSessionId = spawningFlowSession?.dbSessionId || null
+    // Store on pillar session so notifications route back to the correct Flow chat
+    session.flowCliSessionId = finalFlowCliSessionId
+    session.flowDbSessionId = finalFlowDbSessionId
+
     const modelLabel = finalBackend === 'ollama' ? `ollama:${resolvedModel}` : finalBackend === 'codex' ? `codex:${resolvedModel}` : finalBackend === 'copilot' ? `copilot:${resolvedModel}` : finalBackend === 'gemini' ? `gemini:${resolvedModel}` : `claude-cli:${resolvedModel}`
     this.broadcast({
       type: 'pillar_session_created',
@@ -275,7 +283,7 @@ export class PillarManager {
       backend: finalBackend,
       flowRequestId,
       flowCliSessionId: finalFlowCliSessionId,
-      flowDbSessionId: this.flowSession?.dbSessionId || null,
+      flowDbSessionId: finalFlowDbSessionId,
       prompt: fullPrompt
     })
 
@@ -1350,24 +1358,36 @@ export class PillarManager {
    * Register Flow's session for callback notifications.
    */
   registerFlowSession({ cliSessionId, dbSessionId, model, cwd, wsClient, flowChatBuffers }) {
-    if (this.flowSession && this.flowSession.cliSessionId !== cliSessionId) {
-      console.warn('[pillar] Overwriting existing Flow session:', this.flowSession.cliSessionId, '→', cliSessionId)
-      // Drain any queued notifications to prevent silent loss
-      if (this.flowSession.notificationQueue?.length) {
-        console.warn('[pillar] Discarding', this.flowSession.notificationQueue.length, 'queued notifications from old Flow session')
+    const resolvedDbSessionId = dbSessionId || cliSessionId // fallback key if no dbSessionId
+
+    // Check if this dbSessionId is already registered (re-registration after reconnect)
+    const existing = this.flowSessions.get(resolvedDbSessionId)
+    if (existing) {
+      // Update the WS client and model (reconnect scenario)
+      existing.wsClient = wsClient
+      existing.model = model
+      existing.cwd = cwd
+      existing.cliSessionId = cliSessionId
+      console.log('[pillar] Flow session re-registered (reconnect):', cliSessionId, '→ db', resolvedDbSessionId)
+    } else {
+      // New flow session
+      const sessionData = {
+        cliSessionId,
+        dbSessionId: resolvedDbSessionId,
+        model,
+        cwd,
+        wsClient,
+        currentlyStreaming: false,
+        notificationQueue: [],
+        cliRequestId: null
       }
+      this.flowSessions.set(resolvedDbSessionId, sessionData)
+      console.log('[pillar] Flow session registered:', cliSessionId, '→ db', resolvedDbSessionId, `(${this.flowSessions.size} total)`)
     }
-    console.log('[pillar] Flow session registered:', cliSessionId)
-    this.flowSession = {
-      cliSessionId,
-      dbSessionId: dbSessionId || null,
-      model,
-      cwd,
-      wsClient,
-      currentlyStreaming: false,
-      notificationQueue: [],
-      cliRequestId: null // set when notifying, cleared when done
-    }
+
+    // Always update the convenience pointer to the most recent
+    this.flowSession = this.flowSessions.get(resolvedDbSessionId)
+
     if (flowChatBuffers) this.flowChatBuffers = flowChatBuffers
     this._saveState()
   }
@@ -1376,22 +1396,51 @@ export class PillarManager {
    * Called by index.js when Flow's user-initiated CLI turn completes.
    * This lets queued notifications drain.
    */
-  onFlowTurnComplete() {
-    if (!this.flowSession) return
-    this.flowSession.currentlyStreaming = false
+  onFlowTurnComplete(cliSessionId) {
+    // Find the flow session by cliSessionId
+    const target = this._findFlowSessionByCli(cliSessionId) || this.flowSession
+    if (!target) return
+    target.currentlyStreaming = false
 
     // Drain queued notifications
-    if (this.flowSession.notificationQueue.length > 0) {
-      console.log('[pillar] Flow turn complete — draining', this.flowSession.notificationQueue.length, 'queued notifications')
-      const queued = this.flowSession.notificationQueue.splice(0)
+    if (target.notificationQueue.length > 0) {
+      console.log('[pillar] Flow turn complete — draining', target.notificationQueue.length, 'queued notifications')
+      const queued = target.notificationQueue.splice(0)
       this.notificationCount++
       if (queued.length === 1) {
-        this._sendFlowNotification(queued[0].message, queued[0].metadata)
+        this._sendFlowNotification(queued[0].message, queued[0].metadata, target)
       } else {
         const batchedMessage = this._buildBatchedNotification(queued.map(q => q.message))
-        this._sendFlowNotification(batchedMessage, { notificationType: 'batched' })
+        this._sendFlowNotification(batchedMessage, { notificationType: 'batched' }, target)
       }
     }
+  }
+
+  /**
+   * Find a flow session by its cliSessionId.
+   */
+  _findFlowSessionByCli(cliSessionId) {
+    if (!cliSessionId) return null
+    for (const session of this.flowSessions.values()) {
+      if (session.cliSessionId === cliSessionId) return session
+    }
+    return null
+  }
+
+  /**
+   * Find the flow session that should receive a pillar's callback.
+   * Looks up by the pillar's stored flowDbSessionId, falls back to most recent.
+   */
+  _resolveTargetFlowSession(pillarSession) {
+    if (pillarSession?.flowDbSessionId) {
+      const target = this.flowSessions.get(pillarSession.flowDbSessionId)
+      if (target && target.wsClient?.readyState === 1) return target
+    }
+    // Fallback: find any flow session with an open WS
+    for (const session of this.flowSessions.values()) {
+      if (session.wsClient?.readyState === 1) return session
+    }
+    return this.flowSession
   }
 
   /**
@@ -1401,7 +1450,11 @@ export class PillarManager {
    * @param {object} [metadata] - Notification metadata for frontend UX
    */
   async notifyFlow(message, pillarId, metadata = {}) {
-    if (!this.flowSession) {
+    // Resolve the target flow session from the pillar that triggered the notification
+    const pillarSession = pillarId ? this.pillars.get(pillarId) : null
+    const targetSession = this._resolveTargetFlowSession(pillarSession)
+
+    if (!targetSession) {
       // No browser Flow session — queue for retrieval via pillar_notifications MCP tool
       console.log('[pillar] No Flow session registered — queueing notification for MCP retrieval')
       this._pendingNotifications.push({
@@ -1438,30 +1491,30 @@ export class PillarManager {
 
     if (this.notificationCount >= 10) {
       console.warn('[pillar] Notification rate limit hit — queueing')
-      if (this.flowSession.notificationQueue.length < MAX_NOTIFICATION_QUEUE) {
-        this.flowSession.notificationQueue.push({ message, metadata })
+      if (targetSession.notificationQueue.length < MAX_NOTIFICATION_QUEUE) {
+        targetSession.notificationQueue.push({ message, metadata })
       } else {
         console.warn('[pillar] Notification queue full — dropping oldest')
-        this.flowSession.notificationQueue.shift()
-        this.flowSession.notificationQueue.push({ message, metadata })
+        targetSession.notificationQueue.shift()
+        targetSession.notificationQueue.push({ message, metadata })
       }
       return
     }
 
-    if (this.flowSession.currentlyStreaming) {
-      console.log('[pillar] Flow is busy — queueing notification')
-      if (this.flowSession.notificationQueue.length < MAX_NOTIFICATION_QUEUE) {
-        this.flowSession.notificationQueue.push({ message, metadata })
+    if (targetSession.currentlyStreaming) {
+      console.log('[pillar] Flow is busy — queueing notification for session', targetSession.dbSessionId)
+      if (targetSession.notificationQueue.length < MAX_NOTIFICATION_QUEUE) {
+        targetSession.notificationQueue.push({ message, metadata })
       } else {
         console.warn('[pillar] Notification queue full — dropping oldest')
-        this.flowSession.notificationQueue.shift()
-        this.flowSession.notificationQueue.push({ message, metadata })
+        targetSession.notificationQueue.shift()
+        targetSession.notificationQueue.push({ message, metadata })
       }
       return
     }
 
     this.notificationCount++
-    this._sendFlowNotification(message, metadata)
+    this._sendFlowNotification(message, metadata, targetSession)
   }
 
   /**
@@ -1484,19 +1537,28 @@ export class PillarManager {
 
   /**
    * Send a notification to Flow by resuming its CLI session.
+   * @param {string} message
+   * @param {object} metadata
+   * @param {object} [targetFlowSession] - Specific flow session to notify. Falls back to this.flowSession.
    */
-  _sendFlowNotification(message, metadata = {}) {
-    console.log('[pillar] Sending notification to Flow:', message.slice(0, 100))
-    this.flowSession.currentlyStreaming = true
+  _sendFlowNotification(message, metadata = {}, targetFlowSession) {
+    const target = targetFlowSession || this.flowSession
+    if (!target) {
+      console.error('[pillar] _sendFlowNotification called with no target session')
+      return
+    }
+    console.log('[pillar] Sending notification to Flow session', target.dbSessionId, ':', message.slice(0, 100))
+    target.currentlyStreaming = true
 
-    // Send start event with metadata so frontend can tag the response
-    const ws = this.flowSession.wsClient
+    // Send start event with metadata so frontend can route to the correct session
+    const ws = target.wsClient
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({
         type: 'flow_notification_start',
         notificationType: metadata.notificationType || 'unknown',
         pillar: metadata.pillar || null,
-        pillarId: metadata.pillarId || null
+        pillarId: metadata.pillarId || null,
+        dbSessionId: target.dbSessionId // tells frontend which session to route to
       }))
     }
 
@@ -1504,66 +1566,69 @@ export class PillarManager {
       const { requestId } = this.cliManager.chat(
         {
           prompt: message,
-          model: this.flowSession.model,
-          sessionId: this.flowSession.cliSessionId,
-          cwd: this.flowSession.cwd
+          model: target.model,
+          sessionId: target.cliSessionId,
+          cwd: target.cwd
         },
-        (event) => this._handleFlowNotificationEvent(event)
+        (event) => this._handleFlowNotificationEvent(event, target)
       )
 
-      this.flowSession.cliRequestId = requestId
+      target.cliRequestId = requestId
     } catch (e) {
       console.error('[pillar] Failed to send Flow notification:', e.message)
-      this.flowSession.currentlyStreaming = false
-      this.flowSession.cliRequestId = null
+      target.currentlyStreaming = false
+      target.cliRequestId = null
       if (ws && ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'flow_notification_error', error: e.message }))
+        ws.send(JSON.stringify({ type: 'flow_notification_error', error: e.message, dbSessionId: target.dbSessionId }))
       }
     }
   }
 
   /**
    * Handle events from Flow's notification response.
+   * @param {object} event - CLI event
+   * @param {object} target - The specific flow session this notification belongs to
    */
-  _handleFlowNotificationEvent(event) {
-    if (!this.flowSession || !this.flowSession.wsClient) return
+  _handleFlowNotificationEvent(event, target) {
+    if (!target || !target.wsClient) return
 
-    const ws = this.flowSession.wsClient
+    const ws = target.wsClient
 
     // Forward stream events to the browser
     if (event.type === 'claude_stream') {
       if (ws.readyState === 1) {
         ws.send(JSON.stringify({
           type: 'flow_notification_stream',
-          event: event.event
+          event: event.event,
+          dbSessionId: target.dbSessionId
         }))
       }
     } else if (event.type === 'claude_done') {
-      this.flowSession.currentlyStreaming = false
-      this.flowSession.cliRequestId = null
+      target.currentlyStreaming = false
+      target.cliRequestId = null
 
       if (ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'flow_notification_done' }))
+        ws.send(JSON.stringify({ type: 'flow_notification_done', dbSessionId: target.dbSessionId }))
       }
 
       // Check for queued notifications
-      if (this.flowSession.notificationQueue.length > 0) {
-        console.log('[pillar] Processing queued notifications:', this.flowSession.notificationQueue.length)
-        const queued = this.flowSession.notificationQueue.splice(0) // drain queue
+      if (target.notificationQueue.length > 0) {
+        console.log('[pillar] Processing queued notifications:', target.notificationQueue.length)
+        const queued = target.notificationQueue.splice(0) // drain queue
         if (queued.length === 1) {
-          this._sendFlowNotification(queued[0].message, queued[0].metadata)
+          this._sendFlowNotification(queued[0].message, queued[0].metadata, target)
         } else {
           const batchedMessage = this._buildBatchedNotification(queued.map(q => q.message))
-          this._sendFlowNotification(batchedMessage, { notificationType: 'batched' })
+          this._sendFlowNotification(batchedMessage, { notificationType: 'batched' }, target)
         }
       }
     } else if (event.type === 'claude_error') {
       console.error('[pillar] Flow notification error:', event.error)
-      this.flowSession.currentlyStreaming = false
-      this.flowSession.cliRequestId = null
+      target.currentlyStreaming = false
+      target.cliRequestId = null
 
       if (ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'flow_notification_error', error: event.error }))
+        ws.send(JSON.stringify({ type: 'flow_notification_error', error: event.error, dbSessionId: target.dbSessionId }))
       }
     }
   }
@@ -1655,10 +1720,13 @@ This is informational — Adam is communicating directly with the pillar. Decide
       clearInterval(this._cleanupInterval)
       this._cleanupInterval = null
     }
-    // Flow notifications always use Claude
-    if (this.flowSession?.cliRequestId) {
-      this.cliManager.stop(this.flowSession.cliRequestId)
+    // Stop any active Flow notification sessions
+    for (const session of this.flowSessions.values()) {
+      if (session.cliRequestId) {
+        this.cliManager.stop(session.cliRequestId)
+      }
     }
+    this.flowSessions.clear()
     this.flowSession = null
 
     for (const [, session] of this.pillars) {
