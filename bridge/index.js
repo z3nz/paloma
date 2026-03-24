@@ -446,6 +446,7 @@ async function main() {
     ws.on('pong', () => { ws._pongReceived = true })
 
     ws.on('message', async (data) => {
+      try {
       const raw = data.toString()
       // Client-side keepalive ping — respond with pong
       if (raw === 'ping') {
@@ -775,7 +776,10 @@ async function main() {
                 const toolName = tc.function?.name || ''
                 let toolArgs = tc.function?.arguments || {}
                 if (typeof toolArgs === 'string') {
-                  try { toolArgs = JSON.parse(toolArgs) } catch { toolArgs = {} }
+                  try { toolArgs = JSON.parse(toolArgs) } catch (e) {
+                    console.warn(`[ollama] Failed to parse tool args for ${toolName}: ${e.message} — raw: ${toolArgs.slice(0, 200)}`)
+                    toolArgs = {}
+                  }
                 }
                 const route = toolRouteMap.get(toolName)
 
@@ -848,6 +852,9 @@ async function main() {
                 }
 
                 try {
+                  if (!route.server || !route.tool) {
+                    throw new Error(`Malformed route for tool "${toolName}": missing server or tool name`)
+                  }
                   console.log(`[ollama] Executing tool ${route.server}/${route.tool}`)
                   const result = await manager.callTool(route.server, route.tool, toolArgs)
                   const content = result.content?.map(c => c.text || JSON.stringify(c)).join('\n') || ''
@@ -937,6 +944,10 @@ async function main() {
         }
       } else {
         ws.send(JSON.stringify({ type: 'error', id: msg.id, message: `Unknown message type: ${msg.type}` }))
+      }
+      } catch (err) {
+        console.error(`[bridge] Unhandled error in WebSocket message handler:`, err)
+        try { ws.send(JSON.stringify({ type: 'error', message: `Internal error: ${err.message}` })) } catch { /* client gone */ }
       }
     })
 

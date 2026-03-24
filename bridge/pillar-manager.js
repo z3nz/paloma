@@ -129,7 +129,7 @@ export class PillarManager {
         const entry = backend.processes.get(requestId)
         // Claude/Copilot use .sessionId, Codex uses .threadId
         return {
-          sessionId: entry.sessionId || entry.threadId || null,
+          sessionId: (entry.sessionId != null && entry.sessionId !== '') ? entry.sessionId : (entry.threadId != null && entry.threadId !== '') ? entry.threadId : null,
           backendName
         }
       }
@@ -234,6 +234,7 @@ export class PillarManager {
       // Singularity dual-mind fields
       singularityGroupId: null,     // UUID linking Voice ↔ Thinker
       singularityRole: singularityRole || null,  // 'voice' | 'thinker' | 'quinn' | 'worker' | null
+      workerSpawnCount: 0,
       numCtx: (singularityRole === 'quinn' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536 : (singularityRole === 'worker' ? 32768 : null),
       _voiceStreamBuffer: '',       // Voice only: buffer for <to-thinker> tag detection
       _receivedThinkerMessages: 0   // Voice only: count of [THINKER] messages received
@@ -448,7 +449,8 @@ export class PillarManager {
       dbSessionId: session.dbSessionId,
       turnCount: session.turnCount,
       currentlyStreaming: session.currentlyStreaming,
-      lastActivity: session.lastActivity
+      lastActivity: session.lastActivity,
+      workerSpawnCount: session.workerSpawnCount
     }
   }
 
@@ -846,7 +848,10 @@ export class PillarManager {
       const toolName = tc.function?.name || ''
       let toolArgs = tc.function?.arguments || {}
       if (typeof toolArgs === 'string') {
-        try { toolArgs = JSON.parse(toolArgs) } catch { toolArgs = {} }
+        try { toolArgs = JSON.parse(toolArgs) } catch (e) {
+          console.warn(`[pillar] ${session.pillar} (${session.pillarId}): failed to parse tool args for ${toolName}: ${e.message} — raw: ${toolArgs.slice(0, 200)}`)
+          toolArgs = {}
+        }
       }
       // Sanitize: MCP expects object arguments, but models sometimes pass arrays
       if (Array.isArray(toolArgs)) {
@@ -884,6 +889,7 @@ export class PillarManager {
           }
           const spawnResult = await this.spawn(childArgs)
           const childPillarId = spawnResult.pillarId
+          session.workerSpawnCount += 1
 
           console.log(`[quinn] Worker ${childPillarId.slice(0, 8)} spawned — waiting for completion`)
 

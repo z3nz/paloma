@@ -178,7 +178,14 @@ export class BackendHealth {
 
       // Check auth status
       const { stdout } = await execFileAsync('claude', ['auth', 'status', '--json'], { timeout: 10000 })
-      const authData = JSON.parse(stdout.trim())
+      let authData
+      try {
+        authData = JSON.parse(stdout.trim())
+      } catch (parseErr) {
+        console.warn(`[backend-health] Claude auth status returned non-JSON: ${stdout.trim().slice(0, 200)}`)
+        this.status.claude = { available: true, reason: 'auth check returned non-JSON (assuming available)', lastCheck: now }
+        return
+      }
 
       if (authData.loggedIn || authData.authenticated) {
         this.status.claude = { available: true, reason: 'authenticated', lastCheck: now }

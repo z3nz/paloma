@@ -177,7 +177,11 @@ export class OllamaManager {
             // Collect tool calls from the response
             if (chunk.message?.tool_calls?.length > 0) {
               for (const tc of chunk.message.tool_calls) {
-                collectedToolCalls.push(tc)
+                if (tc.function?.name) {
+                  collectedToolCalls.push(tc)
+                } else {
+                  console.warn(`[ollama] Skipping malformed tool call (missing function.name):`, JSON.stringify(tc).slice(0, 200))
+                }
               }
             }
 
@@ -210,7 +214,11 @@ export class OllamaManager {
           }
           if (chunk.message?.tool_calls?.length > 0) {
             for (const tc of chunk.message.tool_calls) {
-              collectedToolCalls.push(tc)
+              if (tc.function?.name) {
+                collectedToolCalls.push(tc)
+              } else {
+                console.warn(`[ollama] Skipping malformed tool call in buffer flush (missing function.name):`, JSON.stringify(tc).slice(0, 200))
+              }
             }
           }
         } catch {
