@@ -240,18 +240,21 @@ export class BackendHealth {
     try {
       await execFileAsync('which', ['copilot'])
 
-      // WU-1: Replace config check with gh auth token
+      // Check copilot's own config for logged-in users
+      // Copilot CLI has its own auth system separate from gh CLI
       try {
-        const { stdout } = await execFileAsync('gh', ['auth', 'token'], { timeout: 5000 })
-        if (stdout.trim()) {
-          this.status.copilot = { available: true, reason: 'gh auth token valid', lastCheck: now }
+        const configPath = join(homedir(), '.copilot', 'config.json')
+        const config = JSON.parse(await readFile(configPath, 'utf-8'))
+        if (config.logged_in_users?.length > 0) {
+          const user = config.last_logged_in_user?.login || config.logged_in_users[0]?.login || 'unknown'
+          this.status.copilot = { available: true, reason: `CLI authenticated (${user})`, lastCheck: now }
         } else if (process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN) {
           this.status.copilot = { available: true, reason: 'token env var set', lastCheck: now }
         } else {
           this.status.copilot = { available: false, reason: 'not authenticated (run: copilot login)', lastCheck: now }
         }
       } catch {
-        // gh auth token failed or gh not installed — check env var fallback
+        // Config not found — check env var fallback
         if (process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN) {
           this.status.copilot = { available: true, reason: 'token env var set', lastCheck: now }
         } else {
