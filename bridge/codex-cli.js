@@ -9,6 +9,7 @@ export class CodexCliManager {
 
   chat({ prompt, model, sessionId, systemPrompt, cwd }, onEvent) {
     const requestId = randomUUID()
+    const reqShort = requestId.slice(0, 8)
 
     // Build the full prompt with system instructions prepended.
     //
@@ -44,7 +45,7 @@ export class CodexCliManager {
     if (sessionId) {
       // Resume existing conversation using thread ID
       args = ['exec', 'resume', sessionId, '--json', '--full-auto', fullPrompt]
-      console.log(`[codex] Resuming thread ${sessionId}`)
+      console.log(`[codex:${reqShort}] Resuming thread ${sessionId}`)
     } else {
       // New conversation
       args = ['exec', '--json', '--full-auto', '-C', cwd || process.cwd()]
@@ -52,15 +53,15 @@ export class CodexCliManager {
 
       // Inject MCP proxy config so Codex gets all of Paloma's tools
       if (!this.mcpProxyPort) {
-        console.warn(`[codex] WARNING: mcpProxyPort not set — session will spawn WITHOUT MCP tools`)
+        console.warn(`[codex:${reqShort}] WARNING: mcpProxyPort not set — spawning WITHOUT MCP tools`)
       }
       if (this.mcpProxyPort) {
         args.push('-c', `mcp_servers.paloma.url="http://localhost:${this.mcpProxyPort}/mcp?cliRequestId=${requestId}"`)
-        console.log(`[codex] MCP proxy injected via -c flag (port ${this.mcpProxyPort})`)
+        console.log(`[codex:${reqShort}] MCP proxy injected via -c flag (port ${this.mcpProxyPort})`)
       }
 
       args.push(fullPrompt)
-      console.log(`[codex] New session, model=${model || 'default'}`)
+      console.log(`[codex:${reqShort}] New session, model=${model || 'default'}`)
     }
 
     const proc = spawn('codex', args, {
@@ -71,7 +72,7 @@ export class CodexCliManager {
 
     let threadId = sessionId || randomUUID()
     this.processes.set(requestId, { process: proc, threadId })
-    console.log(`[codex] Process spawned, pid=${proc.pid}`)
+    console.log(`[codex:${reqShort}] Process spawned, pid=${proc.pid}`)
 
     let buffer = ''
 
@@ -108,7 +109,7 @@ export class CodexCliManager {
     })
 
     proc.stdout.on('error', (err) => {
-      console.error(`[codex] stdout error: ${err.message}`)
+      console.error(`[codex:${reqShort}] stdout error: ${err.message}`)
       onEvent({ type: 'codex_error', requestId, error: `Stream error: ${err.message}` })
     })
 
@@ -117,11 +118,11 @@ export class CodexCliManager {
     })
 
     proc.stderr.on('error', (err) => {
-      console.error(`[codex] stderr error: ${err.message}`)
+      console.error(`[codex:${reqShort}] stderr error: ${err.message}`)
     })
 
     proc.on('close', (code) => {
-      console.log(`[codex] Process closed, exitCode=${code}, request ${requestId}`)
+      console.log(`[codex:${reqShort}] Process closed, exitCode=${code}`)
       // Flush remaining buffer
       if (buffer.trim()) {
         try {
@@ -139,7 +140,7 @@ export class CodexCliManager {
     })
 
     proc.on('error', (err) => {
-      console.error(`[codex] Process error: ${err.message}`)
+      console.error(`[codex:${reqShort}] Process error: ${err.message}`)
       this.processes.delete(requestId)
       onEvent({ type: 'codex_error', requestId, error: err.message })
     })
@@ -154,12 +155,13 @@ export class CodexCliManager {
    * Each item.completed becomes a codex_stream event with the item data.
    */
   _handleEvent(event, requestId, onEvent) {
+    const reqShort = requestId.slice(0, 8)
     // Surface error events (auth 401, rate limits, reconnection attempts, etc.)
     // These are informational — the process hasn't died yet. The actual terminal
     // failure comes when the process exits with non-zero code.
     if (event.type === 'error') {
       const errorText = event.message || event.error || JSON.stringify(event)
-      console.error(`[codex] Error event: ${errorText}`)
+      console.error(`[codex:${reqShort}] Error event: ${errorText}`)
       onEvent({
         type: 'codex_stream',
         requestId,

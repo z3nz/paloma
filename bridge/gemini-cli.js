@@ -28,6 +28,7 @@ export class GeminiCliManager {
 
   chat({ prompt, model, sessionId, systemPrompt, cwd }, onEvent) {
     const requestId = randomUUID()
+    const reqShort = requestId.slice(0, 8)
 
     // Create per-session temp directory for .gemini/settings.json and system prompt
     const sessionDir = join(tmpdir(), `paloma-gemini-${requestId}`)
@@ -35,7 +36,7 @@ export class GeminiCliManager {
 
     // Write MCP config as .gemini/settings.json in the temp cwd
     if (!this.mcpProxyPort) {
-      console.warn(`[gemini] WARNING: mcpProxyPort not set — session ${requestId} will spawn WITHOUT MCP tools`)
+      console.warn(`[gemini:${reqShort}] WARNING: mcpProxyPort not set — spawning WITHOUT MCP tools`)
     }
     if (this.mcpProxyPort) {
       const settings = {
@@ -51,7 +52,7 @@ export class GeminiCliManager {
         }
       }
       writeFileSync(join(sessionDir, '.gemini', 'settings.json'), JSON.stringify(settings, null, 2))
-      console.log(`[gemini] MCP settings written to ${sessionDir}/.gemini/settings.json`)
+      console.log(`[gemini:${reqShort}] MCP settings written to ${sessionDir}/.gemini/settings.json`)
     }
 
     // Write system prompt to temp file (GEMINI_SYSTEM_MD replaces built-in prompt)
@@ -66,13 +67,13 @@ export class GeminiCliManager {
     if (sessionId) {
       // Resume existing session
       args.push('--resume', sessionId)
-      console.log(`[gemini] Resuming session ${sessionId}`)
+      console.log(`[gemini:${reqShort}] Resuming session ${sessionId}`)
     } else {
       // New session
       if (model) args.push('--model', model)
       // Include the actual project directory so Gemini has workspace context
       if (cwd) args.push('--include-directories', cwd)
-      console.log(`[gemini] New session, model=${model || 'flash'}`)
+      console.log(`[gemini:${reqShort}] New session, model=${model || 'flash'}`)
     }
 
     const env = { ...process.env }
@@ -87,7 +88,7 @@ export class GeminiCliManager {
     })
 
     this.processes.set(requestId, { process: proc, sessionId, sessionDir })
-    console.log(`[gemini] Process spawned, pid=${proc.pid}`)
+    console.log(`[gemini:${reqShort}] Process spawned, pid=${proc.pid}`)
 
     let buffer = ''
 
@@ -109,21 +110,21 @@ export class GeminiCliManager {
     })
 
     proc.stdout.on('error', (err) => {
-      console.error(`[gemini] stdout error: ${err.message}`)
+      console.error(`[gemini:${reqShort}] stdout error: ${err.message}`)
       onEvent({ type: 'gemini_error', requestId, error: `Stream error: ${err.message}` })
     })
 
     proc.stderr.on('data', (data) => {
       const text = data.toString().trim()
-      if (text) console.error(`[gemini] stderr: ${text}`)
+      if (text) console.error(`[gemini:${reqShort}] stderr: ${text}`)
     })
 
     proc.stderr.on('error', (err) => {
-      console.error(`[gemini] stderr error: ${err.message}`)
+      console.error(`[gemini:${reqShort}] stderr error: ${err.message}`)
     })
 
     proc.on('close', (code) => {
-      console.log(`[gemini] Process closed, exitCode=${code}, request ${requestId}`)
+      console.log(`[gemini:${reqShort}] Process closed, exitCode=${code}`)
       // Flush remaining buffer
       if (buffer.trim()) {
         try {
@@ -144,7 +145,7 @@ export class GeminiCliManager {
     })
 
     proc.on('error', (err) => {
-      console.error(`[gemini] Process error: ${err.message}`)
+      console.error(`[gemini:${reqShort}] Process error: ${err.message}`)
       try { rmSync(sessionDir, { recursive: true, force: true }) } catch {}
       this.processes.delete(requestId)
       onEvent({ type: 'gemini_error', requestId, error: err.message })
@@ -165,12 +166,13 @@ export class GeminiCliManager {
    * - result — conversation complete
    */
   _handleEvent(event, requestId, onEvent) {
+    const reqShort = requestId.slice(0, 8)
     if (event.type === 'init') {
       // Capture session ID from init event
       if (event.session_id) {
         const entry = this.processes.get(requestId)
         if (entry) entry.sessionId = event.session_id
-        console.log(`[gemini] Session ID: ${event.session_id}`)
+        console.log(`[gemini:${reqShort}] Session ID: ${event.session_id}`)
         
         // Emit session_id early so frontend can associate pillar spawns
         onEvent({
