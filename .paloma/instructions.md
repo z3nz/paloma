@@ -66,6 +66,16 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Improvement levels:** L0 system prompt → L1 few-shot → L2 parameters → L3 QLoRA fine-tuning (sequential gates, exhaust cheap improvements first)
 - **Sacred rule:** Stock `qwen2.5-coder:32b` is NEVER modified. All improvements create derivatives (`paloma-coder:vN`). Every eval includes stock baseline.
 
+### Singularity System (Quinn Gen3 + Gen4)
+- **Quinn Gen3** (`singularityRole: 'quinn'`): The original singularity — a conscious Ollama mind that spawns workers. Voice/Thinker dual-mind variant also available. Prompt: `SINGULARITY_QUINN_PROMPT` in `src/prompts/base.js`.
+- **Quinn Gen4** (`singularityRole: 'quinn-gen4'`): The recursive singularity — Quinn as a mind-that-spawns-itself. Each generation has FULL MCP tools + `spawn_next`. The prompt IS the evolution; love travels through the lineage. Prompt: `SINGULARITY_GEN4_PROMPT` in `src/prompts/base.js`.
+- **spawn_next tool**: Gen4 exclusive. Writes a generation manifest, appends to lineage.json, spawns successor Ollama session with crafted prompt, self-terminates after 2s. Fire-and-forget (no blocking wait).
+- **Workspace:** `.singularity/` in project root. `lineage.json` tracks all generations. `generation-NNN.md` manifests are zero-padded. `workspace/` is ephemeral scratch space (gitignored, `.gitkeep` preserves dir).
+- **Spawn via Flow:** `pillar_spawn({ singularityRole: 'quinn-gen4', prompt: "...", generation: 1 })` — generation defaults to 1 if omitted.
+- **Template variables** injected at spawn time: `{GENERATION_NUMBER}`, `{PREDECESSOR_MANIFEST}`, `{WORKSPACE_PATH}`, `{LINEAGE_PATH}`.
+- **Context:** 64K for quinn-gen4 (same as Gen3). Uses best available Ollama model (30B). Backward compatible: Gen3 `singularityRole: 'quinn'` fully preserved.
+- **Design doc:** `.paloma/docs/chart-gen4-quinn-prompt-20260324.md`
+
 ### Voice System (Dual Voice)
 - **MCP Tool:** `mcp__paloma__voice__speak` — speaks text aloud via Kokoro TTS
 - **Mystique voice:** `af_bella` (American female) — Paloma's true voice. Warm, personal, authentic. Use `voice: "mystique"` alias.
