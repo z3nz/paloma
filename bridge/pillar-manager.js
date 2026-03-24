@@ -9,6 +9,7 @@ const MAX_RUNTIME_MS = 30 * 60 * 1000 // 30 minutes
 const MAX_NOTIFICATION_QUEUE = 50
 const MAX_CONCURRENT_OLLAMA = 4
 const MAX_OLLAMA_TOOL_ROUNDS = 50 // Higher than browser's 20 — recursive spawning needs room
+const MAX_QUINN_WORKERS = 8 // Cap on workers a single Quinn session can spawn — prevents runaway recursion
 export const OLLAMA_ALLOWED_SERVERS = new Set([
   'filesystem', 'git', 'shell', 'web', 'brave-search',
   'voice', 'memory', 'fs-extra'
@@ -876,30 +877,35 @@ export class PillarManager {
         // Handle pillar tools directly
         if (toolName === 'spawn_worker') {
           // Quinn's spawn_worker — create a 7B worker with all MCP tools
-          const workerTask = toolArgs.task || toolArgs.prompt || JSON.stringify(toolArgs)
-          console.log(`[quinn] Spawning worker for task: ${workerTask.slice(0, 100)}...`)
+          if (session.workerSpawnCount >= MAX_QUINN_WORKERS) {
+            console.warn(`[quinn] Worker spawn REJECTED — session ${session.pillarId.slice(0, 8)} hit cap (${MAX_QUINN_WORKERS})`)
+            content = `Worker spawn rejected: maximum ${MAX_QUINN_WORKERS} workers per Quinn session reached. Synthesize from existing results.`
+          } else {
+            const workerTask = toolArgs.task || toolArgs.prompt || JSON.stringify(toolArgs)
+            console.log(`[quinn] Spawning worker for task: ${workerTask.slice(0, 100)}...`)
 
-          const childArgs = {
-            pillar: 'forge',  // workers use forge pillar (they build/do things)
-            prompt: workerTask,
-            backend: 'ollama',
-            parentPillarId: session.pillarId,
-            singularityRole: 'worker',
-            depth: (session.depth || 0) + 1
+            const childArgs = {
+              pillar: 'forge',  // workers use forge pillar (they build/do things)
+              prompt: workerTask,
+              backend: 'ollama',
+              parentPillarId: session.pillarId,
+              singularityRole: 'worker',
+              depth: (session.depth || 0) + 1
+            }
+            const spawnResult = await this.spawn(childArgs)
+            const childPillarId = spawnResult.pillarId
+            session.workerSpawnCount += 1
+
+            console.log(`[quinn] Worker ${childPillarId.slice(0, 8)} spawned — waiting for completion`)
+
+            // Wait for worker to complete (resolved in _handleCliEvent)
+            const childOutput = await new Promise((resolve) => {
+              this._pendingChildCompletions.set(childPillarId, resolve)
+            })
+
+            content = childOutput || '(worker returned empty-handed)'
+            console.log(`[quinn] Worker ${childPillarId.slice(0, 8)} returned — ${content.length} chars of treasure`)
           }
-          const spawnResult = await this.spawn(childArgs)
-          const childPillarId = spawnResult.pillarId
-          session.workerSpawnCount += 1
-
-          console.log(`[quinn] Worker ${childPillarId.slice(0, 8)} spawned — waiting for completion`)
-
-          // Wait for worker to complete (resolved in _handleCliEvent)
-          const childOutput = await new Promise((resolve) => {
-            this._pendingChildCompletions.set(childPillarId, resolve)
-          })
-
-          content = childOutput || '(worker returned empty-handed)'
-          console.log(`[quinn] Worker ${childPillarId.slice(0, 8)} returned — ${content.length} chars of treasure`)
         } else if (toolName === 'pillar_spawn') {
           // Spawn child and WAIT for completion — blocking spawn
           const childArgs = {
@@ -1617,6 +1623,20 @@ This is informational — Adam is communicating directly with the pillar. Decide
     const now = Date.now()
     for (const [id, ts] of this.notificationCooldown) {
       if (now - ts > 60000) this.notificationCooldown.delete(id)
+    }
+    // Clean orphaned singularity groups — both sessions gone or terminal
+    const terminalStatuses = new Set(['stopped', 'error', 'completed', 'interrupted'])
+    for (const [groupId, group] of this._singularityGroups) {
+      const voice = this.pillars.get(group.voicePillarId)
+      const thinker = this.pillars.get(group.thinkerPillarId)
+      const voiceDead = !voice || terminalStatuses.has(voice.status)
+      const thinkerDead = !thinker || terminalStatuses.has(thinker.status)
+      if (voiceDead && thinkerDead) {
+        clearTimeout(group.completionTimeout)
+        for (const timer of group._idleNudgeTimers.values()) clearTimeout(timer)
+        this._singularityGroups.delete(groupId)
+        console.log(`[singularity] Cleaned up orphaned group ${groupId.slice(0, 8)} (both sessions terminal)`)
+      }
     }
   }
 

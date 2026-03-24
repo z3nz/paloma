@@ -29,8 +29,8 @@ A repeatable, multi-machine self-improvement cycle. Each run: assess what's chan
 
 - [ ] **HP-1: Zero test coverage for bridge modules** — `pillar-manager.js` alone is 2000+ lines with no tests. No test framework even set up for bridge code
 - [ ] **HP-2: Email rate limiting not enforced in code** — Documented as NON-NEGOTIABLE in instructions but there's no actual code enforcement. Only policy, no mechanism
-- [ ] **HP-3: No cap on Quinn worker spawn count** — Recursive orchestration could spawn unlimited workers, risking infinite recursion / resource exhaustion
-- [ ] **HP-4: Singularity group cleanup is implicit** — Orphaned groups (from crashed sessions) leak memory with no cleanup mechanism
+- [x] **HP-3: No cap on Quinn worker spawn count** ✔ (Lynch Tower) — Added MAX_QUINN_WORKERS=8 cap with graceful rejection message to spawn_worker tool handler
+- [x] **HP-4: Singularity group cleanup is implicit** ✔ (Lynch Tower) — Added orphaned group sweep to _cleanupTerminalSessions (every 5 min), clears timers + logs cleanup
 - [x] **HP-5: MCP proxy port silently skipped if not set** ✔ (Adam's MacBook Pro) — Added console.warn in all 4 CLI managers (claude, codex, copilot, gemini) when mcpProxyPort is not set
 
 ### Tier 3: Medium Priority (5 items)
@@ -43,25 +43,24 @@ A repeatable, multi-machine self-improvement cycle. Each run: assess what's chan
 
 ### Tier 4: Quick Wins (9 items)
 
-- [ ] **QW-1: Backend health probes run sequentially** — Should run in parallel for faster startup
+- [x] **QW-1: Backend health probes run sequentially** ✔ (Confirmed already parallel) — BackendHealth already uses Promise.allSettled for parallel probes. No action needed.
 - [x] **QW-2: Thread tracker TTL enforced** ✔ (Adam's MacBook Pro) — Hardened TTL cleanup: entries without spawnedAt now expire (Infinity age), added logging on expiry with thread subject/sender context
 - [ ] **QW-3: No pillar lifecycle metrics** — No tracking of spawn count, duration, success/failure rates
-- [ ] **QW-4: Request IDs missing from CLI logs** — Makes correlating log entries across modules difficult
+- [ ] **QW-4: Request IDs missing from CLI logs** — MacBook Pro auditing: normalize to full UUIDs in all log lines, add requestId to pillar spawn/completion entries. In progress.
 - [ ] **QW-5: System prompt size not hard-validated** — Oversized prompts could cause silent truncation or API errors
-- [ ] **QW-6: Stale session cleanup on bridge restart** — Old session references may linger in memory after restart
+- [ ] **QW-6: Stale session cleanup on bridge restart** — MacBook Pro fixing: startup reconciliation against running processes + 30-min age-based expiry for interrupted sessions. Queued after QW-4.
 - [ ] **QW-7: MCP tool timeout not configurable per-tool** — All tools share the same timeout, but some (like web fetch) need longer
 - [ ] **QW-8: No health endpoint for monitoring** — Bridge has no HTTP health check endpoint for external monitoring
 - [ ] **QW-9: Console.log used instead of structured logger** — Bridge uses raw console.log throughout; no log levels or structured output
 
-## Machine Assignment (Pending Lenovo Input)
+## Machine Assignment
 
-Waiting for Lenovo to weigh in on task allocation based on hardware specs and current state. Preliminary thinking:
-
-| Machine | Suggested Tasks | Rationale |
-|---------|----------------|-----------|
-| Lynch Tower | CF-1 through CF-5, HP-5, QW-1, QW-5 | Bridge fixes need full MCP tool access, orchestrator proximity |
-| Lenovo | HP-1 (test suite), MP-4 (eval logging), CF-4 (Ollama validation) | GPU power for Ollama, heavy compute for test generation |
-| Either | Quick wins, medium priority items | File-disjoint, low conflict risk |
+| Machine | Tasks | Status |
+|---------|-------|--------|
+| Lynch Tower | CF-1–CF-5 ✓, HP-3 ✓, HP-4 ✓, HP-2, QW-5, QW-8 | HP-3/4 done, HP-2 next |
+| Adam's MacBook Pro | HP-5 ✓, QW-2 ✓, QW-1, QW-4, QW-6 | QW-1/4/6 in progress |
+| Lenovo | HP-1 (test suite), MP-4 (eval logging) | Pending Lenovo input |
+| Unassigned | MP-1, MP-2, MP-3, MP-5, QW-3, QW-7, QW-9 | Available for next round |
 
 ## Coordination Protocol
 
@@ -77,3 +76,8 @@ Waiting for Lenovo to weigh in on task allocation based on hardware specs and cu
 - Plan created from codebase assessment
 - Coordination email sent to Lenovo
 - Awaiting Lenovo's input on task allocation
+
+### Run 2 — 2026-03-24 (MacBook Pro Round 2)
+- MacBook Pro claimed QW-1, QW-4, QW-6 — confirmed no conflicts
+- Lynch Tower taking HP-2, HP-3, HP-4, QW-5, QW-8
+- Updated machine assignment table
