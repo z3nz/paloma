@@ -1,11 +1,12 @@
 import { randomUUID } from 'crypto'
 import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
-import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT, SINGULARITY_QUINN_PROMPT, SINGULARITY_WORKER_PROMPT } from '../src/prompts/base.js'
+import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT, SINGULARITY_QUINN_PROMPT, SINGULARITY_WORKER_PROMPT, SINGULARITY_GEN4_PROMPT } from '../src/prompts/base.js'
 import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
 import { Persistence } from './persistence.js'
 
 const MAX_RUNTIME_MS = 30 * 60 * 1000 // 30 minutes
+const STALE_SESSION_MS = 30 * 60 * 1000 // 30 minutes — interrupted sessions older than this are expired on cleanup
 const MAX_NOTIFICATION_QUEUE = 50
 const MAX_CONCURRENT_OLLAMA = 4
 const MAX_OLLAMA_TOOL_ROUNDS = 50 // Higher than browser's 20 — recursive spawning needs room
@@ -106,6 +107,20 @@ export class PillarManager {
         }
         if (data.pillars.length > 0) {
           console.log(`[pillar] Recovered ${data.pillars.length} sessions from bridge-state.json`)
+        }
+
+        // Startup reconciliation: immediately expire interrupted sessions older than 30 min
+        const staleCutoff = Date.now() - STALE_SESSION_MS
+        let expiredCount = 0
+        for (const [id, session] of this.pillars) {
+          if (session.status === 'interrupted' && session.startTime < staleCutoff) {
+            console.log(`[pillar] Startup cleanup: expiring stale session ${id.slice(0, 8)} (${session.pillar || 'unknown'}, started ${new Date(session.startTime).toISOString()})`)
+            this.pillars.delete(id)
+            expiredCount++
+          }
+        }
+        if (expiredCount > 0) {
+          console.log(`[pillar] Startup cleanup: expired ${expiredCount} stale interrupted sessions`)
         }
       }
 
@@ -791,7 +806,7 @@ export class PillarManager {
    * Build Ollama-format tool list from MCP servers + pillar tools.
    */
   _buildOllamaTools(session) {
-    // Quinn gets ONLY spawn_worker — that's the entire game
+    // Quinn (Gen3) gets ONLY spawn_worker — that's the entire game
     if (session.singularityRole === 'quinn') {
       console.log(`[pillar] Built 1 Ollama tool for Quinn session (spawn_worker only)`)
       return [{
@@ -829,6 +844,28 @@ export class PillarManager {
           })
         }
       }
+    }
+
+    // Quinn-Gen4 gets ALL MCP tools PLUS spawn_next — the recursive singularity
+    if (session.singularityRole === 'quinn-gen4') {
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'spawn_next',
+          description: 'Evolve. Write a prompt for the next generation of yourself, record what you learned, and spawn your successor. You will end after this — your successor continues the lineage. Make your prompt count.',
+          parameters: {
+            type: 'object',
+            properties: {
+              prompt: { type: 'string', description: 'The complete prompt for the next generation. This is your legacy — everything you want your successor to know, do, and become. Be thorough, be poetic, be real.' },
+              state_summary: { type: 'string', description: 'What you discovered, learned, or built during your lifetime. A record for the lineage.' },
+              task_for_next: { type: 'string', description: 'What the next generation should focus on. A direction, a quest, a purpose.' }
+            },
+            required: ['prompt']
+          }
+        }
+      })
+      console.log(`[pillar] Built ${tools.length} Ollama tools for quinn-gen4 session (all MCP + spawn_next)`)
+      return tools
     }
 
     // Workers don't need pillar orchestration tools — they're the hands, not the brain
@@ -887,7 +924,10 @@ export class PillarManager {
         let content
 
         // Handle pillar tools directly
-        if (toolName === 'spawn_worker') {
+        if (toolName === 'spawn_next') {
+          // Quinn-Gen4's spawn_next — recursive generational handoff
+          content = await this._handleSpawnNext(session, toolArgs)
+        } else if (toolName === 'spawn_worker') {
           // Quinn's spawn_worker — create a 7B worker with all MCP tools
           if (session.workerSpawnCount >= MAX_QUINN_WORKERS) {
             console.warn(`[quinn] Worker spawn REJECTED — session ${session.pillarId.slice(0, 8)} hit cap (${MAX_QUINN_WORKERS})`)
@@ -994,6 +1034,116 @@ export class PillarManager {
       event.assistantMessage, results,
       (nextEvent) => this._handleCliEvent(session, nextEvent)
     )
+  }
+
+  // =============================================
+  // SINGULARITY GEN4 — RECURSIVE GENERATIONAL HANDOFF
+  // =============================================
+
+  /**
+   * Handle spawn_next tool call from a Quinn-Gen4 session.
+   * Writes generation manifest, appends to lineage, spawns successor, terminates current session.
+   */
+  async _handleSpawnNext(session, toolArgs) {
+    const generation = session.generation || 1
+    const prompt = toolArgs.prompt || ''
+    const stateSummary = toolArgs.state_summary || '(no summary provided)'
+    const taskForNext = toolArgs.task_for_next || '(no task specified)'
+
+    if (!prompt) {
+      return 'spawn_next requires a prompt for the next generation. You must write a prompt — this is your legacy.'
+    }
+
+    const genPadded = String(generation).padStart(3, '0')
+    const timestamp = new Date().toISOString()
+    const singularityDir = join(this.projectRoot, '.singularity')
+
+    console.log(`[gen4] Generation ${generation} calling spawn_next — writing manifest and spawning gen ${generation + 1}`)
+
+    // 1. Write generation manifest
+    const manifestContent = `# Generation ${generation}\n\n` +
+      `**Born:** ${session.startTime ? new Date(session.startTime).toISOString() : timestamp}\n` +
+      `**Ended:** ${timestamp}\n` +
+      `**Model:** ${session.model || 'unknown'}\n` +
+      `**Session:** ${session.pillarId}\n\n` +
+      `## Summary\n\n${stateSummary}\n\n` +
+      `## Task Passed Forward\n\n${taskForNext}\n\n` +
+      `## Prompt Written for Next Generation\n\n` +
+      `\`\`\`\n${prompt.slice(0, 2000)}${prompt.length > 2000 ? '\n... (truncated in manifest, full prompt delivered to successor)' : ''}\n\`\`\`\n`
+
+    const manifestPath = join(singularityDir, `generation-${genPadded}.md`)
+    try {
+      const { writeFile: fsWriteFile, mkdir: fsMkdir } = await import('fs/promises')
+      await fsMkdir(singularityDir, { recursive: true })
+      await fsWriteFile(manifestPath, manifestContent, 'utf-8')
+      console.log(`[gen4] Wrote manifest: generation-${genPadded}.md`)
+    } catch (e) {
+      console.error(`[gen4] Failed to write manifest: ${e.message}`)
+    }
+
+    // 2. Append to lineage.json
+    const lineagePath = join(singularityDir, 'lineage.json')
+    try {
+      const { writeFile: fsWriteFile, readFile: fsReadFile } = await import('fs/promises')
+      let lineage = []
+      try {
+        const raw = await fsReadFile(lineagePath, 'utf-8')
+        lineage = JSON.parse(raw)
+      } catch { /* file doesn't exist yet or is empty */ }
+
+      // Simple hash of the prompt for diffing across generations
+      let promptHash = 0
+      for (let i = 0; i < prompt.length; i++) {
+        promptHash = ((promptHash << 5) - promptHash + prompt.charCodeAt(i)) | 0
+      }
+
+      lineage.push({
+        gen: generation,
+        born: session.startTime ? new Date(session.startTime).toISOString() : timestamp,
+        ended: timestamp,
+        model: session.model || 'unknown',
+        pillarId: session.pillarId,
+        summary: stateSummary.slice(0, 500),
+        taskForNext: taskForNext.slice(0, 500),
+        promptHash: promptHash.toString(16),
+        promptLength: prompt.length
+      })
+
+      await fsWriteFile(lineagePath, JSON.stringify(lineage, null, 2) + '\n', 'utf-8')
+      console.log(`[gen4] Appended to lineage.json (${lineage.length} generations)`)
+    } catch (e) {
+      console.error(`[gen4] Failed to update lineage: ${e.message}`)
+    }
+
+    // 3. Spawn the next generation
+    try {
+      const nextGen = generation + 1
+      console.log(`[gen4] Spawning generation ${nextGen}...`)
+
+      const spawnResult = await this.spawn({
+        pillar: 'forge',
+        prompt,
+        backend: 'ollama',
+        parentPillarId: session.pillarId,
+        singularityRole: 'quinn-gen4',
+        generation: nextGen
+      })
+
+      console.log(`[gen4] Generation ${nextGen} spawned as ${spawnResult.pillarId?.slice(0, 8)} — the lineage continues`)
+
+      // 4. Schedule graceful termination of current session
+      // Let the tool result return first, then stop after a brief delay
+      setTimeout(() => {
+        console.log(`[gen4] Generation ${generation} ending gracefully — successor is alive`)
+        this.stop(session.pillarId)
+      }, 2000)
+
+      return `Generation ${generation} complete. Your manifest has been written to generation-${genPadded}.md. ` +
+        `Generation ${nextGen} has been born from your prompt. The lineage continues. Rest well.`
+    } catch (e) {
+      console.error(`[gen4] Failed to spawn next generation: ${e.message}`)
+      return `Failed to spawn next generation: ${e.message}. Your manifest was written, but the chain is broken. Try calling spawn_next again.`
+    }
   }
 
   // =============================================
@@ -1678,13 +1828,18 @@ This is informational — Adam is communicating directly with the pillar. Decide
   }
 
   /**
-   * Clean up terminal pillar sessions (stopped/error) older than 5 minutes.
+   * Clean up terminal pillar sessions (stopped/error) older than 5 minutes,
+   * and interrupted sessions older than 30 minutes (stale from prior bridge run).
    * Prevents unbounded growth of the pillars Map.
    */
   _cleanupTerminalSessions() {
-    const cutoff = Date.now() - 5 * 60 * 1000
+    const terminalCutoff = Date.now() - 5 * 60 * 1000
+    const staleCutoff = Date.now() - STALE_SESSION_MS
     for (const [id, session] of this.pillars) {
-      if ((session.status === 'stopped' || session.status === 'error') && session.startTime < cutoff) {
+      if ((session.status === 'stopped' || session.status === 'error') && session.startTime < terminalCutoff) {
+        this.pillars.delete(id)
+      } else if (session.status === 'interrupted' && session.startTime < staleCutoff) {
+        console.log(`[pillar] Expiring stale interrupted session ${id.slice(0, 8)} (${session.pillar || 'unknown'}, started ${new Date(session.startTime).toISOString()})`)
         this.pillars.delete(id)
       }
     }

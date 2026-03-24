@@ -48,7 +48,7 @@ A repeatable, multi-machine self-improvement cycle. Each run: assess what's chan
 - [ ] **QW-3: No pillar lifecycle metrics** — No tracking of spawn count, duration, success/failure rates
 - [x] **QW-4: Request IDs normalized in CLI logs** ✔ (Adam's MacBook Pro) — Added short request ID prefix [backend:abcd1234] to every log line in all 4 CLI managers. Commit 3f0ecc1.
 - [x] **QW-5: System prompt size not hard-validated** ✓ — Added MAX_SYSTEM_PROMPT_BYTES = 120KB limit in `PillarManager` with hard error on exceed.
-- [ ] **QW-6: Stale session cleanup on bridge restart** — MacBook Pro fixing: startup reconciliation against running processes + 30-min age-based expiry for interrupted sessions. Queued after QW-4.
+- [x] **QW-6: Stale session cleanup on bridge restart** ✔ (Adam's MacBook Pro) — Added startup reconciliation in `_loadState` that expires interrupted sessions >30 min old, plus periodic cleanup in `_cleanupTerminalSessions` with same 30-min cutoff for interrupted sessions.
 - [ ] **QW-7: MCP tool timeout not configurable per-tool** — All tools share the same timeout, but some (like web fetch) need longer
 - [x] **QW-8: No health endpoint for monitoring** ✓ — Added `/api/health` endpoint to bridge returning uptime, backend status, and session counts.
 - [ ] **QW-9: Console.log used instead of structured logger** — Bridge uses raw console.log throughout; no log levels or structured output
