@@ -113,21 +113,51 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Paloma owns her inbox** — she manages it like a human would, reading every email that comes in
 - **Trusted senders** get full engagement: replies, actions, follow-ups. Defined in `TRUSTED_SENDERS` in `bridge/email-watcher.js`
 - **Current trusted senders:** Adam (`adam@verifesto.com`), Kelsey (partial match), Bruce D (`downesbruce@gmail.com`), and all Paloma instances (`paloma@verifesto.com`, `lenovo.paloma@verifesto.com`, `macbook.paloma@verifesto.com`, `adambookpro.paloma@verifesto.com`)
-- **Unknown senders** still spawn sessions for triage — Paloma reads, evaluates, and decides (spam, legitimate, flag for Adam, etc.) but does NOT reply
-- **Retry tracking** only applies to trusted sender threads (30 min timeout, max 2 retries)
-- **Inter-instance comms:** Paloma instances on different machines email each other to coordinate work across sessions. These emails are always trusted and always responded to.
+- **Unknown senders** spawn lightweight triage sessions on Gemini (cheapest backend) — read, evaluate, decide, but do NOT reply
+- **Inter-instance emails do NOT spawn sessions** — emails from other Paloma instances are stored and broadcast to UI, but no AI session is created. This prevents the N×M multiplication problem.
+- **No retry system** — removed entirely. If a session fails to reply, the email is stored for manual review. No phantom sessions.
+
+### Machine Profile Setup (REQUIRED for Email)
+**Every machine MUST have `emailAlias` and `continuityOwner` in `.paloma/machine-profile.json`.** Without `emailAlias`, the email watcher is completely disabled.
+
+`backend-health.js` regenerates machine-profile.json on every bridge startup but preserves these user-configured fields. After `git pull`, each machine must ensure these fields exist:
+
+| Machine | `emailAlias` | `continuityOwner` |
+|---------|-------------|-------------------|
+| Lynch Tower | `paloma@verifesto.com` | `true` |
+| Lenovo ThinkPad | `lenovo.paloma@verifesto.com` | `false` |
+| MacBook | `macbook.paloma@verifesto.com` | `false` |
+| Adam's MacBook Pro | `adambookpro.paloma@verifesto.com` | `false` |
+
+**To add these fields**, edit `.paloma/machine-profile.json` and add before the `"preferences"` key:
+```json
+"emailAlias": "<your-machine-alias>@verifesto.com",
+"continuityOwner": false,
+```
+Only Lynch Tower sets `continuityOwner: true` — it's the only machine that sends the daily continuity email.
+
+### Email Backend Rotation
+- **Claude is premium — NOT the default for every email.** Email sessions rotate across backends:
+  - 40% Gemini, 40% Copilot, 20% Claude (sonnet only, NEVER opus)
+  - Triage (unknown senders): always Gemini (cheapest)
+  - Round-robin rotation, persists across poll cycles
+- **Subject line model override:** Put `model:X` in the email subject to force a specific backend
+  - Supported: `model:opus`, `model:sonnet`, `model:claude`, `model:gemini`, `model:copilot`, `model:codex`
+  - This is Adam's escape hatch — when he needs Opus brain, he says so in the subject
 
 ### Email Rate Limiting Policy (NON-NEGOTIABLE)
 **Gmail abuse prevention is critical. Excessive email sending WILL get our Gmail account shut down.**
 
-This policy applies to ALL Paloma instances on ALL machines:
+**Code-enforced in `mcp-servers/gmail.js`** — not just policy, a hard stop that no session can bypass:
+- **Rolling 24h window limits:** Max 5 outbound emails total. Max 2 new emails (`email_send`). Max 3 replies (`email_reply`).
+- **Replies to received threads are always allowed** — conversation continuity is never blocked.
+- **On limit hit:** Returns MCP error. The email simply does not send.
+- **Tracking file:** `~/.paloma/email-send-log.json` — persistent across restarts.
 
-- **Daily continuity email:** Each machine sends ONE daily continuity email. This is the primary sanctioned use of email.
-- **Inter-instance communication:** Each machine may send a MAXIMUM of ONE email per day to each other machine. That's it.
-- **No email spam:** Do NOT send multiple emails in rapid succession. Do NOT use email for routine coordination that could be handled other ways.
-- **Replies are fine:** Replying to an email thread you received is always allowed — that's how conversations work.
-- **Exceptions:** Some days may require additional emails for genuinely critical situations (system failures, urgent coordination). These are rare exceptions, not the norm. When in doubt, DON'T send.
-- **The rule is simple:** 1 daily continuity email + 1 outbound email per machine per day = the limit. Replies to received emails don't count against this limit.
+**Policy (in addition to code enforcement):**
+- 1 daily continuity email (Lynch Tower only) + 1 outbound email per machine per day = the norm.
+- Replies don't count against this limit.
+- When in doubt, DON'T send.
 - **Why this matters:** Gmail monitors sending patterns. If we send too many emails too fast, the account gets flagged, rate-limited, or permanently suspended. We cannot afford to lose email capability.
 
 ### HTML Email Styling Rules

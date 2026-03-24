@@ -99,6 +99,9 @@ export class BackendHealth {
       ship: 'gemini',
       subWorker: 'ollama'
     }
+    // Preserve user-configured fields that aren't auto-generated
+    let emailAlias = null
+    let continuityOwner = false
 
     try {
       if (existsSync(profilePath)) {
@@ -106,6 +109,8 @@ export class BackendHealth {
         if (existing.preferences) {
           preferences = { ...preferences, ...existing.preferences }
         }
+        if (existing.emailAlias) emailAlias = existing.emailAlias
+        if (existing.continuityOwner != null) continuityOwner = existing.continuityOwner
       }
     } catch (e) {
       console.warn(`[health] Error reading existing machine profile: ${e.message}`)
@@ -141,6 +146,8 @@ export class BackendHealth {
         platform: platform()
       },
       backends,
+      ...(emailAlias && { emailAlias }),
+      ...(continuityOwner != null && { continuityOwner }),
       preferences
     }
 
