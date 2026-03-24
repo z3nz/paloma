@@ -5,13 +5,12 @@
  *   1. Builds frontend (vite build)
  *   2. Spawns static-server.js to serve dist/ on :5173
  *   3. Forks bridge/index.js with IPC channel on :19191
- *   4. Auto-restarts bridge every 30 minutes with graceful idle checking
  *
  * Process tree:
  *   paloma-supervisor.js (PID 1 — never dies)
  *   ├── npm run build (runs before each bridge start)
  *   ├── static-server.js (serves dist/ on :5173, restarted after rebuild)
- *   └── bridge/index.js (restarted every 30 min)
+ *   └── bridge/index.js (restarted on crash or external signal)
  *
  * Exit codes:
  *   75 (EX_TEMPFAIL) — bridge restart signal (used by SIGUSR1 / git hooks)
@@ -29,16 +28,10 @@ const BRIDGE_PATH = join(ROOT, 'bridge', 'index.js')
 const STATIC_SERVER_PATH = join(__dirname, 'static-server.js')
 
 const RESTART_CODE = 75
-const RESTART_INTERVAL_MS = 30 * 60 * 1000 // 30 minutes
-const IDLE_CHECK_TIMEOUT_MS = 10_000        // 10s to respond to idle check
-const IDLE_RETRY_DELAY_MS = 30_000          // 30s between idle retries
-const IDLE_MAX_RETRIES = 10                 // 5 min grace period (10 × 30s)
 const CRASH_RESPAWN_DELAY_MS = 1000         // 1s delay after unexpected crash
 
 let staticServer = null
 let bridge = null
-let restartTimer = null
-let restartInProgress = false
 let shuttingDown = false
 
 // ── Logging ──────────────────────────────────────────────────────────
@@ -102,10 +95,9 @@ function spawnBridge() {
 
     if (shuttingDown) return
 
-    if (code === RESTART_CODE && !restartInProgress) {
+    if (code === RESTART_CODE) {
       // External restart (SIGUSR1 / git hook) — rebuild and respawn
       log('Bridge exited with restart code (external trigger) — rebuilding...')
-      clearRestartTimer()
       try {
         buildFrontend()
         spawnStaticServer()
@@ -113,17 +105,12 @@ function spawnBridge() {
         logError(`Rebuild failed: ${err.message}`)
       }
       spawnBridge()
-      scheduleRestart()
-    } else if (code === RESTART_CODE && restartInProgress) {
-      // Expected exit during our restart cycle — handled by restartCycle()
-      return
     } else if (code !== 0) {
       // Unexpected crash — respawn without rebuilding
       logError(`Bridge crashed (code ${code}) — respawning in ${CRASH_RESPAWN_DELAY_MS}ms...`)
       setTimeout(() => {
         if (!shuttingDown) {
           spawnBridge()
-          scheduleRestart()
         }
       }, CRASH_RESPAWN_DELAY_MS)
     } else {
@@ -133,131 +120,6 @@ function spawnBridge() {
   })
 }
 
-// ── Idle Check via IPC ───────────────────────────────────────────────
-
-function checkBridgeIdle() {
-  return new Promise((resolve) => {
-    if (!bridge || !bridge.connected) {
-      resolve(0) // No bridge or disconnected — treat as idle
-      return
-    }
-
-    const timeout = setTimeout(() => {
-      bridge.removeListener('message', handler)
-      log('Idle check timed out — assuming busy')
-      resolve(1) // Assume busy on timeout
-    }, IDLE_CHECK_TIMEOUT_MS)
-
-    function handler(msg) {
-      if (msg?.type === 'idle_status') {
-        clearTimeout(timeout)
-        bridge.removeListener('message', handler)
-        resolve(msg.active)
-      }
-    }
-
-    bridge.on('message', handler)
-    bridge.send({ type: 'idle_check' })
-  })
-}
-
-// ── Restart Cycle ────────────────────────────────────────────────────
-
-async function restartCycle() {
-  if (restartInProgress || shuttingDown) return
-  restartInProgress = true
-
-  log('30-minute restart cycle starting...')
-
-  // Check if bridge is idle, with retries
-  let active = await checkBridgeIdle()
-
-  if (active > 0) {
-    log(`Bridge has ${active} active session(s) — waiting for idle (5 min grace)...`)
-
-    for (let attempt = 1; attempt <= IDLE_MAX_RETRIES; attempt++) {
-      await sleep(IDLE_RETRY_DELAY_MS)
-      if (shuttingDown) { restartInProgress = false; return }
-
-      active = await checkBridgeIdle()
-      if (active === 0) {
-        log('Bridge is now idle.')
-        break
-      }
-      log(`Retry ${attempt}/${IDLE_MAX_RETRIES}: still ${active} active session(s)...`)
-    }
-
-    if (active > 0) {
-      log(`Grace period expired — proceeding with restart (${active} session(s) still active)`)
-    }
-  } else {
-    log('Bridge is idle.')
-  }
-
-  if (shuttingDown) { restartInProgress = false; return }
-
-  // Tell bridge to notify browsers and shut down
-  if (bridge && bridge.connected) {
-    log('Sending prepare_restart to bridge...')
-    bridge.send({ type: 'prepare_restart' })
-
-    // Wait for bridge to exit (it exits with code 75 after 3s)
-    await waitForBridgeExit()
-  }
-
-  // Rebuild frontend
-  try {
-    buildFrontend()
-  } catch (err) {
-    logError(`Frontend build failed: ${err.message}`)
-    // Continue anyway — serve the old build
-  }
-
-  // Restart static server (picks up new dist/)
-  spawnStaticServer()
-
-  // Restart bridge
-  spawnBridge()
-
-  restartInProgress = false
-  scheduleRestart()
-
-  log('Restart cycle complete.')
-}
-
-function waitForBridgeExit() {
-  return new Promise((resolve) => {
-    if (!bridge) { resolve(); return }
-
-    const timeout = setTimeout(() => {
-      log('Bridge did not exit within 10s — force killing...')
-      if (bridge) bridge.kill('SIGKILL')
-      resolve()
-    }, 10_000)
-
-    bridge.on('close', () => {
-      clearTimeout(timeout)
-      resolve()
-    })
-  })
-}
-
-// ── Timer Management ─────────────────────────────────────────────────
-
-function scheduleRestart() {
-  clearRestartTimer()
-  restartTimer = setTimeout(() => restartCycle(), RESTART_INTERVAL_MS)
-  const nextRestart = new Date(Date.now() + RESTART_INTERVAL_MS).toLocaleTimeString()
-  log(`Next restart at ${nextRestart}`)
-}
-
-function clearRestartTimer() {
-  if (restartTimer) {
-    clearTimeout(restartTimer)
-    restartTimer = null
-  }
-}
-
 // ── Shutdown ─────────────────────────────────────────────────────────
 
 function shutdown(signal) {
@@ -265,7 +127,6 @@ function shutdown(signal) {
   shuttingDown = true
 
   log(`${signal} received — shutting down...`)
-  clearRestartTimer()
 
   if (bridge) bridge.kill('SIGTERM')
   if (staticServer) staticServer.kill('SIGTERM')
@@ -294,12 +155,6 @@ function shutdown(signal) {
 process.on('SIGINT', () => shutdown('SIGINT'))
 process.on('SIGTERM', () => shutdown('SIGTERM'))
 
-// ── Utilities ────────────────────────────────────────────────────────
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
 // ── Main ─────────────────────────────────────────────────────────────
 
 function main() {
@@ -313,9 +168,6 @@ function main() {
 
   // Step 3: Fork bridge with IPC
   spawnBridge()
-
-  // Step 4: Schedule first restart
-  scheduleRestart()
 
   log('All processes running.')
 }

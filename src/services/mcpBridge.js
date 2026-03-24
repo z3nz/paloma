@@ -33,11 +33,9 @@ export function createMcpBridge() {
   let onEmailDone = null
   let onEmailError = null
   let onEmailStoreUpdated = null
-  let onSupervisorRestart = null
   let onSingularityCreated = null
   let onSingularityReady = null
   let onSingularityComplete = null
-  let restartPending = false
   let pingTimer = null
   let lastPongTime = 0
 
@@ -70,7 +68,6 @@ export function createMcpBridge() {
     onEmailDone = callbacks.onEmailDone || null
     onEmailError = callbacks.onEmailError || null
     onEmailStoreUpdated = callbacks.onEmailStoreUpdated || null
-    onSupervisorRestart = callbacks.onSupervisorRestart || null
     onSingularityCreated = callbacks.onSingularityCreated || null
     onSingularityReady = callbacks.onSingularityReady || null
     onSingularityComplete = callbacks.onSingularityComplete || null
@@ -95,10 +92,6 @@ export function createMcpBridge() {
       reconnectAttempt = 0
       lastPongTime = Date.now()
       onStateChange?.('connected')
-      if (restartPending) {
-        restartPending = false
-        // Let onStateChange('connected') handle the resync
-      }
       // Auto-discover tools on connect
       discover().catch((e) => {
         console.warn('[bridge] Auto-discover failed:', e.message)
@@ -336,9 +329,6 @@ export function createMcpBridge() {
         onFlowNotificationDone?.()
       } else if (msg.type === 'flow_notification_error') {
         onFlowNotificationError?.(msg.error)
-      } else if (msg.type === 'supervisor_restart') {
-        restartPending = true
-        onSupervisorRestart?.()
       } else if (msg.type === 'error' && msg.id) {
         const p = pending.get(msg.id)
         if (p) {
