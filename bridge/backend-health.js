@@ -120,7 +120,20 @@ export class BackendHealth {
       }
     }
 
+    // Preserve user-set fields (emailAlias, continuityOwner, etc.) from existing profile
+    let existingCustomFields = {}
+    try {
+      if (existsSync(profilePath)) {
+        const existing = JSON.parse(await readFile(profilePath, 'utf-8'))
+        const { hardware: _h, backends: _b, preferences: _p, ...custom } = existing
+        existingCustomFields = custom
+      }
+    } catch (e) {
+      // ignore — we already tried reading above
+    }
+
     const profile = {
+      ...existingCustomFields,
       hardware: {
         hostname: hostname(),
         totalMemory: Math.round(totalmem() / (1024 * 1024 * 1024)) + 'GB',
