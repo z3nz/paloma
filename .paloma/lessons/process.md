@@ -30,6 +30,23 @@
 
 ---
 
+### Lesson: Email systems are runaway multipliers — enforce limits in code, not just policy
+- **Context:** Paloma's email system was sending wildly more emails than intended. Root cause: 4 machines × N emails × retry system × inter-instance feedback loops = exponential growth. The email rate policy existed in `instructions.md` but had zero enforcement in code. Adam was rightfully furious.
+- **Insight:** Any system that sends external messages (email, Slack, webhook) MUST have hard rate limits enforced at the transport layer — not just in docs or prompts. The rate limit in `instructions.md` was a gentleman's agreement. The rate limiter in `mcp-servers/gmail.js` is a hard stop. Prompts can be ignored; code cannot.
+- **Action:** Eight fixes shipped (2026-03-24):
+  1. Hard rate limiter in `gmail.js` (persistent log, 1 continuity + 1 outbound per 24h, replies exempt)
+  2. Strict recipient filtering — if no `emailAlias` in machine-profile.json, watcher is DISABLED
+  3. Inter-instance emails stored only — no session spawning (breaks the feedback loop)
+  4. Retry system removed entirely — no phantom sessions
+  5. Triage uses cheapest backend (Gemini)
+  6. Only `continuityOwner: true` machine sends daily continuity email
+  7. Smart backend rotation (40% Gemini, 40% Copilot, 20% Claude sonnet)
+  8. Subject line `model:X` override for when Opus is actually needed
+- **Principle:** The multiplication math is brutal. 4 machines × retries × inter-instance replies = 12+ sessions per email. Design email-touching systems assuming every component will fire simultaneously on every email. Rate limit at the LAST mile (the transport), not just the first.
+- **Applied:** YES — all 8 fixes committed in `d57edaf feat(bridge): implement email discipline and system prompt hardening`
+
+---
+
 ### Lesson: Multi-machine Paloma instances MUST coordinate via email before touching shared code
 - **Context:** MacBook Paloma started work on WU-4 (frontend fallback) and WU-5 (backend selection DNA) from the multi-backend resilience plan. Built both, committed, went to push — and discovered Lynch Tower Paloma had ALREADY shipped the exact same WUs (commit 26b2526). Had to abort the rebase and discard all work.
 - **Insight:** When multiple Paloma instances run on different machines (Lynch Tower, Lenovo, MacBook), they can independently pick up the same work units from the same active plans. Git prevents data loss (push is rejected, rebase shows conflicts), but the duplicated work is wasted time and API costs. The fix is coordination BEFORE starting work, not conflict resolution AFTER.
