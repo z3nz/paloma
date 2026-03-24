@@ -909,6 +909,12 @@ async function main() {
             }
           }
 
+          // Determine if fresh context mode is enabled
+          const freshContext = !!msg.freshContext
+          const contextFile = freshContext && msg.sessionId
+            ? join(process.cwd(), '.singularity', 'sessions', msg.sessionId, 'context.md')
+            : undefined
+
           const { requestId, sessionId } = ollamaManager.chat(
             {
               prompt: msg.prompt,
@@ -916,7 +922,9 @@ async function main() {
               sessionId: msg.sessionId,
               systemPrompt: msg.systemPrompt,
               cwd: msg.cwd,
-              tools: ollamaTools
+              tools: ollamaTools,
+              freshContext,
+              contextFile
             },
             handleOllamaEvent
           )

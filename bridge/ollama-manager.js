@@ -1,7 +1,20 @@
 import { randomUUID } from 'crypto'
+import { readFile, writeFile, mkdir } from 'fs/promises'
+import { dirname } from 'path'
 
 const MAX_TOOL_ROUNDS = 20  // Safety limit on tool call loops
 const MAX_SESSION_MESSAGES = 100  // Sliding window to prevent unbounded message growth
+
+const SUMMARIZER_PROMPT = `/no_think
+You are a session memory manager. Your job is to maintain a compressed context document that captures everything important from an ongoing conversation.
+
+## Rules
+1. STRUCTURE: Use clear markdown sections — Session Overview, Key Facts, File Map, Recent Activity, Open Tasks
+2. COMPRESS: Summarize exchanges, don't transcribe them. A 500-word exchange becomes 2-3 bullet points.
+3. PRESERVE: Never lose important facts — file paths, decisions, user preferences, code patterns, tool results
+4. UPDATE: Replace outdated info. If a decision was reversed, update it — don't keep both versions.
+5. LIMIT: Keep the document under 3000 words. When it grows too large, compress older sections more aggressively.
+6. FORMAT: Output ONLY the updated markdown document. No wrapping, no commentary, no code fences around it.`
 
 export class OllamaManager {
   constructor() {
@@ -16,7 +29,7 @@ export class OllamaManager {
     this._cleanupInterval.unref() // Don't prevent process exit
   }
 
-  chat({ prompt, model, sessionId, systemPrompt, cwd, tools, numCtx }, onEvent) {
+  chat({ prompt, model, sessionId, systemPrompt, cwd, tools, numCtx, freshContext, contextFile }, onEvent) {
     const requestId = randomUUID()
 
     if (!sessionId) {
@@ -26,7 +39,7 @@ export class OllamaManager {
     // Create or resume session
     let session = this.sessions.get(sessionId)
     if (!session) {
-      session = { messages: [], model: model || 'qwen3-coder:30b', tools: null, numCtx: numCtx || null, lastActivity: Date.now() }
+      session = { messages: [], model: model || 'qwen3-coder:30b', tools: null, numCtx: numCtx || null, lastActivity: Date.now(), freshContext: freshContext || false, contextFile: contextFile || null, _lastUserMessage: null, _summarizing: null }
       // Prepend system message on new session
       if (systemPrompt) {
         session.messages.push({ role: 'system', content: systemPrompt })
@@ -49,10 +62,17 @@ export class OllamaManager {
 
     // Append user message
     session.messages.push({ role: 'user', content: prompt })
+    session._lastUserMessage = prompt
     session.lastActivity = Date.now()
 
+    // Fresh context mode: mark turn start for _streamChat to rebuild messages
+    if (session.freshContext) {
+      session._freshTurnStart = true
+    }
+
     // Sliding window: keep system message + last N messages to prevent unbounded growth
-    if (session.messages.length > MAX_SESSION_MESSAGES) {
+    // (Skip for freshContext — messages are rebuilt each turn anyway)
+    if (!session.freshContext && session.messages.length > MAX_SESSION_MESSAGES) {
       const systemMsg = session.messages[0]?.role === 'system' ? session.messages[0] : null
       session.messages = systemMsg
         ? [systemMsg, ...session.messages.slice(-(MAX_SESSION_MESSAGES - 1))]
@@ -107,6 +127,33 @@ export class OllamaManager {
 
   async _streamChat(requestId, sessionId, session, controller, onEvent) {
     try {
+      // Fresh context mode: rebuild messages from context file + latest user message
+      // Only on turn start (not tool continuations)
+      if (session._freshTurnStart && session.freshContext && session.contextFile) {
+        session._freshTurnStart = false
+
+        // Wait for any pending summarization from previous turn
+        if (session._summarizing) {
+          await session._summarizing
+          session._summarizing = null
+        }
+
+        const context = await readFile(session.contextFile, 'utf8').catch(() => '')
+        const systemMsg = session.messages[0]?.role === 'system' ? session.messages[0] : null
+        const userMsg = session._lastUserMessage || ''
+
+        // Rebuild: system prompt + single user message (context + actual message)
+        session.messages = []
+        if (systemMsg) session.messages.push(systemMsg)
+
+        const combinedContent = context
+          ? `<session_context>\n${context}\n</session_context>\n\n---\n\n${userMsg}`
+          : userMsg
+        session.messages.push({ role: 'user', content: combinedContent })
+
+        console.log(`[ollama] Fresh context: loaded ${context.length} chars from ${session.contextFile}`)
+      }
+
       const body = {
         model: session.model,
         messages: [...session.messages],
@@ -297,6 +344,15 @@ export class OllamaManager {
       if (session2) {
         session2.messages.push({ role: 'assistant', content: fullAssistantText })
         session2.lastActivity = Date.now()
+
+        // Fresh context: trigger background summarization
+        if (session2.freshContext && session2.contextFile && fullAssistantText) {
+          session2._summarizing = this._updateFreshContext(
+            session2.contextFile,
+            session2._lastUserMessage || '',
+            fullAssistantText
+          ).catch(err => console.error('[ollama] Fresh context update failed:', err.message))
+        }
       }
 
       this.requests.delete(requestId)
@@ -514,6 +570,52 @@ export class OllamaManager {
     }
 
     return calls
+  }
+
+  /**
+   * Update the fresh context document after a turn completes.
+   * Calls the summarizer model to produce an updated compressed context.
+   */
+  async _updateFreshContext(contextFile, userMessage, assistantResponse) {
+    const existing = await readFile(contextFile, 'utf8').catch(() => '')
+
+    const userContent = existing
+      ? `## Existing Context Document\n\n${existing}\n\n---\n\n## Latest Exchange\n\nUser: ${userMessage}\n\nAssistant: ${assistantResponse}\n\n---\n\nProduce the UPDATED context document incorporating the latest exchange.`
+      : `## First Exchange\n\nUser: ${userMessage}\n\nAssistant: ${assistantResponse}\n\n---\n\nCreate the initial context document from this first exchange.`
+
+    const response = await fetch(`${this.baseURL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'qwen2.5-coder:7b',
+        messages: [
+          { role: 'system', content: SUMMARIZER_PROMPT },
+          { role: 'user', content: userContent }
+        ],
+        stream: false,
+        options: { num_ctx: 32768 }
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`Summarizer API error ${response.status}`)
+    }
+
+    const result = await response.json()
+    let summary = result.message?.content || ''
+
+    // Strip any thinking tags from Qwen output
+    summary = summary.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+
+    if (!summary) {
+      console.warn('[ollama] Summarizer produced empty output — keeping existing context')
+      return
+    }
+
+    // Ensure directory exists and write
+    await mkdir(dirname(contextFile), { recursive: true })
+    await writeFile(contextFile, summary, 'utf8')
+    console.log(`[ollama] Fresh context updated: ${contextFile} (${summary.length} chars)`)
   }
 
   _cleanupSessions() {

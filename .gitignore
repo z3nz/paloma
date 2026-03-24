@@ -51,3 +51,4 @@ vite.config.js.timestamp-*
 # Singularity workspace (ephemeral scratch space, but keep dir structure)
 .singularity/workspace/*
 !.singularity/workspace/.gitkeep
+.singularity/sessions/

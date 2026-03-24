@@ -455,7 +455,8 @@ export function createMcpBridge() {
         sessionId: options.sessionId,
         systemPrompt: options.systemPrompt,
         cwd: options.cwd,
-        ...(options.enableTools !== undefined ? { enableTools: options.enableTools } : {})
+        ...(options.enableTools !== undefined ? { enableTools: options.enableTools } : {}),
+        ...(options.freshContext ? { freshContext: true } : {})
       }).catch((e) => {
         clearTimeout(timer)
         pending.delete(id)

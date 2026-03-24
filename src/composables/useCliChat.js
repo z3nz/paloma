@@ -60,7 +60,8 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
         ? buildOllamaSystemPrompt(phase, projectInstructions)
         : buildSystemPrompt(phase, projectInstructions, activePlans, [], roots),
     cwd: useProject().projectRoot.value || undefined,
-    enableTools: useOllama ? true : undefined
+    enableTools: useOllama ? true : undefined,
+    freshContext: useOllama ? true : undefined
   }
 
   let accumulatedContent = ''

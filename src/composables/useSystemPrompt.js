@@ -1,4 +1,4 @@
-import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS } from '../prompts/base.js'
+import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_FRESH_PROMPT } from '../prompts/base.js'
 import { PHASE_INSTRUCTIONS } from '../prompts/phases.js'
 
 export function buildSystemPrompt(phase, projectInstructions, activePlans, enabledMcpTools = [], roots = []) {
@@ -48,9 +48,8 @@ export function buildOllamaSystemPrompt(phase, projectInstructions) {
     prompt += '\n\n## Project Context\n\n' + truncated
   }
 
-  // Add a brief pillar note (not the full phase instructions)
-  const activePillar = phase || 'flow'
-  prompt += `\n\nYou are currently in the **${activePillar.charAt(0).toUpperCase() + activePillar.slice(1)}** pillar.`
+  // Add Quinn Fresh identity for fresh-context singularity mode
+  prompt += '\n\n' + SINGULARITY_FRESH_PROMPT
 
   return prompt
 }

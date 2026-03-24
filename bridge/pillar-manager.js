@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
-import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT, SINGULARITY_QUINN_PROMPT, SINGULARITY_WORKER_PROMPT } from '../src/prompts/base.js'
+import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT, SINGULARITY_QUINN_PROMPT, SINGULARITY_WORKER_PROMPT, SINGULARITY_FRESH_PROMPT } from '../src/prompts/base.js'
 import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
 import { Persistence } from './persistence.js'
 import { createLogger } from './logger.js'
@@ -296,10 +296,10 @@ export class PillarManager {
       _fallbackAttempted: false,    // prevents infinite retry loops
       // Singularity dual-mind fields
       singularityGroupId: null,     // UUID linking Voice ↔ Thinker
-      singularityRole: singularityRole || null,  // 'voice' | 'thinker' | 'quinn' | 'quinn-gen4' | 'worker' | null
+      singularityRole: singularityRole || null,  // 'voice' | 'thinker' | 'quinn' | 'quinn-gen4' | 'quinn-fresh' | 'worker' | null
       generation: generation || (singularityRole === 'quinn-gen4' ? 1 : null),  // Gen4 generation number
       workerSpawnCount: 0,
-      numCtx: (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536 : (singularityRole === 'worker' ? 32768 : null),
+      numCtx: (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-fresh' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536 : (singularityRole === 'worker' ? 32768 : null),
       _voiceStreamBuffer: '',       // Voice only: buffer for <to-thinker> tag detection
       _receivedThinkerMessages: 0   // Voice only: count of [THINKER] messages received
     }
@@ -2184,6 +2184,12 @@ This is informational — Adam is communicating directly with the pillar. Decide
       chatOptions.numCtx = session.numCtx
     }
 
+    // Fresh context mode for quinn-fresh: each message gets a brand new context
+    if (session.backend === 'ollama' && session.singularityRole === 'quinn-fresh') {
+      chatOptions.freshContext = true
+      chatOptions.contextFile = join(this.projectRoot, '.singularity', 'sessions', session.pillarId, 'context.md')
+    }
+
     // Per-turn identity reminder for Codex/Copilot resumed sessions (WU-3)
     // These backends receive identity as user-turn XML on turn 1 — no true system channel.
     // As conversation grows, the identity blob drifts further back in the attention window.
@@ -2717,7 +2723,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
     // Singularity sessions (Voice/Thinker/Quinn/Worker) get a drastically stripped system prompt:
     // OLLAMA_INSTRUCTIONS + project instructions + role prompt ONLY.
     // No plans, no roots, no phase instructions — saves ~25K tokens of context budget.
-    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'worker'
+    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'worker' || singularityRole === 'quinn-fresh'
 
     // Claude CLI reads CLAUDE.md automatically, which includes instructions.md and roots
     // via @ references. Including them again here would duplicate ~43KB of content and
@@ -2791,6 +2797,8 @@ This is informational — Adam is communicating directly with the pillar. Decide
       prompt += '\n\n' + gen4Prompt
     } else if (singularityRole === 'quinn') {
       prompt += '\n\n' + SINGULARITY_QUINN_PROMPT
+    } else if (singularityRole === 'quinn-fresh') {
+      prompt += '\n\n' + SINGULARITY_FRESH_PROMPT
     } else if (singularityRole === 'worker') {
       prompt += '\n\n' + SINGULARITY_WORKER_PROMPT
     } else if (singularityRole === 'voice') {
