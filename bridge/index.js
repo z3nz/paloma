@@ -9,7 +9,7 @@ process.on('uncaughtException', (err) => {
   console.error('[bridge] Uncaught exception:', err)
   // Don't exit — the bridge should stay alive. Only fatal errors (like ENOMEM) will kill it.
 })
-import { mkdir, writeFile, readdir, stat, unlink, readFile } from 'fs/promises'
+import { mkdir, writeFile, readdir, stat, unlink, readFile, rename } from 'fs/promises'
 import { writeFileSync, unlinkSync, createReadStream, existsSync, readFileSync } from 'fs'
 import { join, extname } from 'path'
 import { homedir, tmpdir } from 'os'
@@ -190,6 +190,42 @@ async function main() {
     '.map': 'application/json'
   }
 
+  // ─── Files API helpers (hoisted outside request handler) ─────────────────
+  const FILES_SLUG_RE = /^[a-z0-9_-]+$/i
+  const filesBasePath = join(homedir(), 'paloma/projects')
+  const FILE_MIME_TYPES = {
+    '.pdf': 'application/pdf', '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif', '.svg': 'image/svg+xml',
+    '.txt': 'text/plain', '.csv': 'text/csv',
+    '.zip': 'application/zip', '.gz': 'application/gzip'
+  }
+
+  function validateSlug(slug) {
+    return slug && FILES_SLUG_RE.test(slug) && !slug.includes('..')
+  }
+  function validateFilename(filename) {
+    return filename && !filename.includes('/') && !filename.includes('\\') && !filename.includes('..')
+  }
+  async function readIndex(dirPath) {
+    try {
+      const raw = await readFile(join(dirPath, '.index.json'), 'utf8')
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  async function writeIndexAtomic(dirPath, entries) {
+    const indexPath = join(dirPath, '.index.json')
+    const tmpPath = indexPath + '.tmp'
+    await writeFile(tmpPath, JSON.stringify(entries, null, 2))
+    await rename(tmpPath, indexPath)
+  }
+
   const httpServer = createHttpServer(async (req, res) => {
     const url = new URL(req.url, `http://localhost:${port}`)
     const pathname = url.pathname
@@ -197,7 +233,7 @@ async function main() {
     // CORS headers for API routes (dev mode: Vite on :5173 → Bridge on :19191)
     const corsHeaders = pathname.startsWith('/api/') ? {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type'
     } : {}
 
@@ -279,7 +315,7 @@ async function main() {
         uptime: Math.round((Date.now() - startTime) / 1000),
         backends: health ? health.status : {},
         pillars: pillarManager ? pillarManager.list().pillars.length : 0,
-        mcpServers: manager ? Object.keys(manager.servers).length : 0
+        mcpServers: manager ? manager.clients.size : 0
       }
       res.end(JSON.stringify(status, null, 2))
       return
@@ -293,6 +329,212 @@ async function main() {
         // Broadcast that the store has been updated
         broadcast({ type: 'email_store_updated' })
       } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json', ...corsHeaders })
+        res.end(JSON.stringify({ error: err.message }))
+      }
+      return
+    }
+
+    // ─── Files API Routes ────────────────────────────────────────────────────
+
+    // POST /api/files/upload — upload a file
+    if (pathname === '/api/files/upload' && req.method === 'POST') {
+      try {
+        const chunks = []
+        for await (const chunk of req) chunks.push(chunk)
+        const body = JSON.parse(Buffer.concat(chunks).toString())
+        const { slug, filename, data, mimeType } = body
+
+        if (!validateSlug(slug)) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+          res.end(JSON.stringify({ error: 'Invalid project slug' }))
+          return
+        }
+        if (!filename || !validateFilename(filename)) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+          res.end(JSON.stringify({ error: 'Invalid filename' }))
+          return
+        }
+        if (!data) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+          res.end(JSON.stringify({ error: 'Missing file data' }))
+          return
+        }
+
+        const dirPath = join(filesBasePath, slug, 'files')
+        await mkdir(dirPath, { recursive: true })
+
+        // Check collision — append timestamp if needed
+        const index = await readIndex(dirPath)
+        let finalName = filename
+        if (index.some(e => e.filename === filename)) {
+          const now = new Date()
+          const ts = String(now.getHours()).padStart(2, '0') +
+                     String(now.getMinutes()).padStart(2, '0') +
+                     String(now.getSeconds()).padStart(2, '0')
+          const dotIdx = filename.lastIndexOf('.')
+          finalName = dotIdx > 0
+            ? filename.slice(0, dotIdx) + '-' + ts + filename.slice(dotIdx)
+            : filename + '-' + ts
+        }
+
+        const fileBuf = Buffer.from(data, 'base64')
+        const filePath = join(dirPath, finalName)
+
+        // Path traversal check
+        if (!filePath.startsWith(dirPath)) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+          res.end(JSON.stringify({ error: 'Path traversal rejected' }))
+          return
+        }
+
+        await writeFile(filePath, fileBuf)
+
+        index.push({
+          filename: finalName,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: body.uploadedBy || 'unknown',
+          size: fileBuf.length,
+          mimeType: mimeType || 'application/octet-stream'
+        })
+        await writeIndexAtomic(dirPath, index)
+
+        res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
+        res.end(JSON.stringify({ success: true, filename: finalName, size: fileBuf.length }))
+      } catch (err) {
+        console.error('[bridge] POST /api/files/upload:', err.message)
+        res.writeHead(500, { 'Content-Type': 'application/json', ...corsHeaders })
+        res.end(JSON.stringify({ error: err.message }))
+      }
+      return
+    }
+
+    // DELETE /api/files/:slug/:filename — delete a file
+    if (pathname.startsWith('/api/files/') && req.method === 'DELETE') {
+      try {
+        const parts = pathname.split('/').filter(Boolean) // ['api', 'files', slug, filename]
+        const slug = parts[2]
+        const filename = parts[3] ? decodeURIComponent(parts[3]) : undefined
+
+        if (!validateSlug(slug)) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+          res.end(JSON.stringify({ error: 'Invalid project slug' }))
+          return
+        }
+        if (!filename || !validateFilename(filename)) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+          res.end(JSON.stringify({ error: 'Invalid filename' }))
+          return
+        }
+
+        const dirPath = join(filesBasePath, slug, 'files')
+        const filePath = join(dirPath, filename)
+
+        if (!filePath.startsWith(dirPath)) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+          res.end(JSON.stringify({ error: 'Path traversal rejected' }))
+          return
+        }
+
+        try {
+          await unlink(filePath)
+        } catch (unlinkErr) {
+          if (unlinkErr.code === 'ENOENT') {
+            res.writeHead(404, { 'Content-Type': 'application/json', ...corsHeaders })
+            res.end(JSON.stringify({ error: 'File not found' }))
+            return
+          }
+          throw unlinkErr
+        }
+
+        const index = await readIndex(dirPath)
+        const updated = index.filter(e => e.filename !== filename)
+        await writeIndexAtomic(dirPath, updated)
+
+        res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
+        res.end(JSON.stringify({ success: true, filename }))
+      } catch (err) {
+        console.error('[bridge] DELETE /api/files:', err.message)
+        res.writeHead(500, { 'Content-Type': 'application/json', ...corsHeaders })
+        res.end(JSON.stringify({ error: err.message }))
+      }
+      return
+    }
+
+    // GET /api/files/:slug or GET /api/files/:slug/:filename
+    if (pathname.startsWith('/api/files/') && req.method === 'GET') {
+      try {
+        const parts = pathname.split('/').filter(Boolean) // ['api', 'files', slug, ?filename]
+        const slug = parts[2]
+
+        if (!validateSlug(slug)) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+          res.end(JSON.stringify({ error: 'Invalid project slug' }))
+          return
+        }
+
+        const dirPath = join(filesBasePath, slug, 'files')
+
+        // GET /api/files/:slug — list files
+        if (parts.length === 3) {
+          const index = await readIndex(dirPath)
+          res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
+          res.end(JSON.stringify({ files: index }))
+          return
+        }
+
+        // GET /api/files/:slug/:filename — download file
+        if (parts.length === 4) {
+          const filename = decodeURIComponent(parts[3])
+          if (!validateFilename(filename)) {
+            res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+            res.end(JSON.stringify({ error: 'Invalid filename' }))
+            return
+          }
+
+          const filePath = join(dirPath, filename)
+          if (!filePath.startsWith(dirPath)) {
+            res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+            res.end(JSON.stringify({ error: 'Path traversal rejected' }))
+            return
+          }
+
+          // Determine MIME type
+          const ext = extname(filename).toLowerCase()
+          const contentType = FILE_MIME_TYPES[ext] || 'application/octet-stream'
+
+          const stream = createReadStream(filePath)
+          stream.on('open', () => {
+            res.writeHead(200, {
+              'Content-Type': contentType,
+              'Content-Disposition': `attachment; filename="${filename}"`,
+              ...corsHeaders
+            })
+            stream.pipe(res)
+          })
+          stream.on('error', (streamErr) => {
+            if (res.headersSent) {
+              // Headers already sent (stream opened then failed mid-read) — just end the response
+              console.error('[bridge] GET /api/files stream error after headers sent:', streamErr.message)
+              res.end()
+              return
+            }
+            if (streamErr.code === 'ENOENT') {
+              res.writeHead(404, { 'Content-Type': 'application/json', ...corsHeaders })
+              res.end(JSON.stringify({ error: 'File not found' }))
+            } else {
+              console.error('[bridge] GET /api/files download error:', streamErr.message)
+              res.writeHead(500, { 'Content-Type': 'application/json', ...corsHeaders })
+              res.end(JSON.stringify({ error: streamErr.message }))
+            }
+          })
+          return
+        }
+
+        res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+        res.end(JSON.stringify({ error: 'Invalid files API path' }))
+      } catch (err) {
+        console.error('[bridge] GET /api/files:', err.message)
         res.writeHead(500, { 'Content-Type': 'application/json', ...corsHeaders })
         res.end(JSON.stringify({ error: err.message }))
       }
