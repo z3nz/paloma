@@ -88,3 +88,29 @@ A repeatable, multi-machine self-improvement cycle. Each run: assess what's chan
 - All three file-disjoint with Lenovo's HP-1/MP-4 — safe to run in parallel
 - Lenovo still working HP-1 + MP-4
 - All three completed: QW-9 (structured logger), QW-3 (lifecycle metrics), QW-7 (per-tool timeout)
+
+### Run 4 — 2026-03-25 (Lenovo — Deep Logger Migration + Code Quality)
+Continued QW-9 structured logger migration across all remaining bridge modules. Also code quality + accessibility pass.
+
+**Completed:**
+- [x] Extracted shared JSONL stream parser (`bridge/cli-stream-parser.js`) — eliminated ~100 lines of duplicated buffer management across 4 CLI managers → commit 5101723
+- [x] Migrated claude-cli, codex-cli, copilot-cli, gemini-cli to structured logger → commit 5101723
+- [x] Migrated email-watcher, email-store, backend-health to structured logger → commit 07690f7
+- [x] Migrated index.js and persistence.js to structured logger → commit d1af56a
+- [x] CommandPalette ARIA combobox accessibility + MessageItem copy button refactor → commit b6bbb5e
+- [x] Removed ~130 lines dead commented-out code from `src/prompts/base.js` → commit b6bbb5e
+- [x] Deep codebase scan findings documented → commit 263e235
+
+**Still remaining (logger migration):**
+- [ ] `bridge/pillar-manager.js` — 69 console calls (biggest target, already has logger import)
+- [ ] `bridge/ollama-manager.js` — 15 console calls
+- [ ] `bridge/config.js` — 2 console calls
+
+**Still remaining (frontend polish):**
+- [ ] Wrap `console.time/timeEnd` perf logs in `import.meta.env.DEV` checks (useChat.js, useOpenRouter.js, useFileIndex.js)
+- [ ] Add `aria-label` to 5 TopBar/Sidebar buttons missing accessible labels
+
+**Deferred (large effort — needs Chart):**
+- useChat.js god object decomposition
+- pillar-manager.js god object decomposition
+- CLI manager base class extraction
