@@ -28,6 +28,7 @@
     "@modelcontextprotocol/server-brave-search": "^0.6.2",
     "@modelcontextprotocol/server-filesystem": "^2026.1.14",
     "@mseep/git-mcp-server": "^2.1.4",
+    "@playwright/mcp": "^0.0.68",
     "@tailwindcss/vite": "4.0",
     "@thelord/mcp-cloudflare": "^1.6.0",
     "dexie": "^4.3.0",

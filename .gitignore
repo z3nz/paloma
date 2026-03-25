@@ -52,3 +52,4 @@ vite.config.js.timestamp-*
 .singularity/workspace/*
 !.singularity/workspace/.gitkeep
 .singularity/sessions/
+.paloma/usage-tracking.json
