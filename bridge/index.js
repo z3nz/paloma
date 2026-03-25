@@ -85,6 +85,7 @@ import { OllamaManager } from './ollama-manager.js'
 import { McpProxyServer } from './mcp-proxy-server.js'
 import { PillarManager, OLLAMA_ALLOWED_SERVERS } from './pillar-manager.js'
 import { BackendHealth } from './backend-health.js'
+import { UsageTracker } from './usage-tracker.js'
 import { EmailWatcher } from './email-watcher.js'
 import { emailStore } from './email-store.js'
 import { printBanner, stepOk, stepFail, stepInfo, printSummary, printShutdown } from './startup.js'
@@ -179,6 +180,18 @@ async function main() {
     } else {
       stepFail(backend, info.reason)
     }
+  }
+
+  // Initialize usage tracker — tracks sessions per backend and auto-disables at threshold
+  const usageTracker = new UsageTracker(process.cwd())
+  health.usageTracker = usageTracker
+  await usageTracker.load()
+  const usageSummary = usageTracker.getSummary()
+  const limitedBackends = Object.entries(usageSummary).filter(([, v]) => v.usageLimited).map(([k]) => k)
+  if (limitedBackends.length > 0) {
+    stepInfo(`Usage-limited backends: ${limitedBackends.join(', ')}`)
+  } else {
+    stepOk('usage', 'all backends within limits')
   }
 
   stepInfo('Loading MCP servers...')
