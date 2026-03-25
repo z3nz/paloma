@@ -1,5 +1,9 @@
 import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
+import { attachStreamParser } from './cli-stream-parser.js'
+import { createLogger } from './logger.js'
+
+const log = createLogger('codex')
 
 export class CodexCliManager {
   constructor() {
@@ -45,7 +49,7 @@ export class CodexCliManager {
     if (sessionId) {
       // Resume existing conversation using thread ID
       args = ['exec', 'resume', sessionId, '--json', '--full-auto', fullPrompt]
-      console.log(`[codex:${reqShort}] Resuming thread ${sessionId}`)
+      log.info(`[${reqShort}] Resuming thread ${sessionId}`)
     } else {
       // New conversation
       args = ['exec', '--json', '--full-auto', '-C', cwd || process.cwd()]
@@ -53,15 +57,15 @@ export class CodexCliManager {
 
       // Inject MCP proxy config so Codex gets all of Paloma's tools
       if (!this.mcpProxyPort) {
-        console.warn(`[codex:${reqShort}] WARNING: mcpProxyPort not set — spawning WITHOUT MCP tools`)
+        log.warn(`[${reqShort}] mcpProxyPort not set — spawning WITHOUT MCP tools`)
       }
       if (this.mcpProxyPort) {
         args.push('-c', `mcp_servers.paloma.url="http://localhost:${this.mcpProxyPort}/mcp?cliRequestId=${requestId}"`)
-        console.log(`[codex:${reqShort}] MCP proxy injected via -c flag (port ${this.mcpProxyPort})`)
+        log.debug(`[${reqShort}] MCP proxy injected via -c flag (port ${this.mcpProxyPort})`)
       }
 
       args.push(fullPrompt)
-      console.log(`[codex:${reqShort}] New session, model=${model || 'default'}`)
+      log.info(`[${reqShort}] New session, model=${model || 'default'}`)
     }
 
     const proc = spawn('codex', args, {
@@ -72,44 +76,29 @@ export class CodexCliManager {
 
     let threadId = sessionId || randomUUID()
     this.processes.set(requestId, { process: proc, threadId })
-    console.log(`[codex:${reqShort}] Process spawned, pid=${proc.pid}`)
+    log.info(`[${reqShort}] Process spawned, pid=${proc.pid}`)
 
-    let buffer = ''
+    const flush = attachStreamParser(proc.stdout, (event) => {
+      this._handleEvent(event, requestId, onEvent)
 
-    proc.stdout.on('data', (data) => {
-      buffer += data.toString()
-      const lines = buffer.split('\n')
-      buffer = lines.pop() // keep incomplete line in buffer
+      // Capture thread ID from thread.started event
+      if (event.type === 'thread.started' && event.thread_id) {
+        threadId = event.thread_id
+        const entry = this.processes.get(requestId)
+        if (entry) entry.threadId = threadId
 
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
-        try {
-          const event = JSON.parse(trimmed)
-          this._handleEvent(event, requestId, onEvent)
-
-          // Capture thread ID from thread.started event
-          if (event.type === 'thread.started' && event.thread_id) {
-            threadId = event.thread_id
-            const entry = this.processes.get(requestId)
-            if (entry) entry.threadId = threadId
-            
-            // Emit session_id early so frontend can associate pillar spawns
-            onEvent({
-              type: 'codex_stream',
-              requestId,
-              event: { type: 'session_id', sessionId: threadId },
-              sessionId: threadId
-            })
-          }
-        } catch {
-          // skip non-JSON lines
-        }
+        // Emit session_id early so frontend can associate pillar spawns
+        onEvent({
+          type: 'codex_stream',
+          requestId,
+          event: { type: 'session_id', sessionId: threadId },
+          sessionId: threadId
+        })
       }
     })
 
     proc.stdout.on('error', (err) => {
-      console.error(`[codex:${reqShort}] stdout error: ${err.message}`)
+      log.error(`[${reqShort}] stdout error: ${err.message}`)
       onEvent({ type: 'codex_error', requestId, error: `Stream error: ${err.message}` })
     })
 
@@ -118,20 +107,12 @@ export class CodexCliManager {
     })
 
     proc.stderr.on('error', (err) => {
-      console.error(`[codex:${reqShort}] stderr error: ${err.message}`)
+      log.error(`[${reqShort}] stderr error: ${err.message}`)
     })
 
     proc.on('close', (code) => {
-      console.log(`[codex:${reqShort}] Process closed, exitCode=${code}`)
-      // Flush remaining buffer
-      if (buffer.trim()) {
-        try {
-          const event = JSON.parse(buffer.trim())
-          this._handleEvent(event, requestId, onEvent)
-        } catch {
-          // skip non-JSON lines
-        }
-      }
+      log.info(`[${reqShort}] Process closed, exitCode=${code}`)
+      flush()
       // Use latest threadId from entry (may have been updated by thread.started event)
       const entry = this.processes.get(requestId)
       const finalThreadId = entry?.threadId || threadId
@@ -140,7 +121,7 @@ export class CodexCliManager {
     })
 
     proc.on('error', (err) => {
-      console.error(`[codex:${reqShort}] Process error: ${err.message}`)
+      log.error(`[${reqShort}] Process error: ${err.message}`)
       this.processes.delete(requestId)
       onEvent({ type: 'codex_error', requestId, error: err.message })
     })
@@ -161,7 +142,7 @@ export class CodexCliManager {
     // failure comes when the process exits with non-zero code.
     if (event.type === 'error') {
       const errorText = event.message || event.error || JSON.stringify(event)
-      console.error(`[codex:${reqShort}] Error event: ${errorText}`)
+      log.error(`[${reqShort}] Error event: ${errorText}`)
       onEvent({
         type: 'codex_stream',
         requestId,

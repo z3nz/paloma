@@ -4,6 +4,10 @@ import { mkdirSync, writeFileSync, rmSync } from 'fs'
 import { readdir, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
+import { attachStreamParser } from './cli-stream-parser.js'
+import { createLogger } from './logger.js'
+
+const log = createLogger('gemini')
 
 export class GeminiCliManager {
   constructor() {
@@ -22,7 +26,7 @@ export class GeminiCliManager {
       await Promise.allSettled(
         dirs.map(d => rm(join(tmp, d), { recursive: true, force: true }))
       )
-      console.log(`[gemini] Cleaned up ${dirs.length} orphaned temp dir(s)`)
+      log.info(`Cleaned up ${dirs.length} orphaned temp dir(s)`)
     } catch { /* best-effort */ }
   }
 
@@ -36,7 +40,7 @@ export class GeminiCliManager {
 
     // Write MCP config as .gemini/settings.json in the temp cwd
     if (!this.mcpProxyPort) {
-      console.warn(`[gemini:${reqShort}] WARNING: mcpProxyPort not set — spawning WITHOUT MCP tools`)
+      log.warn(`[${reqShort}] mcpProxyPort not set — spawning WITHOUT MCP tools`)
     }
     if (this.mcpProxyPort) {
       const settings = {
@@ -52,7 +56,7 @@ export class GeminiCliManager {
         }
       }
       writeFileSync(join(sessionDir, '.gemini', 'settings.json'), JSON.stringify(settings, null, 2))
-      console.log(`[gemini:${reqShort}] MCP settings written to ${sessionDir}/.gemini/settings.json`)
+      log.debug(`[${reqShort}] MCP settings written to ${sessionDir}/.gemini/settings.json`)
     }
 
     // Write system prompt to temp file (GEMINI_SYSTEM_MD replaces built-in prompt)
@@ -67,13 +71,13 @@ export class GeminiCliManager {
     if (sessionId) {
       // Resume existing session
       args.push('--resume', sessionId)
-      console.log(`[gemini:${reqShort}] Resuming session ${sessionId}`)
+      log.info(`[${reqShort}] Resuming session ${sessionId}`)
     } else {
       // New session
       if (model) args.push('--model', model)
       // Include the actual project directory so Gemini has workspace context
       if (cwd) args.push('--include-directories', cwd)
-      console.log(`[gemini:${reqShort}] New session, model=${model || 'default'}`)
+      log.info(`[${reqShort}] New session, model=${model || 'default'}`)
     }
 
     const env = { ...process.env }
@@ -88,52 +92,29 @@ export class GeminiCliManager {
     })
 
     this.processes.set(requestId, { process: proc, sessionId, sessionDir })
-    console.log(`[gemini:${reqShort}] Process spawned, pid=${proc.pid}`)
+    log.info(`[${reqShort}] Process spawned, pid=${proc.pid}`)
 
-    let buffer = ''
-
-    proc.stdout.on('data', (data) => {
-      buffer += data.toString()
-      const lines = buffer.split('\n')
-      buffer = lines.pop() // keep incomplete line in buffer
-
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
-        try {
-          const event = JSON.parse(trimmed)
-          this._handleEvent(event, requestId, onEvent)
-        } catch {
-          // skip non-JSON lines
-        }
-      }
+    const flush = attachStreamParser(proc.stdout, (event) => {
+      this._handleEvent(event, requestId, onEvent)
     })
 
     proc.stdout.on('error', (err) => {
-      console.error(`[gemini:${reqShort}] stdout error: ${err.message}`)
+      log.error(`[${reqShort}] stdout error: ${err.message}`)
       onEvent({ type: 'gemini_error', requestId, error: `Stream error: ${err.message}` })
     })
 
     proc.stderr.on('data', (data) => {
       const text = data.toString().trim()
-      if (text) console.error(`[gemini:${reqShort}] stderr: ${text}`)
+      if (text) log.warn(`[${reqShort}] stderr: ${text}`)
     })
 
     proc.stderr.on('error', (err) => {
-      console.error(`[gemini:${reqShort}] stderr error: ${err.message}`)
+      log.error(`[${reqShort}] stderr error: ${err.message}`)
     })
 
     proc.on('close', (code) => {
-      console.log(`[gemini:${reqShort}] Process closed, exitCode=${code}`)
-      // Flush remaining buffer
-      if (buffer.trim()) {
-        try {
-          const event = JSON.parse(buffer.trim())
-          this._handleEvent(event, requestId, onEvent)
-        } catch {
-          // skip
-        }
-      }
+      log.info(`[${reqShort}] Process closed, exitCode=${code}`)
+      flush()
       // Clean up temp session directory
       const entry = this.processes.get(requestId)
       if (entry?.sessionDir) {
@@ -145,7 +126,7 @@ export class GeminiCliManager {
     })
 
     proc.on('error', (err) => {
-      console.error(`[gemini:${reqShort}] Process error: ${err.message}`)
+      log.error(`[${reqShort}] Process error: ${err.message}`)
       try { rmSync(sessionDir, { recursive: true, force: true }) } catch {}
       this.processes.delete(requestId)
       onEvent({ type: 'gemini_error', requestId, error: err.message })
@@ -172,7 +153,7 @@ export class GeminiCliManager {
       if (event.session_id) {
         const entry = this.processes.get(requestId)
         if (entry) entry.sessionId = event.session_id
-        console.log(`[gemini:${reqShort}] Session ID: ${event.session_id}`)
+        log.info(`[${reqShort}] Session ID: ${event.session_id}`)
         
         // Emit session_id early so frontend can associate pillar spawns
         onEvent({

@@ -3,6 +3,10 @@ import { randomUUID } from 'crypto'
 import { writeFileSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
+import { attachStreamParser } from './cli-stream-parser.js'
+import { createLogger } from './logger.js'
+
+const log = createLogger('claude')
 
 export class ClaudeCliManager {
   constructor() {
@@ -18,7 +22,7 @@ export class ClaudeCliManager {
     if (sessionId) {
       // Resume existing conversation
       args.push('--resume', sessionId)
-      console.log(`[cli:${reqShort}] Resuming session ${sessionId}`)
+      log.info(`[${reqShort}] Resuming session ${sessionId}`)
     } else {
       // New conversation
       sessionId = randomUUID()
@@ -30,17 +34,17 @@ export class ClaudeCliManager {
         const promptBytes = Buffer.byteLength(systemPrompt, 'utf-8')
         const MAX_ARG_BYTES = 120000 // conservative threshold below 131072
         if (promptBytes > MAX_ARG_BYTES) {
-          console.warn(`[cli:${reqShort}] System prompt is ${(promptBytes / 1024).toFixed(0)}KB — approaching 128KB per-arg limit. Consider reducing active plans.`)
+          log.warn(`[${reqShort}] System prompt is ${(promptBytes / 1024).toFixed(0)}KB — approaching 128KB per-arg limit. Consider reducing active plans.`)
         }
         args.push('--append-system-prompt', systemPrompt)
       }
-      console.log(`[cli:${reqShort}] New session, model=${model}`)
+      log.info(`[${reqShort}] New session, model=${model}`)
     }
 
     // Inject MCP config if proxy is available
     let mcpConfigPath = null
     if (!this.mcpProxyPort) {
-      console.warn(`[cli:${reqShort}] WARNING: mcpProxyPort not set — spawning WITHOUT MCP tools`)
+      log.warn(`[${reqShort}] mcpProxyPort not set — spawning WITHOUT MCP tools`)
     }
     if (this.mcpProxyPort) {
       mcpConfigPath = join(tmpdir(), `paloma-mcp-${requestId}.json`)
@@ -57,7 +61,7 @@ export class ClaudeCliManager {
       // Pre-approve all paloma MCP tools so CLI doesn't prompt for permission
       // (the MCP proxy itself gates execution with browser confirmation)
       args.push('--allowedTools', 'mcp__paloma__*')
-      console.log(`[cli:${reqShort}] MCP config written to ${mcpConfigPath}`)
+      log.debug(`[${reqShort}] MCP config written to ${mcpConfigPath}`)
     }
 
     const proc = spawn('claude', args, {
@@ -67,29 +71,14 @@ export class ClaudeCliManager {
     })
 
     this.processes.set(requestId, { process: proc, sessionId, mcpConfigPath })
-    console.log(`[cli:${reqShort}] Process spawned, pid=${proc.pid}`)
+    log.info(`[${reqShort}] Process spawned, pid=${proc.pid}`)
 
-    let buffer = ''
-
-    proc.stdout.on('data', (data) => {
-      buffer += data.toString()
-      const lines = buffer.split('\n')
-      buffer = lines.pop() // keep incomplete line in buffer
-
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
-        try {
-          const event = JSON.parse(trimmed)
-          onEvent({ type: 'claude_stream', requestId, event })
-        } catch {
-          // skip non-JSON lines
-        }
-      }
+    const flush = attachStreamParser(proc.stdout, (event) => {
+      onEvent({ type: 'claude_stream', requestId, event })
     })
 
     proc.stdout.on('error', (err) => {
-      console.error(`[cli:${reqShort}] stdout error: ${err.message}`)
+      log.error(`[${reqShort}] stdout error: ${err.message}`)
       onEvent({ type: 'claude_error', requestId, error: `Stream error: ${err.message}` })
     })
 
@@ -98,20 +87,12 @@ export class ClaudeCliManager {
     })
 
     proc.stderr.on('error', (err) => {
-      console.error(`[cli:${reqShort}] stderr error: ${err.message}`)
+      log.error(`[${reqShort}] stderr error: ${err.message}`)
     })
 
     proc.on('close', (code) => {
-      console.log(`[cli:${reqShort}] Process closed, exitCode=${code}`)
-      // Flush remaining buffer
-      if (buffer.trim()) {
-        try {
-          const event = JSON.parse(buffer.trim())
-          onEvent({ type: 'claude_stream', requestId, event })
-        } catch {
-          // skip
-        }
-      }
+      log.info(`[${reqShort}] Process closed, exitCode=${code}`)
+      flush()
       // Clean up temp MCP config
       const entry = this.processes.get(requestId)
       if (entry?.mcpConfigPath) {
@@ -122,7 +103,7 @@ export class ClaudeCliManager {
     })
 
     proc.on('error', (err) => {
-      console.error(`[cli:${reqShort}] Process error: ${err.message}`)
+      log.error(`[${reqShort}] Process error: ${err.message}`)
       this.processes.delete(requestId)
       onEvent({ type: 'claude_error', requestId, error: err.message })
     })

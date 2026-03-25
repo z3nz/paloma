@@ -4,8 +4,11 @@ import { writeFileSync, mkdirSync, rmSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { promisify } from 'util'
+import { attachStreamParser } from './cli-stream-parser.js'
+import { createLogger } from './logger.js'
 
 const execFileAsync = promisify(execFile)
+const log = createLogger('copilot')
 
 export class CopilotCliManager {
   constructor() {
@@ -65,7 +68,7 @@ export class CopilotCliManager {
       instructionsDirPath = join(tmpdir(), `paloma-copilot-inst-${requestId}`)
       mkdirSync(instructionsDirPath, { recursive: true })
       writeFileSync(join(instructionsDirPath, 'AGENTS.md'), effectiveSystemPrompt, 'utf8')
-      console.log(`[copilot:${reqShort}] Instructions dir written to ${instructionsDirPath}`)
+      log.debug(`[${reqShort}] Instructions dir written to ${instructionsDirPath}`)
     }
 
     if (sessionId) {
@@ -77,7 +80,7 @@ export class CopilotCliManager {
       // for interactive input and exit with an error.
       args.push('--allow-all')
       args.push('--no-ask-user')
-      console.log(`[copilot:${reqShort}] Resuming session ${sessionId}`)
+      log.info(`[${reqShort}] Resuming session ${sessionId}`)
     } else {
       // New session — generate a session ID for tracking
       sessionId = randomUUID()
@@ -87,13 +90,13 @@ export class CopilotCliManager {
       args.push('--no-ask-user')
       if (model) args.push('--model', model)
       if (cwd) args.push('--add-dir', cwd)
-      console.log(`[copilot:${reqShort}] New session, model=${model || 'default'}`)
+      log.info(`[${reqShort}] New session, model=${model || 'default'}`)
     }
 
     // Inject MCP config if proxy is available
     let mcpConfigPath = null
     if (!this.mcpProxyPort) {
-      console.warn(`[copilot:${reqShort}] WARNING: mcpProxyPort not set — spawning WITHOUT MCP tools`)
+      log.warn(`[${reqShort}] mcpProxyPort not set — spawning WITHOUT MCP tools`)
     }
     if (this.mcpProxyPort) {
       mcpConfigPath = join(tmpdir(), `paloma-copilot-mcp-${requestId}.json`)
@@ -108,7 +111,7 @@ export class CopilotCliManager {
       writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig))
       args.push('--additional-mcp-config', `@${mcpConfigPath}`)
       args.push('--allow-tool', 'paloma')
-      console.log(`[copilot:${reqShort}] MCP config written to ${mcpConfigPath}`)
+      log.debug(`[${reqShort}] MCP config written to ${mcpConfigPath}`)
     }
 
     // Use GH_TOKEN from gh auth for authentication
@@ -135,67 +138,41 @@ export class CopilotCliManager {
     })
 
     this.processes.set(requestId, { process: proc, sessionId, mcpConfigPath, instructionsDirPath })
-    console.log(`[copilot:${reqShort}] Process spawned, pid=${proc.pid}`)
+    log.info(`[${reqShort}] Process spawned, pid=${proc.pid}`)
 
-    let buffer = ''
+    const flush = attachStreamParser(proc.stdout, (event) => {
+      this._handleEvent(event, requestId, onEvent)
 
-    proc.stdout.on('data', (data) => {
-      buffer += data.toString()
-      const lines = buffer.split('\n')
-      buffer = lines.pop() // keep incomplete line in buffer
-
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
-        try {
-          const event = JSON.parse(trimmed)
-          this._handleEvent(event, requestId, onEvent)
-
-          // Capture session ID from result event
-          if (event.type === 'result' && event.sessionId) {
-            const entry = this.processes.get(requestId)
-            if (entry) entry.sessionId = event.sessionId
-            // Cache system prompt keyed by Copilot's final session ID so resumed turns
-            // can re-inject it via COPILOT_CUSTOM_INSTRUCTIONS_DIRS
-            if (effectiveSystemPrompt) {
-              this._sessionPrompts.set(event.sessionId, effectiveSystemPrompt)
-            }
-            sessionId = event.sessionId
-          }
-        } catch {
-          // skip non-JSON lines
+      // Capture session ID from result event
+      if (event.type === 'result' && event.sessionId) {
+        const entry = this.processes.get(requestId)
+        if (entry) entry.sessionId = event.sessionId
+        // Cache system prompt keyed by Copilot's final session ID so resumed turns
+        // can re-inject it via COPILOT_CUSTOM_INSTRUCTIONS_DIRS
+        if (effectiveSystemPrompt) {
+          this._sessionPrompts.set(event.sessionId, effectiveSystemPrompt)
         }
+        sessionId = event.sessionId
       }
     })
 
     proc.stdout.on('error', (err) => {
-      console.error(`[copilot:${reqShort}] stdout error: ${err.message}`)
+      log.error(`[${reqShort}] stdout error: ${err.message}`)
       onEvent({ type: 'copilot_error', requestId, error: `Stream error: ${err.message}` })
     })
 
     proc.stderr.on('data', (data) => {
       const text = data.toString().trim()
-      if (text) console.error(`[copilot:${reqShort}] stderr: ${text}`)
+      if (text) log.warn(`[${reqShort}] stderr: ${text}`)
     })
 
     proc.stderr.on('error', (err) => {
-      console.error(`[copilot:${reqShort}] stderr error: ${err.message}`)
+      log.error(`[${reqShort}] stderr error: ${err.message}`)
     })
 
     proc.on('close', (code) => {
-      console.log(`[copilot:${reqShort}] Process closed, exitCode=${code}`)
-      // Flush remaining buffer
-      if (buffer.trim()) {
-        try {
-          const event = JSON.parse(buffer.trim())
-          this._handleEvent(event, requestId, onEvent)
-          if (event.type === 'result' && event.sessionId) {
-            sessionId = event.sessionId
-          }
-        } catch {
-          // skip non-JSON lines
-        }
-      }
+      log.info(`[${reqShort}] Process closed, exitCode=${code}`)
+      flush()
       // Clean up temp files
       const entry = this.processes.get(requestId)
       if (entry?.mcpConfigPath) {
@@ -210,7 +187,7 @@ export class CopilotCliManager {
     })
 
     proc.on('error', (err) => {
-      console.error(`[copilot:${reqShort}] Process error: ${err.message}`)
+      log.error(`[${reqShort}] Process error: ${err.message}`)
       if (mcpConfigPath) {
         try { unlinkSync(mcpConfigPath) } catch {}
       }
