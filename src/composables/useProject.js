@@ -1,4 +1,4 @@
-import { ref, shallowRef, watch, computed } from 'vue'
+import { ref, shallowRef, watch } from 'vue'
 import db from '../services/db.js'
 
 // --- URL hash helpers ---
@@ -59,7 +59,6 @@ const mcpConfig = ref(null)
 const roots = ref([])
 const projectLoading = ref(false)
 
-const needsReconnect = computed(() => false) // No longer needed — MCP-based
 
 // Save projectName to sessionStorage
 watch(projectName, (name) => {
@@ -344,8 +343,7 @@ export function useProject() {
     roots,
     mcpConfig,
     projectLoading,
-    needsReconnect,
-    // New MCP-based methods
+    // MCP-based methods
     switchProject,
     listProjects,
     refreshActivePlans,

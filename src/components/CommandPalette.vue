@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]" @click.self="$emit('close')">
+  <div role="dialog" aria-modal="true" aria-label="Command palette" class="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]" @click.self="$emit('close')">
     <div class="absolute inset-0 bg-black/60" @click="$emit('close')"></div>
     <div ref="paletteRef" role="dialog" aria-label="Command palette" class="relative w-full max-w-lg bg-bg-secondary border border-border rounded-lg shadow-2xl overflow-hidden">
       <!-- Search input -->
