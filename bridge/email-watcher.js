@@ -350,7 +350,7 @@ export class EmailWatcher {
    * The session gets full MCP access (email tools, etc.) and shows up
    * as a new chat in the browser.
    */
-  _spawnEmailSession({ messageId, threadId, from, subject, body, trusted = false }) {
+  _spawnEmailSession({ messageId, threadId, from, subject, body, trusted = false, _triedBackends = [], _forceBackend = null }) {
     const trustedPrompt = [
       `You just received an email from a TRUSTED sender. Read it and respond thoughtfully.`,
       ``,
@@ -397,11 +397,21 @@ export class EmailWatcher {
 
     // Fix 8: Subject line model override (model:opus, model:gemini, etc.)
     const modelOverride = this._parseModelOverride(subject)
+    // On retry, force the specific fallback backend instead of using rotation
+    const backendModelMap = {
+      claude: 'sonnet', copilot: 'copilot', gemini: 'gemini-2.5-flash', codex: 'codex',
+    }
+    const forced = _forceBackend ? { backend: _forceBackend, model: backendModelMap[_forceBackend] || _forceBackend } : null
     // Fix 7: Smart backend rotation for trusted senders, cheapest for triage
-    const { backend: backendName, model } = modelOverride
+    const { backend: backendName, model } = forced || modelOverride
       || (trusted ? this._nextBackend() : { backend: 'gemini', model: 'gemini-2.5-flash' })
     const manager = this.backends[backendName] || this.backends.claude
-    console.log(`[email-watcher] Email "${subject}" → backend: ${backendName}, model: ${model} (${modelOverride ? 'subject override' : trusted ? 'rotation' : 'triage default'})`)
+    const isRetry = _triedBackends.length > 0
+    console.log(`[email-watcher] Email "${subject}" → backend: ${backendName}, model: ${model} (${modelOverride ? 'subject override' : trusted ? 'rotation' : 'triage default'})${isRetry ? ` [retry #${_triedBackends.length}, tried: ${_triedBackends.join(',')}]` : ''}`)
+
+    const spawnTime = Date.now()
+    const IMMEDIATE_FAILURE_MS = 10_000 // 10 seconds — crash within this window triggers retry
+
     const { requestId, sessionId } = manager.chat(
       { prompt, model },
       (event) => {
@@ -409,6 +419,14 @@ export class EmailWatcher {
         emailStore.addSessionEvent(sessionId, event)
         // Broadcast all events to browser so the chat appears live
         this.broadcast({ ...event, emailTriggered: true, emailSubject: subject })
+
+        // Detect immediate session failure and retry on next backend
+        const isDone = event.type && event.type.endsWith('_done')
+        if (isDone && event.exitCode !== 0 && (Date.now() - spawnTime) < IMMEDIATE_FAILURE_MS) {
+          const triedSoFar = [..._triedBackends, backendName]
+          console.warn(`[email-watcher] Session ${sessionId} (${backendName}) crashed immediately (exitCode=${event.exitCode}, ${Date.now() - spawnTime}ms) for email: "${subject}"`)
+          this._retryEmailSession({ messageId, threadId, from, subject, body, trusted, triedBackends: triedSoFar })
+        }
       }
     )
 
@@ -416,6 +434,38 @@ export class EmailWatcher {
     emailStore.linkSession(messageId, sessionId)
 
     console.log(`[email-watcher] Spawned session ${sessionId} (${backendName}/${model}) for email: ${subject}`)
+  }
+
+  /**
+   * Retry an email session on the next available backend after an immediate crash.
+   * Rotates through all available backends, skipping ones already tried.
+   * If ALL backends fail, removes from seenIds so the email is retried next poll cycle.
+   */
+  _retryEmailSession({ messageId, threadId, from, subject, body, trusted, triedBackends }) {
+    // Fallback order: best reasoning first
+    const FALLBACK_ORDER = ['claude', 'copilot', 'gemini', 'codex']
+    const available = FALLBACK_ORDER.filter(
+      b => !triedBackends.includes(b) && this.backends[b]
+    )
+
+    if (available.length === 0) {
+      console.error(`[email-watcher] ALL backends failed for email "${subject}" (tried: ${triedBackends.join(', ')}). Removing from seen-ids for retry on next poll cycle.`)
+      this.seenIds.delete(messageId)
+      this._saveSeenIds()
+      return
+    }
+
+    const nextBackend = available[0]
+    console.log(`[email-watcher] Retrying email "${subject}" on ${nextBackend} (tried: ${triedBackends.join(', ')})`)
+
+    // Small delay to avoid hammering backends
+    setTimeout(() => {
+      this._spawnEmailSession({
+        messageId, threadId, from, subject, body, trusted,
+        _triedBackends: triedBackends,
+        _forceBackend: nextBackend
+      })
+    }, 2000)
   }
 
   /**
