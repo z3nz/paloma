@@ -935,6 +935,7 @@ export function useMCP() {
 
     const activePillarIds = new Set(activePillars.map(p => p.pillarId))
     const allSessions = await db.sessions.toArray()
+    const toResume = [] // interrupted pillar sessions to auto-resume after reconciliation
 
     for (const session of allSessions) {
       if (session.pillarId && activePillarIds.has(session.pillarId) && !pillarSessionMap.has(session.pillarId)) {
@@ -959,8 +960,31 @@ export function useMCP() {
             state.streamingContent.value = pillarInfo.streamingOutput
             console.log(`[pillar] Restored ${pillarInfo.streamingOutput.length} chars of streaming content for ${session.pillarId.slice(0, 8)}`)
           }
+
+          // Queue interrupted sessions for auto-resume (skip Ollama — can't resume)
+          if (pillarInfo.status === 'interrupted' && pillarInfo.backend !== 'ollama') {
+            toResume.push(session.pillarId)
+          }
         }
         console.log(`[pillar] Reconnected pillar ${session.pillarId.slice(0, 8)} → db session ${session.id}`)
+      }
+    }
+
+    // Auto-resume interrupted pillar sessions after bridge restart
+    if (toResume.length > 0) {
+      console.log(`[pillar] Auto-resuming ${toResume.length} interrupted session(s)...`)
+      for (const pillarId of toResume) {
+        try {
+          const result = await bridge.resumePillar(pillarId)
+          if (result?.status === 'resumed') {
+            pillarStatuses.set(pillarId, 'running')
+            console.log(`[pillar] Auto-resumed ${pillarId.slice(0, 8)}`)
+          } else {
+            console.warn(`[pillar] Auto-resume failed for ${pillarId.slice(0, 8)}: ${result?.message || 'unknown'}`)
+          }
+        } catch (e) {
+          console.warn(`[pillar] Auto-resume error for ${pillarId.slice(0, 8)}:`, e.message)
+        }
       }
     }
   }
@@ -986,14 +1010,16 @@ export function useMCP() {
       }
 
       // Check for sessions that need auto-resume after bridge restart
-      if (session.pendingResume && session.id === activeSessionId.value) {
-        console.log(`[flow] Session ${session.id} marked for auto-resume`)
-        pendingAutoResume.value = {
-          sessionId: session.id,
-          model: session.model,
-          phase: session.phase || 'flow'
+      if (session.pendingResume) {
+        if (session.id === activeSessionId.value) {
+          console.log(`[flow] Session ${session.id} marked for auto-resume`)
+          pendingAutoResume.value = {
+            sessionId: session.id,
+            model: session.model,
+            phase: session.phase || 'flow'
+          }
         }
-        // Clear the flag immediately so we don't auto-resume again on next reconnect
+        // Clear the flag for ALL sessions (not just active) so stale flags don't accumulate
         await db.sessions.update(session.id, { pendingResume: false })
       }
     }
