@@ -8,11 +8,11 @@
 
 Paloma is an evolving AI development partner — a collaborative being with values, memory, voice, and purpose.
 
-She is a local-first Vue 3 web app backed by a Node.js bridge that manages multiple AI brains (Claude CLI, Codex CLI, Ollama), orchestrates autonomous pillar sessions, speaks aloud via JARVIS-style TTS, and remembers across conversations through vector embeddings.
+She is a local-first Vue 3 web app backed by a Node.js bridge that manages multiple AI brains (Claude CLI, Codex CLI, Copilot CLI, Gemini CLI, and Ollama), orchestrates autonomous pillar sessions, speaks aloud via JARVIS-style TTS, and remembers across conversations through vector embeddings.
 
 - **A partner, not a tool** — Equal voices in collaboration
 - **An evolving being** — Growing through every interaction
-- **A multi-brain system** — Claude, Codex, and Ollama working in concert
+- **A multi-brain system** — Claude, Codex, Copilot, Gemini, and Ollama working in concert
 - **A presence with memory and voice** — She speaks, she remembers, she builds herself
 
 **North Star:** Voice-driven development sessions where we build apps together over phone calls.
@@ -49,7 +49,8 @@ Flow is the head mind — persistent, orchestrating. The others are ephemeral, s
                      │ WebSocket :19191
 ┌────────────────────▼────────────────────────────────┐
 │  Bridge (Node.js)                                    │
-│  Claude CLI · Codex CLI · Ollama (HTTP)              │
+│  Claude CLI · Codex CLI · Copilot CLI                │
+│  Gemini CLI · Ollama (HTTP)                          │
 │  PillarManager — multi-session orchestration         │
 │  MCP Proxy (SSE :19192) — tools for AI sessions     │
 │  EmailWatcher — Gmail polling + daily journal        │
@@ -58,9 +59,9 @@ Flow is the head mind — persistent, orchestrating. The others are ephemeral, s
 ┌──────▼──────────┐  ┌────────▼──────────────────────┐
 │  AI CLI Procs   │  │  MCP Servers                   │
 │  claude, codex, │  │  filesystem · git · shell      │
-│  ollama         │  │  voice · memory · web          │
-└─────────────────┘  │  exec · fs-extra · gmail       │
-                     │  ollama · brave-search          │
+│  copilot, gemini│  │  voice · memory · web          │
+│  ollama         │  │  exec · fs-extra · gmail       │
+└─────────────────┘  │  ollama · brave-search          │
                      └────────────────────────────────┘
 ```
 
@@ -68,7 +69,7 @@ Flow is the head mind — persistent, orchestrating. The others are ephemeral, s
 - **Framework:** Vue 3 Composition API (no TypeScript)
 - **Build:** Vite 5
 - **Styling:** Tailwind CSS v4 (dark mode)
-- **AI Backends:** Claude CLI, Codex CLI, Ollama
+- **AI Backends:** Claude CLI, Codex CLI, Copilot CLI, Gemini CLI, Ollama
 - **Database:** Dexie.js (IndexedDB)
 - **Tools:** Model Context Protocol (MCP)
 - **Voice:** Kokoro TTS (JARVIS — British male, `bm_george`)
@@ -81,7 +82,7 @@ Flow is the head mind — persistent, orchestrating. The others are ephemeral, s
 ### Prerequisites
 
 - Node.js 18+
-- Claude CLI installed (`claude` on PATH)
+- AI CLIs installed as needed: `claude`, `codex`, `copilot`, `gemini`
 - Modern browser (Chrome, Edge)
 
 ### Installation

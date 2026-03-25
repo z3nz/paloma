@@ -48,25 +48,27 @@ export class CodexCliManager {
 
     if (sessionId) {
       // Resume existing conversation using thread ID
-      args = ['exec', 'resume', sessionId, '--json', '--full-auto', fullPrompt]
+      args = ['exec', 'resume', sessionId, '--json', '--full-auto']
       log.info(`[${reqShort}] Resuming thread ${sessionId}`)
     } else {
       // New conversation
       args = ['exec', '--json', '--full-auto', '-C', cwd || process.cwd()]
       if (model) args.push('-m', model)
-
-      // Inject MCP proxy config so Codex gets all of Paloma's tools
-      if (!this.mcpProxyPort) {
-        log.warn(`[${reqShort}] mcpProxyPort not set — spawning WITHOUT MCP tools`)
-      }
-      if (this.mcpProxyPort) {
-        args.push('-c', `mcp_servers.paloma.url="http://localhost:${this.mcpProxyPort}/mcp?cliRequestId=${requestId}"`)
-        log.debug(`[${reqShort}] MCP proxy injected via -c flag (port ${this.mcpProxyPort})`)
-      }
-
-      args.push(fullPrompt)
       log.info(`[${reqShort}] New session, model=${model || 'default'}`)
     }
+
+    // Re-inject MCP config on EVERY invocation. `codex exec resume` starts a fresh
+    // process, so the MCP server URL must be supplied again or resumed sessions lose
+    // Paloma's bridge tools even though the conversation thread continues.
+    if (!this.mcpProxyPort) {
+      log.warn(`[${reqShort}] mcpProxyPort not set — spawning WITHOUT MCP tools`)
+    }
+    if (this.mcpProxyPort) {
+      args.push('-c', `mcp_servers.paloma.url="http://localhost:${this.mcpProxyPort}/mcp?cliRequestId=${requestId}"`)
+      log.debug(`[${reqShort}] MCP proxy injected via -c flag (port ${this.mcpProxyPort})`)
+    }
+
+    args.push(fullPrompt)
 
     const proc = spawn('codex', args, {
       cwd: cwd || process.cwd(),
@@ -171,18 +173,41 @@ export class CodexCliManager {
           }
         })
       } else if (item.type === 'mcp_tool_call') {
-        // MCP tool call through Paloma's proxy
+        // Normalize Codex MCP calls to the same tool_use/tool_result shape used by
+        // the other backends so direct chats and pillar UIs can show tool activity.
+        const toolId = item.id || randomUUID()
+        const toolName = item.server && item.tool
+          ? `mcp__${item.server}__${item.tool}`
+          : item.tool || ''
+
         onEvent({
           type: 'codex_stream',
           requestId,
           event: {
-            type: 'mcp_tool_call',
-            server: item.server || '',
-            tool: item.tool || '',
-            arguments: item.arguments || {},
-            result: item.result,
-            error: item.error,
-            status: item.status || 'completed'
+            type: 'tool_use',
+            tool_use: {
+              id: toolId,
+              name: toolName,
+              input: item.arguments || {}
+            }
+          }
+        })
+
+        const resultContent = item.error
+          ? (typeof item.error === 'string' ? item.error : JSON.stringify(item.error))
+          : typeof item.result === 'string'
+            ? item.result
+            : item.result != null
+              ? JSON.stringify(item.result)
+              : ''
+
+        onEvent({
+          type: 'codex_stream',
+          requestId,
+          event: {
+            type: 'tool_result',
+            toolUseId: toolId,
+            content: resultContent
           }
         })
       }

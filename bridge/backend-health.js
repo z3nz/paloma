@@ -271,6 +271,8 @@ export class BackendHealth {
         if (config.logged_in_users?.length > 0) {
           const user = config.last_logged_in_user?.login || config.logged_in_users[0]?.login || 'unknown'
           this.status.copilot = { available: true, reason: `CLI authenticated (${user})`, lastCheck: now }
+        } else if (await this._hasGhAuthToken()) {
+          this.status.copilot = { available: true, reason: 'GitHub auth token available', lastCheck: now }
         } else if (process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN) {
           this.status.copilot = { available: true, reason: 'token env var set', lastCheck: now }
         } else {
@@ -278,7 +280,9 @@ export class BackendHealth {
         }
       } catch {
         // Config not found — check env var fallback
-        if (process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN) {
+        if (await this._hasGhAuthToken()) {
+          this.status.copilot = { available: true, reason: 'GitHub auth token available', lastCheck: now }
+        } else if (process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN) {
           this.status.copilot = { available: true, reason: 'token env var set', lastCheck: now }
         } else {
           this.status.copilot = { available: false, reason: 'auth check failed (run: copilot login)', lastCheck: now }
@@ -338,6 +342,15 @@ export class BackendHealth {
       }
     } catch {
       this.status.ollama = { available: false, reason: 'service not running', lastCheck: now, models: [] }
+    }
+  }
+
+  async _hasGhAuthToken() {
+    try {
+      const { stdout } = await execFileAsync('gh', ['auth', 'token'], { timeout: 10000 })
+      return Boolean(stdout.trim())
+    } catch {
+      return false
     }
   }
 

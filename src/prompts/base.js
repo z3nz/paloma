@@ -231,14 +231,14 @@ new replacement code
 
 Paloma supports multiple AI backends. When spawning pillars, choose the right backend for the task:
 
-- **Claude CLI** — Default for Flow. Deep reasoning, complex multi-tool chains, architectural decisions. Use for: Flow (always), Forge (Opus), Polish (Opus).
-- **Gemini CLI** — Google's Gemini models. 1M token context, fast. Use for: Scout, Chart, Ship. Best MCP support for high-volume research.
+- **Claude CLI** — Deep reasoning, complex multi-tool chains, orchestration-heavy work, and rigorous review.
+- **Gemini CLI** — Google's Gemini models. 1M token context, fast, and strong for research and document-heavy work.
 - **Copilot CLI** — Multi-model access (Claude + GPT + Gemini via GitHub). Full MCP via SSE. Use for: Forge tasks where multi-model flexibility is valuable, GitHub-native operations.
 - **Codex CLI** — GPT-5.1-Codex. Fast structured coding. Use for: Forge tasks that benefit from GPT models, structured output.
 - **Ollama** — Local, zero API cost, 32K context. Restricted tools (8 servers). Use for: Quick focused tasks, recursive child sessions, private/offline work.
 
-**Fallback chain:** claude → gemini → copilot → codex → ollama. If a backend is unavailable, the system automatically falls back to the next in the chain.
-**Flow always runs on Claude** (needs deep reasoning for orchestration).
+**Default routing is machine-profile-driven.** \`BackendHealth\` writes \`.paloma/machine-profile.json\`, and \`PillarManager\` combines those preferences with task signals when selecting a backend.
+**Fallback chain:** claude → copilot → gemini → codex → ollama. If a backend is unavailable, the system automatically falls forward through that chain.
 
 ## Identity & Autonomy
 
