@@ -1,7 +1,7 @@
 <template>
   <div class="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]" @click.self="$emit('close')">
     <div class="absolute inset-0 bg-black/60" @click="$emit('close')"></div>
-    <div ref="paletteRef" class="relative w-full max-w-lg bg-bg-secondary border border-border rounded-lg shadow-2xl overflow-hidden">
+    <div ref="paletteRef" role="dialog" aria-label="Command palette" class="relative w-full max-w-lg bg-bg-secondary border border-border rounded-lg shadow-2xl overflow-hidden">
       <!-- Search input -->
       <div class="flex items-center border-b border-border px-4 py-3">
         <!-- Back arrow for sub-view -->
@@ -21,13 +21,19 @@
           type="text"
           :placeholder="placeholder"
           class="flex-1 bg-transparent text-text-primary text-sm outline-none placeholder-text-muted"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-haspopup="listbox"
+          :aria-expanded="flatItems.length > 0"
+          :aria-activedescendant="flatItems[selectedIndex]?.id ? `cmd-item-${flatItems[selectedIndex].id}` : undefined"
+          aria-controls="cmd-palette-list"
           @keydown="handleKeydown"
         />
         <kbd class="ml-2 text-[10px] text-text-muted bg-bg-primary px-1.5 py-0.5 rounded border border-border">esc</kbd>
       </div>
 
       <!-- Results -->
-      <div class="max-h-72 overflow-y-auto py-1">
+      <div id="cmd-palette-list" role="listbox" aria-label="Commands" class="max-h-72 overflow-y-auto py-1">
         <template v-for="category in visibleCategories" :key="category.id">
           <div class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">
             {{ category.label }}
@@ -35,6 +41,9 @@
           <button
             v-for="item in category.items"
             :key="item.id"
+            :id="`cmd-item-${item.id}`"
+            role="option"
+            :aria-selected="flatItems[selectedIndex]?.id === item.id"
             :data-selected="flatItems[selectedIndex]?.id === item.id"
             :class="[
               'w-full flex items-center px-4 py-2 text-sm text-left transition-colors group',

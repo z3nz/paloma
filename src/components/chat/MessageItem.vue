@@ -216,10 +216,10 @@ const renderedHtml = computed(() => {
       const applyBtnHtml = filePath
         ? `<button class="apply-btn" data-code-index="${index}">Apply</button>`
         : ''
+      
+      const copyBtnHtml = `<button class="copy-btn" data-code-index="${index}">Copy</button>`
 
-      const copyOnclick = `navigator.clipboard.writeText(this.closest('.code-block-wrapper').querySelector('code').textContent).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)})`
-
-      return `<div class="code-block-wrapper">${headerHtml}<pre><code class="hljs${lang ? ` language-${lang}` : ''}">${highlighted}</code></pre><div class="code-block-actions"><button class="copy-btn" onclick="${copyOnclick}">Copy</button>${applyBtnHtml}</div></div>`
+      return `<div class="code-block-wrapper">${headerHtml}<pre><code class="hljs${lang ? ` language-${lang}` : ''}">${highlighted}</code></pre><div class="code-block-actions">${copyBtnHtml}${applyBtnHtml}</div></div>`
     }
   )
 
@@ -234,12 +234,40 @@ const renderedHtml = computed(() => {
 })
 
 function handleContentClick(e) {
-  const btn = e.target.closest('.apply-btn')
-  if (!btn) return
-  const index = parseInt(btn.dataset.codeIndex, 10)
-  const block = codeBlocks.value[index]
-  if (block?.path) {
-    emit('apply-code', { path: block.path, code: block.code })
+  const applyBtn = e.target.closest('.apply-btn')
+  if (applyBtn) {
+    const index = parseInt(applyBtn.dataset.codeIndex, 10)
+    const block = codeBlocks.value[index]
+    if (block?.path) {
+      emit('apply-code', { path: block.path, code: block.code })
+    }
+    return
+  }
+
+  const copyBtn = e.target.closest('.copy-btn')
+  if (copyBtn) {
+    if (copyBtn.textContent === 'Copied!') return
+
+    const index = parseInt(copyBtn.dataset.codeIndex, 10)
+    const block = codeBlocks.value[index]
+    if (block) {
+      navigator.clipboard.writeText(block.code).then(() => {
+        copyBtn.textContent = 'Copied!'
+        setTimeout(() => {
+          if (copyBtn) {
+            copyBtn.textContent = 'Copy'
+          }
+        }, 2000)
+      }).catch(err => {
+        console.error('Failed to copy text: ', err)
+        copyBtn.textContent = 'Error'
+        setTimeout(() => {
+          if (copyBtn) {
+            copyBtn.textContent = 'Copy'
+          }
+        }, 2000)
+      })
+    }
   }
 }
 </script>
