@@ -26,12 +26,10 @@ export const CLI_MODELS = [
   { id: 'copilot-cli:claude-opus-4.6', name: 'Claude Opus 4.6 (Copilot)', context_length: 200000, copilot: true, pricing: ANTHROPIC_PRICING.opus },
   { id: 'copilot-cli:gpt-5.4', name: 'GPT-5.4 (Copilot)', context_length: 200000, copilot: true, pricing: FREE_PRICING },
   { id: 'copilot-cli:gemini-3-pro-preview', name: 'Gemini 3 Pro (Copilot)', context_length: 200000, copilot: true, pricing: FREE_PRICING },
-  { id: 'gemini-cli:gemini-3-pro', name: 'Gemini 3 Pro', context_length: 2000000, gemini: true, pricing: FREE_PRICING },
-  { id: 'gemini-cli:gemini-3-flash', name: 'Gemini 3 Flash', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
-  { id: 'gemini-cli:gemini-2.5-flash', name: 'Gemini 2.5 Flash', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
+  { id: 'gemini-cli:gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', context_length: 2000000, gemini: true, pricing: FREE_PRICING },
   { id: 'gemini-cli:gemini-2.5-pro', name: 'Gemini 2.5 Pro', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
+  { id: 'gemini-cli:gemini-2.5-flash', name: 'Gemini 2.5 Flash', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
   { id: 'gemini-cli:gemini-2.0-flash', name: 'Gemini 2.0 Flash', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
-  { id: 'gemini-cli:gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
   { id: 'gemini-cli:gemini-exp', name: 'Gemini Experimental', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
   { id: 'ollama:qwen2.5-coder:32b', name: 'Qwen 2.5 Coder 32B', context_length: 32768, ollama: true, pricing: FREE_PRICING },
   { id: 'ollama:qwen2.5-coder:7b', name: 'Qwen 2.5 Coder 7B', context_length: 32768, ollama: true, pricing: FREE_PRICING }
@@ -54,7 +52,7 @@ export function isGeminiModel(modelId) {
 }
 
 export function getGeminiModelName(modelId) {
-  return modelId?.split(':')[1] || 'gemini-3-flash'
+  return modelId?.split(':')[1] || 'gemini-2.5-flash'
 }
 
 export function isOllamaModel(modelId) {
