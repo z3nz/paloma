@@ -3,6 +3,9 @@ import { readFileSync, existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { homedir } from 'node:os'
+import { createLogger } from './logger.js'
+
+const log = createLogger('email-store')
 
 const STORE_PATH = resolve(homedir(), '.paloma', 'email-store.json')
 const OAUTH_KEYS_PATH = resolve(homedir(), '.paloma', 'gmail-oauth-keys.json')
@@ -35,10 +38,10 @@ export class EmailStore {
           this.messagesByThread.get(msg.threadId).add(id)
         }
         
-        console.log(`[email-store] Loaded ${this.threads.size} threads and ${this.messages.size} messages from disk`)
+        log.info(`Loaded ${this.threads.size} threads and ${this.messages.size} messages from disk`)
       }
     } catch (err) {
-      console.error('[email-store] Failed to load store from disk:', err.message)
+      log.error('Failed to load store from disk', err.message)
     }
   }
 
@@ -55,7 +58,7 @@ export class EmailStore {
         await writeFile(STORE_PATH, JSON.stringify(data, null, 2))
         // console.log('[email-store] Store saved to disk')
       } catch (err) {
-        console.error('[email-store] Failed to save store to disk:', err.message)
+        log.error('Failed to save store to disk', err.message)
       }
     }, 2000) // Debounce for 2 seconds
   }
@@ -203,7 +206,7 @@ export class EmailStore {
       throw new Error('Gmail API client could not be created (missing auth)')
     }
 
-    console.log('[email-store] Starting Gmail sync...')
+    log.info('Starting Gmail sync...')
     const listResult = await gmail.users.messages.list({
       userId: 'me',
       maxResults: 100
@@ -243,11 +246,11 @@ export class EmailStore {
         })
         synced++
       } catch (err) {
-        console.warn(`[email-store] Failed to sync message ${ref.id}:`, err.message)
+        log.warn(`Failed to sync message ${ref.id}: ${err.message}`)
       }
     }
 
-    console.log(`[email-store] Sync complete: ${synced} messages added`)
+    log.info(`Sync complete: ${synced} messages added`)
     return { synced, total: messageRefs.length }
   }
 

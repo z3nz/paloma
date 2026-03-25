@@ -4,8 +4,10 @@ import { readFile, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { homedir, hostname, totalmem, cpus, platform } from 'os'
+import { createLogger } from './logger.js'
 
 const execFileAsync = promisify(execFile)
+const log = createLogger('health')
 
 const FALLBACK_CHAIN = ['claude', 'copilot', 'gemini', 'codex', 'ollama']
 
@@ -113,7 +115,7 @@ export class BackendHealth {
         if (existing.continuityOwner != null) continuityOwner = existing.continuityOwner
       }
     } catch (e) {
-      console.warn(`[health] Error reading existing machine profile: ${e.message}`)
+      log.warn(`Error reading existing machine profile: ${e.message}`)
     }
 
     const backends = {}
@@ -155,7 +157,7 @@ export class BackendHealth {
       await writeFile(profilePath, JSON.stringify(profile, null, 2))
       this.machineProfile = profile
     } catch (e) {
-      console.error(`[health] Failed to write machine profile: ${e.message}`)
+      log.error(`Failed to write machine profile: ${e.message}`)
     }
   }
 
@@ -182,7 +184,7 @@ export class BackendHealth {
       await Promise.all(probes)
       const recovered = unavailable.filter(b => this.status[b]?.available)
       if (recovered.length > 0) {
-        console.log(`[health] Backends recovered: ${recovered.join(', ')}`)
+        log.info(`Backends recovered: ${recovered.join(', ')}`)
         // WU-2: Update machine profile when backends recover
         await this._generateMachineProfile()
       }
@@ -202,7 +204,7 @@ export class BackendHealth {
       try {
         authData = JSON.parse(stdout.trim())
       } catch (parseErr) {
-        console.warn(`[backend-health] Claude auth status returned non-JSON: ${stdout.trim().slice(0, 200)}`)
+        log.warn(`Claude auth status returned non-JSON: ${stdout.trim().slice(0, 200)}`)
         this.status.claude = { available: true, reason: 'auth check returned non-JSON (assuming available)', lastCheck: now }
         return
       }
@@ -366,7 +368,7 @@ export class BackendHealth {
       this.status[backend].available = false
       this.status[backend].reason = reason
       this.status[backend].lastCheck = new Date().toISOString()
-      console.warn(`[health] Marked ${backend} as unhealthy: ${reason}`)
+      log.warn(`Marked ${backend} as unhealthy: ${reason}`)
       // Restart reprobe timer so the backend gets re-checked
       this._startReprobeTimer()
     }

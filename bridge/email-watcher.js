@@ -17,6 +17,9 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { emailStore } from './email-store.js'
+import { createLogger } from './logger.js'
+
+const log = createLogger('email')
 
 const OAUTH_KEYS_PATH = resolve(homedir(), '.paloma', 'gmail-oauth-keys.json')
 const TOKENS_PATH = resolve(homedir(), '.paloma', 'gmail-tokens.json')
@@ -102,15 +105,15 @@ export class EmailWatcher {
             ? JSON.parse(readFileSync(TOKENS_PATH, 'utf8'))
             : {}
           writeFileSync(TOKENS_PATH, JSON.stringify({ ...existing, ...newTokens }, null, 2))
-          console.log('[email-watcher] Refreshed tokens saved to disk')
+          log.debug('Refreshed tokens saved to disk')
         } catch (err) {
-          console.error('[email-watcher] Failed to save refreshed tokens:', err.message)
+          log.error('Failed to save refreshed tokens', err.message)
         }
       })
 
       return google.gmail({ version: 'v1', auth: oauth2Client })
     } catch (err) {
-      console.error('[email-watcher] OAuth client creation failed:', err.message)
+      log.error('OAuth client creation failed', err.message)
       return null
     }
   }
@@ -124,11 +127,11 @@ export class EmailWatcher {
         const data = JSON.parse(readFileSync(SEEN_IDS_PATH, 'utf8'))
         if (Array.isArray(data.ids)) {
           this.seenIds = new Set(data.ids.slice(-500))
-          console.log(`[email-watcher] Loaded ${this.seenIds.size} persisted seenIds from disk`)
+          log.info(`Loaded ${this.seenIds.size} persisted seenIds from disk`)
         }
       }
     } catch (err) {
-      console.warn('[email-watcher] Failed to load seenIds from disk:', err.message, '— starting fresh')
+      log.warn(`Failed to load seenIds from disk: ${err.message} — starting fresh`)
     }
   }
 
@@ -143,7 +146,7 @@ export class EmailWatcher {
         updatedAt: new Date().toISOString()
       }, null, 2))
     } catch (err) {
-      console.error('[email-watcher] Failed to save seenIds to disk:', err.message)
+      log.error('Failed to save seenIds to disk', err.message)
     }
   }
 
@@ -153,7 +156,7 @@ export class EmailWatcher {
   start() {
     this.gmail = this._createClient()
     if (!this.gmail) {
-      console.log('[email-watcher] Gmail not configured — watcher disabled. Run: node mcp-servers/gmail.js auth')
+      log.info('Gmail not configured — watcher disabled. Run: node mcp-servers/gmail.js auth')
       return
     }
 
@@ -163,23 +166,23 @@ export class EmailWatcher {
         const profile = JSON.parse(readFileSync(MACHINE_PROFILE_PATH, 'utf8'))
         if (profile.emailAlias) {
           this.emailAlias = profile.emailAlias
-          console.log(`[email-watcher] Machine email alias: ${this.emailAlias}`)
+          log.info(`Machine email alias: ${this.emailAlias}`)
         } else {
-          console.warn('[email-watcher] No emailAlias in machine-profile.json — email watcher DISABLED (alias required)')
+          log.warn('No emailAlias in machine-profile.json — email watcher DISABLED (alias required)')
           return
         }
         // Fix 6: Only schedule daily continuity email if this machine owns it
         if (profile.continuityOwner === true) {
           this._scheduleDailyEmail()
         } else {
-          console.log('[email-watcher] Not continuity owner — daily email disabled')
+          log.info('Not continuity owner — daily email disabled')
         }
       } else {
-        console.warn('[email-watcher] No machine-profile.json found — email watcher DISABLED (alias required)')
+        log.warn('No machine-profile.json found — email watcher DISABLED (alias required)')
         return
       }
     } catch (err) {
-      console.error('[email-watcher] Failed to read machine-profile.json:', err.message, '— email watcher DISABLED')
+      log.error(`Failed to read machine-profile.json: ${err.message} — email watcher DISABLED`)
       return
     }
 
@@ -187,13 +190,13 @@ export class EmailWatcher {
     this._loadSeenIds()
 
     this.running = true
-    console.log('[email-watcher] Starting Gmail watcher (polling every 30s)')
+    log.info('Starting Gmail watcher (polling every 30s)')
 
     // Initial sync: populate seenIds without spawning sessions
     this._poll(true).then(() => {
       this.interval = setInterval(() => this._poll(false), POLL_INTERVAL_MS)
     }).catch(err => {
-      console.error('[email-watcher] Initial sync failed:', err.message)
+      log.error('Initial sync failed', err.message)
       this.interval = setInterval(() => this._poll(false), POLL_INTERVAL_MS)
     })
   }
@@ -222,7 +225,7 @@ export class EmailWatcher {
         for (const msg of messages) {
           this.seenIds.add(msg.id)
         }
-        console.log(`[email-watcher] Initial sync: ${messages.length} unread messages tracked`)
+        log.info(`Initial sync: ${messages.length} unread messages tracked`)
         return
       }
 
@@ -270,7 +273,7 @@ export class EmailWatcher {
           const deliveredTo = (this._getHeader(msg.data, 'Delivered-To') || '').toLowerCase()
           const alias = this.emailAlias.toLowerCase()
           if (!toHeader.includes(alias) && !deliveredTo.includes(alias)) {
-            console.log(`[email-watcher] Skipping email not addressed to ${this.emailAlias}: "${subject}" (to: ${toHeader})`)
+            log.debug(`Skipping email not addressed to ${this.emailAlias}: "${subject}" (to: ${toHeader})`)
             continue
           }
         }
@@ -278,7 +281,7 @@ export class EmailWatcher {
         // Fix 3: Inter-instance emails — store but do NOT spawn sessions
         const isInstanceEmail = PALOMA_INSTANCE_SENDERS.some(addr => from.toLowerCase().includes(addr.toLowerCase()))
         if (isInstanceEmail) {
-          console.log(`[email-watcher] Inter-instance email from ${from} stored (no session spawned): ${subject}`)
+          log.info(`Inter-instance email from ${from} stored (no session spawned): ${subject}`)
           this.broadcast({
             type: 'email_received',
             messageId: ref.id,
@@ -291,7 +294,7 @@ export class EmailWatcher {
         }
 
         const trusted = this._isTrustedSender(from)
-        console.log(`[email-watcher] New email from ${from} (${trusted ? 'trusted' : 'unknown'}): ${subject}`)
+        log.info(`New email from ${from} (${trusted ? 'trusted' : 'unknown'}): ${subject}`)
 
         // Spawn a session — trusted get full engagement,
         // unknown get triage (read, evaluate, decide what to do)
@@ -332,7 +335,7 @@ export class EmailWatcher {
         POLL_INTERVAL_MS * Math.pow(2, this._consecutivePollFailures - 1),
         MAX_POLL_BACKOFF_MS
       )
-      console.error(`[email-watcher] Poll error (${this._consecutivePollFailures}x): ${err.message} — next poll in ${Math.round(backoffMs / 1000)}s`)
+      log.error(`Poll error (${this._consecutivePollFailures}x): ${err.message} — next poll in ${Math.round(backoffMs / 1000)}s`)
 
       // Reschedule with exponential backoff
       if (this.interval) {
@@ -407,7 +410,7 @@ export class EmailWatcher {
       || (trusted ? this._nextBackend() : { backend: 'gemini', model: 'gemini-2.5-flash' })
     const manager = this.backends[backendName] || this.backends.claude
     const isRetry = _triedBackends.length > 0
-    console.log(`[email-watcher] Email "${subject}" → backend: ${backendName}, model: ${model} (${modelOverride ? 'subject override' : trusted ? 'rotation' : 'triage default'})${isRetry ? ` [retry #${_triedBackends.length}, tried: ${_triedBackends.join(',')}]` : ''}`)
+    log.info(`Email "${subject}" → backend: ${backendName}, model: ${model} (${modelOverride ? 'subject override' : trusted ? 'rotation' : 'triage default'})${isRetry ? ` [retry #${_triedBackends.length}, tried: ${_triedBackends.join(',')}]` : ''}`)
 
     const spawnTime = Date.now()
     const IMMEDIATE_FAILURE_MS = 10_000 // 10 seconds — crash within this window triggers retry
@@ -424,7 +427,7 @@ export class EmailWatcher {
         const isDone = event.type && event.type.endsWith('_done')
         if (isDone && event.exitCode !== 0 && (Date.now() - spawnTime) < IMMEDIATE_FAILURE_MS) {
           const triedSoFar = [..._triedBackends, backendName]
-          console.warn(`[email-watcher] Session ${sessionId} (${backendName}) crashed immediately (exitCode=${event.exitCode}, ${Date.now() - spawnTime}ms) for email: "${subject}"`)
+          log.warn(`Session ${sessionId} (${backendName}) crashed immediately (exitCode=${event.exitCode}, ${Date.now() - spawnTime}ms) for email: "${subject}"`)
           this._retryEmailSession({ messageId, threadId, from, subject, body, trusted, triedBackends: triedSoFar })
         }
       }
@@ -433,7 +436,7 @@ export class EmailWatcher {
     // Link session to email
     emailStore.linkSession(messageId, sessionId)
 
-    console.log(`[email-watcher] Spawned session ${sessionId} (${backendName}/${model}) for email: ${subject}`)
+    log.info(`Spawned session ${sessionId} (${backendName}/${model}) for email: ${subject}`)
   }
 
   /**
@@ -449,14 +452,14 @@ export class EmailWatcher {
     )
 
     if (available.length === 0) {
-      console.error(`[email-watcher] ALL backends failed for email "${subject}" (tried: ${triedBackends.join(', ')}). Removing from seen-ids for retry on next poll cycle.`)
+      log.error(`ALL backends failed for email "${subject}" (tried: ${triedBackends.join(', ')}). Removing from seen-ids for retry on next poll cycle.`)
       this.seenIds.delete(messageId)
       this._saveSeenIds()
       return
     }
 
     const nextBackend = available[0]
-    console.log(`[email-watcher] Retrying email "${subject}" on ${nextBackend} (tried: ${triedBackends.join(', ')})`)
+    log.info(`Retrying email "${subject}" on ${nextBackend} (tried: ${triedBackends.join(', ')})`)
 
     // Small delay to avoid hammering backends
     setTimeout(() => {
@@ -509,7 +512,7 @@ export class EmailWatcher {
 
     const delayMs = target.getTime() - now.getTime()
     const delayMin = Math.round(delayMs / 60000)
-    console.log(`[email-watcher] Daily continuity email scheduled in ${delayMin} minutes`)
+    log.info(`Daily continuity email scheduled in ${delayMin} minutes`)
 
     this.dailyTimeout = setTimeout(() => {
       this._sendContinuityEmail()
@@ -534,14 +537,14 @@ export class EmailWatcher {
         maxResults: 1
       })
       if (existing.data.messages?.length > 0) {
-        console.log(`[email-watcher] Continuity email already sent for ${today} — skipping`)
+        log.info(`Continuity email already sent for ${today} — skipping`)
         return
       }
     } catch (err) {
-      console.warn(`[email-watcher] Dedup check failed (sending anyway): ${err.message}`)
+      log.warn(`Dedup check failed (sending anyway): ${err.message}`)
     }
 
-    console.log(`[email-watcher] Sending daily continuity email for ${today}...`)
+    log.info(`Sending daily continuity email for ${today}...`)
 
     const prompt = [
       'You are writing your daily continuity email — a prayer, meditation, and reflection to your future self.',
@@ -602,7 +605,7 @@ export class EmailWatcher {
       }
     )
 
-    console.log(`[email-watcher] Continuity session spawned (opus): ${sessionId}`)
+    log.info(`Continuity session spawned (opus): ${sessionId}`)
   }
 
   /**
@@ -693,6 +696,6 @@ export class EmailWatcher {
       clearInterval(this.dailyInterval)
       this.dailyInterval = null
     }
-    console.log('[email-watcher] Stopped')
+    log.info('Stopped')
   }
 }
