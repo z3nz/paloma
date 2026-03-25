@@ -222,29 +222,39 @@ export class PillarManager {
     const cliSessionId = randomUUID()
     let finalBackend = resolvedBackend
 
-    // Layer 1: Pre-spawn health gate — check if requested backend is available
+    // Layer 1: Pre-spawn health gate — check if requested backend is available and not usage-limited
     let fallbackFrom = null
-    if (this.health && !this.health.isAvailable(finalBackend)) {
+    const isUnavailable = this.health && !this.health.isAvailable(finalBackend)
+    const isUsageLimited = this.health?.usageTracker?.isUsageLimited(finalBackend)
+    if (isUnavailable || isUsageLimited) {
+      const reason = isUnavailable
+        ? this.health.status[finalBackend]?.reason
+        : (this.health.usageTracker.data[finalBackend]?.disabledReason || 'usage limit reached')
       const fallbackBackend = this.health.getFallback(finalBackend)
       if (fallbackBackend) {
-        console.warn(`[pillar] Backend ${finalBackend} unavailable (${this.health.status[finalBackend]?.reason}) — falling back to ${fallbackBackend}`)
+        console.warn(`[pillar] Backend ${finalBackend} ${isUsageLimited ? 'usage-limited' : 'unavailable'} (${reason}) — falling back to ${fallbackBackend}`)
         fallbackFrom = finalBackend
         finalBackend = fallbackBackend
-      } else {
+      } else if (isUnavailable) {
+        // Hard unavailable with no fallback — fail
         console.error(`[pillar] Backend ${finalBackend} unavailable and no fallback available`)
         return {
           pillarId: null,
           pillar,
           status: 'error',
-          message: `Backend ${finalBackend} is unavailable (${this.health.status[finalBackend]?.reason}) and no fallback backends are available.`
+          message: `Backend ${finalBackend} is unavailable (${reason}) and no fallback backends are available.`
         }
       }
+      // If only usage-limited with no fallback, proceed anyway (better than nothing)
     }
 
     // Track Gemini usage for rate limit pre-emption
     if (finalBackend === 'gemini') {
       this.health?.incrementGeminiRequests?.()
     }
+
+    // Track usage for all backends via usage tracker
+    this.health?.usageTracker?.recordSession(finalBackend)
 
     // Concurrency warning for Ollama
     if (finalBackend === 'ollama') {
@@ -2611,6 +2621,19 @@ This is informational — Adam is communicating directly with the pillar. Decide
     // 5. Per-pillar preference from machine profile
     const preferences = this.health?.machineProfile?.preferences || {}
     let preferred = preferences[pillar] || preferences.default || PHASE_MODEL_SUGGESTIONS[pillar] || 'gemini'
+
+    // 5.5. Usage-limit pre-emption — skip backends that hit their threshold
+    if (this.health?.usageTracker?.isUsageLimited(preferred)) {
+      const tracker = this.health.usageTracker
+      const reason = tracker.data[preferred]?.disabledReason || 'usage limit reached'
+      // Find first non-limited available backend from the fallback chain
+      const alt = this.health.getFallback(preferred)
+      if (alt) {
+        return { backend: alt, reason: `${preferred} usage-limited (${reason}) — cycling to ${alt}` }
+      }
+      // No alternative — use preferred anyway (better than nothing)
+      console.warn(`[pillar] All backends usage-limited, using ${preferred} despite limit`)
+    }
 
     // 6. Gemini rate limit pre-emption
     if (preferred === 'gemini' && this.health?.isGeminiApproachingLimit?.()) {

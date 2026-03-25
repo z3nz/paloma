@@ -148,6 +148,16 @@ staleRequestInterval = setInterval(() => {
 }, 60000)
 staleRequestInterval.unref() // Don't prevent process exit
 
+/** Read full request body as a string. */
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    req.on('data', c => chunks.push(c))
+    req.on('end', () => resolve(Buffer.concat(chunks).toString()))
+    req.on('error', reject)
+  })
+}
+
 async function main() {
   const startTime = Date.now()
   printBanner()
@@ -318,6 +328,103 @@ async function main() {
         mcpServers: manager ? manager.clients.size : 0
       }
       res.end(JSON.stringify(status, null, 2))
+      return
+    }
+
+    // ─── Usage Tracking API ──────────────────────────────────────────────────
+
+    // GET /api/usage — full usage summary for all backends
+    if (pathname === '/api/usage' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
+      res.end(JSON.stringify(usageTracker.getSummary(), null, 2))
+      return
+    }
+
+    // POST /api/usage/toggle — manual override: force-on, force-off, or clear
+    // Body: { "backend": "claude", "override": "force-off" | "force-on" | null }
+    if (pathname === '/api/usage/toggle' && req.method === 'POST') {
+      try {
+        const body = await readBody(req)
+        const { backend: backendName, override } = JSON.parse(body)
+        if (!backendName) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+          res.end(JSON.stringify({ error: 'backend is required' }))
+          return
+        }
+        const ok = usageTracker.setManualOverride(backendName, override ?? null)
+        if (!ok) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+          res.end(JSON.stringify({ error: `Unknown backend: ${backendName}` }))
+          return
+        }
+        broadcast({ type: 'usage_updated', usage: usageTracker.getSummary() })
+        res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
+        res.end(JSON.stringify({ ok: true, usage: usageTracker.getSummary() }))
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json', ...corsHeaders })
+        res.end(JSON.stringify({ error: err.message }))
+      }
+      return
+    }
+
+    // POST /api/usage/config — update limits for a backend
+    // Body: { "backend": "claude", "maxSessions": 150, "threshold": 0.95 }
+    if (pathname === '/api/usage/config' && req.method === 'POST') {
+      try {
+        const body = await readBody(req)
+        const { backend: backendName, ...newLimits } = JSON.parse(body)
+        if (!backendName) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+          res.end(JSON.stringify({ error: 'backend is required' }))
+          return
+        }
+        const ok = await usageTracker.updateLimits(backendName, newLimits)
+        if (!ok) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+          res.end(JSON.stringify({ error: `Unknown backend: ${backendName}` }))
+          return
+        }
+        broadcast({ type: 'usage_updated', usage: usageTracker.getSummary() })
+        res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
+        res.end(JSON.stringify({ ok: true, limits: usageTracker.limits, usage: usageTracker.getSummary() }))
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json', ...corsHeaders })
+        res.end(JSON.stringify({ error: err.message }))
+      }
+      return
+    }
+
+    // POST /api/usage/reset — reset counters for a backend (or all)
+    // Body: { "backend": "claude" } or { "backend": "all" }
+    if (pathname === '/api/usage/reset' && req.method === 'POST') {
+      try {
+        const body = await readBody(req)
+        const { backend: backendName } = JSON.parse(body)
+        if (!backendName) {
+          res.writeHead(400, { 'Content-Type': 'application/json', ...corsHeaders })
+          res.end(JSON.stringify({ error: 'backend is required' }))
+          return
+        }
+        const targets = backendName === 'all'
+          ? ['claude', 'copilot', 'gemini', 'codex', 'ollama']
+          : [backendName]
+        for (const t of targets) {
+          if (usageTracker.data[t]) {
+            usageTracker.data[t].sessions = 0
+            usageTracker.data[t].requests = 0
+            usageTracker.data[t].disabled = false
+            usageTracker.data[t].disabledReason = null
+            usageTracker.data[t].manualOverride = null
+          }
+        }
+        await usageTracker.flush()
+        broadcast({ type: 'usage_updated', usage: usageTracker.getSummary() })
+        res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
+        res.end(JSON.stringify({ ok: true, reset: targets, usage: usageTracker.getSummary() }))
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json', ...corsHeaders })
+        res.end(JSON.stringify({ error: err.message }))
+      }
       return
     }
 
@@ -1266,6 +1373,7 @@ async function main() {
     }
 
     if (staleRequestInterval) clearInterval(staleRequestInterval)
+    if (usageTracker) await usageTracker.shutdown()
     if (health) health.shutdown()
     if (emailWatcher) emailWatcher.shutdown()
     if (pillarManager) pillarManager.shutdown()

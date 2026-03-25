@@ -34,6 +34,7 @@ export class BackendHealth {
     this.machineProfile = null
     this._geminiRequestsToday = 0
     this._geminiResetDate = ''
+    this.usageTracker = null // Set by bridge after construction
   }
 
   setProjectRoot(root) {
@@ -348,10 +349,26 @@ export class BackendHealth {
   }
 
   /**
+   * Returns whether a backend is available AND not usage-limited.
+   * This is the primary check for backend selection.
+   */
+  isEffectivelyAvailable(backend) {
+    if (!this.isAvailable(backend)) return false
+    if (this.usageTracker?.isUsageLimited(backend)) return false
+    return true
+  }
+
+  /**
    * Walk the fallback chain and return the first available backend
-   * that isn't the given one. Returns null if nothing is available.
+   * that isn't the given one and isn't usage-limited. Returns null if nothing is available.
    */
   getFallback(backend) {
+    for (const candidate of FALLBACK_CHAIN) {
+      if (candidate !== backend && this.isEffectivelyAvailable(candidate)) {
+        return candidate
+      }
+    }
+    // Last resort: any available backend even if usage-limited (except the original)
     for (const candidate of FALLBACK_CHAIN) {
       if (candidate !== backend && this.isAvailable(candidate)) {
         return candidate
@@ -396,6 +413,11 @@ export class BackendHealth {
       }
       if (backend === 'gemini') {
         summary[backend].usage = this.getGeminiUsage()
+      }
+      // Include usage-limited status
+      if (this.usageTracker) {
+        summary[backend].usageLimited = this.usageTracker.isUsageLimited(backend)
+        summary[backend].effectivelyAvailable = this.isEffectivelyAvailable(backend)
       }
     }
     return summary
