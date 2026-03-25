@@ -15,7 +15,9 @@ import { join, extname } from 'path'
 import { homedir, tmpdir } from 'os'
 import { randomUUID } from 'crypto'
 import { execSync } from 'child_process'
+import { createLogger } from './logger.js'
 
+const log = createLogger('bridge')
 const PID_FILE = join(tmpdir(), 'paloma-bridge.pid')
 
 /**
@@ -35,7 +37,7 @@ function killStaleBridgeProcesses() {
     if (pid && pid !== myPid) {
       try {
         process.kill(pid, 0) // probe — throws if not alive
-        console.log(`[bridge] Killing stale bridge (pid ${pid}) from PID file`)
+        log.info(`Killing stale bridge (pid ${pid}) from PID file`)
         process.kill(pid, 'SIGTERM')
         killedAny = true
         // Synchronous wait: give it up to 3s to die, then SIGKILL
@@ -62,7 +64,7 @@ function killStaleBridgeProcesses() {
       const parts = line.trim().split(/\s+/)
       const pid = parseInt(parts[1], 10)
       if (!pid || pid === myPid) continue
-      console.log(`[bridge] Killing orphaned bridge process (pid ${pid})`)
+      log.info(`Killing orphaned bridge process (pid ${pid})`)
       try { process.kill(pid, 'SIGTERM'); killedAny = true } catch { /* dead or no permission */ }
     }
   } catch {
@@ -117,14 +119,14 @@ staleRequestInterval = setInterval(() => {
   const now = Date.now()
   for (const [id, entry] of pendingAskUser) {
     if (now - entry.createdAt > PENDING_TIMEOUT_MS) {
-      console.warn('[bridge] Timing out stale ask_user request:', id)
+      log.warn(`Timing out stale ask_user request: ${id}`)
       try { entry.resolve('Timed out — no response from user') } catch { /* best-effort */ }
       pendingAskUser.delete(id)
     }
   }
   for (const [id, entry] of pendingToolConfirm) {
     if (now - entry.createdAt > PENDING_TIMEOUT_MS) {
-      console.warn('[bridge] Timing out stale tool confirmation:', id)
+      log.warn(`Timing out stale tool confirmation: ${id}`)
       try { entry.resolve({ approved: false, reason: 'Timed out — no response from user' }) } catch { /* best-effort */ }
       pendingToolConfirm.delete(id)
     }
@@ -217,7 +219,7 @@ async function main() {
         res.writeHead(200, { 'Content-Type': 'application/json', ...corsHeaders })
         res.end(JSON.stringify(result))
       } catch (err) {
-        console.error('[bridge] GET /api/emails error:', err.message)
+        log.error(`GET /api/emails error: ${err.message}`)
         res.writeHead(500, { 'Content-Type': 'application/json', ...corsHeaders })
         res.end(JSON.stringify({ error: err.message }))
       }
@@ -262,7 +264,7 @@ async function main() {
           return
         }
       } catch (err) {
-        console.error('[bridge] GET /api/emails/:id error:', err.message)
+        log.error(`GET /api/emails/:id error: ${err.message}`)
         res.writeHead(500, { 'Content-Type': 'application/json', ...corsHeaders })
         res.end(JSON.stringify({ error: err.message }))
       }
@@ -342,7 +344,7 @@ async function main() {
   const wss = new WebSocketServer({ server: httpServer })
 
   wss.on('error', (err) => {
-    console.error('[bridge] WebSocket server error:', err.message)
+    log.error(`WebSocket server error: ${err.message}`)
   })
 
   function broadcast(msg) {
@@ -443,7 +445,7 @@ async function main() {
   const heartbeatInterval = setInterval(() => {
     for (const client of wss.clients) {
       if (client._pongReceived === false) {
-        console.log('[bridge] Client heartbeat timeout — terminating')
+        log.warn('Client heartbeat timeout — terminating')
         client.terminate()
         continue
       }
@@ -455,7 +457,7 @@ async function main() {
   wss.on('close', () => clearInterval(heartbeatInterval))
 
   wss.on('connection', (ws) => {
-    console.log('Client connected')
+    log.info('Client connected')
     ws._pongReceived = true
     ws.on('pong', () => { ws._pongReceived = true })
 
@@ -476,7 +478,7 @@ async function main() {
       }
       // Log all incoming messages for debugging
       if (msg.type !== 'discover') {
-        console.log(`[bridge] ← ${msg.type}${msg.id ? ' id=' + msg.id.slice(0, 8) : ''}`)
+        log.debug(`← ${msg.type}${msg.id ? ' id=' + msg.id.slice(0, 8) : ''}`)
       }
 
       if (msg.type === 'discover') {
@@ -605,7 +607,7 @@ async function main() {
           const buf = flowChatBuffers.get(msg.cliSessionId)
           if (buf && buf.requestId) {
             cliRequestToWs.set(buf.requestId, ws)
-            console.log(`[bridge] Re-mapped Flow CLI request ${buf.requestId.slice(0, 8)} to new WS (reconnect)`)
+            log.info(`Re-mapped Flow CLI request ${buf.requestId.slice(0, 8)} to new WS (reconnect)`)
           }
           // Return any buffered output so frontend can restore streaming content
           const bufferedOutput = buf?.output || ''
@@ -760,7 +762,7 @@ async function main() {
               toolRouteMap.set('spawn_worker', { _pillar: true, _spawnWorker: true })
             }
 
-            console.log(`[ollama] Passing ${ollamaTools.length} tools to model (essential servers + pillar tools)`)
+            log.debug(`[ollama] Passing ${ollamaTools.length} tools to model (essential servers + pillar tools)`)
           }
 
           let toolRounds = 0
@@ -777,7 +779,7 @@ async function main() {
             if (event.type === 'ollama_tool_call') {
               toolRounds++
               if (toolRounds > MAX_TOOL_ROUNDS) {
-                console.warn(`[ollama] Hit max tool rounds (${MAX_TOOL_ROUNDS}), stopping`)
+                log.warn(`[ollama] Hit max tool rounds (${MAX_TOOL_ROUNDS}), stopping`)
                 safeSend({ type: 'ollama_done', id: msg.id, requestId: event.requestId, sessionId: event.sessionId, exitCode: 0 })
                 cliRequestToWs.delete(event.requestId)
                 return
@@ -791,7 +793,7 @@ async function main() {
                 let toolArgs = tc.function?.arguments || {}
                 if (typeof toolArgs === 'string') {
                   try { toolArgs = JSON.parse(toolArgs) } catch (e) {
-                    console.warn(`[ollama] Failed to parse tool args for ${toolName}: ${e.message} — raw: ${toolArgs.slice(0, 200)}`)
+                    log.warn(`[ollama] Failed to parse tool args for ${toolName}: ${e.message} — raw: ${toolArgs.slice(0, 200)}`)
                     toolArgs = {}
                   }
                 }
@@ -809,7 +811,7 @@ async function main() {
                     // spawn_worker — Quinn's self-spawning: create a 7B worker with all MCP tools
                     if (route._spawnWorker) {
                       const workerTask = toolArgs.task || toolArgs.prompt || JSON.stringify(toolArgs)
-                      console.log(`[quinn] Browser: Spawning worker for task: ${workerTask.slice(0, 100)}...`)
+                      log.info(`[quinn] Browser: Spawning worker for task: ${workerTask.slice(0, 100)}...`)
 
                       const spawnResult = await pillarManager.spawn({
                         pillar: 'forge',
@@ -826,14 +828,14 @@ async function main() {
                       })
 
                       const content = childOutput || '(worker returned empty-handed)'
-                      console.log(`[quinn] Browser: Worker ${childPillarId.slice(0, 8)} returned — ${content.length} chars`)
+                      log.info(`[quinn] Browser: Worker ${childPillarId.slice(0, 8)} returned — ${content.length} chars`)
                       results.push({ content })
                       safeSend({
                         type: 'ollama_stream', id: msg.id,
                         event: { type: 'tool_result', toolUseId: toolId, content: content.slice(0, 500) + (content.length > 500 ? '...' : '') }
                       })
                     } else {
-                      console.log(`[ollama] Executing pillar tool: ${toolName}`)
+                      log.debug(`[ollama] Executing pillar tool: ${toolName}`)
                       const result = await mcpProxy._handlePillarTool(toolName, toolArgs, null)
                       const content = result.content?.map(c => c.text || JSON.stringify(c)).join('\n') || ''
                       results.push({ content })
@@ -843,7 +845,7 @@ async function main() {
                       })
                     }
                   } catch (e) {
-                    console.error(`[ollama] Pillar tool error (${toolName}):`, e.message)
+                    log.error(`[ollama] Pillar tool error (${toolName}): ${e.message}`)
                     const errContent = `Error executing ${toolName}: ${e.message}`
                     results.push({ content: errContent })
                     safeSend({
@@ -855,7 +857,7 @@ async function main() {
                 }
 
                 if (!route) {
-                  console.warn(`[ollama] Unknown tool: ${toolName}`)
+                  log.warn(`[ollama] Unknown tool: ${toolName}`)
                   const errContent = `Error: Unknown tool "${toolName}"`
                   results.push({ content: errContent })
                   safeSend({
@@ -869,7 +871,7 @@ async function main() {
                   if (!route.server || !route.tool) {
                     throw new Error(`Malformed route for tool "${toolName}": missing server or tool name`)
                   }
-                  console.log(`[ollama] Executing tool ${route.server}/${route.tool}`)
+                  log.debug(`[ollama] Executing tool ${route.server}/${route.tool}`)
                   const result = await manager.callTool(route.server, route.tool, toolArgs)
                   const content = result.content?.map(c => c.text || JSON.stringify(c)).join('\n') || ''
                   results.push({ content })
@@ -878,7 +880,7 @@ async function main() {
                     event: { type: 'tool_result', toolUseId: toolId, content }
                   })
                 } catch (e) {
-                  console.error(`[ollama] Tool error (${toolName}):`, e.message)
+                  log.error(`[ollama] Tool error (${toolName}): ${e.message}`)
                   const errContent = `Error executing ${toolName}: ${e.message}`
                   results.push({ content: errContent })
                   safeSend({
@@ -896,7 +898,7 @@ async function main() {
                   handleOllamaEvent
                 )
               } catch (e) {
-                console.error('[bridge] Failed to continue Ollama tool loop:', e.message)
+                log.error(`Failed to continue Ollama tool loop: ${e.message}`)
                 safeSend({ type: 'ollama_error', id: msg.id, error: e.message })
               }
               return
@@ -968,7 +970,7 @@ async function main() {
         ws.send(JSON.stringify({ type: 'error', id: msg.id, message: `Unknown message type: ${msg.type}` }))
       }
       } catch (err) {
-        console.error(`[bridge] Unhandled error in WebSocket message handler:`, err)
+        log.error(`Unhandled error in WebSocket message handler: ${err.message}`)
         try { ws.send(JSON.stringify({ type: 'error', message: `Internal error: ${err.message}` })) } catch { /* client gone */ }
       }
     })
@@ -982,7 +984,7 @@ async function main() {
       if (pillarManager) {
         for (const [dbSessionId, session] of pillarManager.flowSessions) {
           if (session.wsClient === ws) {
-            console.log(`[bridge] Removing Flow session ${dbSessionId} (WS closed)`)
+            log.info(`Removing Flow session ${dbSessionId} (WS closed)`)
             pillarManager.flowSessions.delete(dbSessionId)
             // Update convenience pointer if it was pointing to this session
             if (pillarManager.flowSession?.dbSessionId === dbSessionId) {
@@ -993,7 +995,7 @@ async function main() {
           }
         }
       }
-      console.log('Client disconnected')
+      log.info('Client disconnected')
     })
   })
 
@@ -1014,9 +1016,9 @@ async function main() {
       const activePillars = [...pillarManager.pillars.values()]
         .filter(s => s.status === 'running' || s.currentlyStreaming)
       if (activePillars.length > 0) {
-        console.log(`  \x1b[33m▲\x1b[0m Killing ${activePillars.length} active pillar session(s):`)
+        log.info(`Killing ${activePillars.length} active pillar session(s):`)
         for (const s of activePillars) {
-          console.log(`    - ${s.pillar} (${s.pillarId.slice(0, 8)}...) — ${s.status}`)
+          log.info(`  - ${s.pillar} (${s.pillarId.slice(0, 8)}...) — ${s.status}`)
         }
       }
     }
@@ -1042,7 +1044,7 @@ async function main() {
 
   // SIGUSR1 = restart request (sent by git post-merge/post-rewrite hooks)
   process.on('SIGUSR1', () => {
-    console.log('[bridge] Received SIGUSR1 — restarting after git pull...')
+    log.info('Received SIGUSR1 — restarting after git pull...')
     shutdown(RESTART_CODE)
   })
 

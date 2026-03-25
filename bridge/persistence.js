@@ -1,6 +1,9 @@
 import { writeFile, readFile } from 'fs/promises'
 import { join } from 'path'
 import { existsSync } from 'fs'
+import { createLogger } from './logger.js'
+
+const log = createLogger('persistence')
 
 /**
  * Simple JSON persistence utility with debouncing.
@@ -27,7 +30,7 @@ export class Persistence {
         await writeFile(this.filePath, json, 'utf8')
         // console.log(`[persistence] Saved state to ${this.filePath}`)
       } catch (err) {
-        console.error(`[persistence] Failed to save state to ${this.filePath}:`, err)
+        log.error(`Failed to save state to ${this.filePath}: ${err.message}`)
       } finally {
         this._saveTimer = null
       }
@@ -44,7 +47,7 @@ export class Persistence {
       const json = await readFile(this.filePath, 'utf8')
       return JSON.parse(json)
     } catch (err) {
-      console.error(`[persistence] Failed to load state from ${this.filePath}:`, err)
+      log.error(`Failed to load state from ${this.filePath}: ${err.message}`)
       return null
     }
   }
@@ -62,7 +65,7 @@ export class Persistence {
       const json = JSON.stringify(this._pendingData, null, 2)
       await writeFile(this.filePath, json, 'utf8')
     } catch (err) {
-      console.error(`[persistence] Failed to flush state to ${this.filePath}:`, err)
+      log.error(`Failed to flush state to ${this.filePath}: ${err.message}`)
     }
   }
 }
