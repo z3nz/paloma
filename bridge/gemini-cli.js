@@ -73,7 +73,7 @@ export class GeminiCliManager {
       if (model) args.push('--model', model)
       // Include the actual project directory so Gemini has workspace context
       if (cwd) args.push('--include-directories', cwd)
-      console.log(`[gemini:${reqShort}] New session, model=${model || 'flash'}`)
+      console.log(`[gemini:${reqShort}] New session, model=${model || 'default'}`)
     }
 
     const env = { ...process.env }

@@ -2679,7 +2679,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
     }
     if (backend === 'codex') return 'gpt-5.1-codex-max'
     if (backend === 'copilot') return 'claude-sonnet-4.6'
-    if (backend === 'gemini') return 'pro'  // Pro is default — Adam has pro subscription
+    if (backend === 'gemini') return 'gemini-2.5-pro'  // Full model ID required by Gemini CLI
     // Claude backend: Opus for Forge (max precision), Sonnet for others
     if (pillar === 'forge') return 'opus'
     if (pillar === 'polish') return 'opus'

@@ -50,9 +50,9 @@ const MAX_POLL_BACKOFF_MS = 5 * 60 * 1000 // 5 minute max backoff on poll errors
 // Backend rotation for email sessions — spread usage evenly across all CLIs
 // Claude is premium (best reasoning) — used sparingly. Others share the bulk of the load.
 const EMAIL_BACKEND_ROTATION = [
-  { backend: 'gemini', model: 'gemini' },
+  { backend: 'gemini', model: 'gemini-2.5-flash' },
   { backend: 'copilot', model: 'copilot' },
-  { backend: 'gemini', model: 'gemini' },
+  { backend: 'gemini', model: 'gemini-2.5-flash' },
   { backend: 'copilot', model: 'copilot' },
   { backend: 'claude', model: 'sonnet' },
 ]
@@ -399,7 +399,7 @@ export class EmailWatcher {
     const modelOverride = this._parseModelOverride(subject)
     // Fix 7: Smart backend rotation for trusted senders, cheapest for triage
     const { backend: backendName, model } = modelOverride
-      || (trusted ? this._nextBackend() : { backend: 'gemini', model: 'gemini' })
+      || (trusted ? this._nextBackend() : { backend: 'gemini', model: 'gemini-2.5-flash' })
     const manager = this.backends[backendName] || this.backends.claude
     console.log(`[email-watcher] Email "${subject}" → backend: ${backendName}, model: ${model} (${modelOverride ? 'subject override' : trusted ? 'rotation' : 'triage default'})`)
     const { requestId, sessionId } = manager.chat(
@@ -440,7 +440,7 @@ export class EmailWatcher {
       opus:    { backend: 'claude', model: 'opus' },
       sonnet:  { backend: 'claude', model: 'sonnet' },
       claude:  { backend: 'claude', model: 'sonnet' },
-      gemini:  { backend: 'gemini', model: 'gemini' },
+      gemini:  { backend: 'gemini', model: 'gemini-2.5-pro' },
       copilot: { backend: 'copilot', model: 'copilot' },
       codex:   { backend: 'codex', model: 'codex' },
     }
