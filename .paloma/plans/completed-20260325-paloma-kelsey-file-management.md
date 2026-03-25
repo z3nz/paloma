@@ -1,5 +1,5 @@
 # Plan: Kelsey File Management MVP
-**Status:** active  
+**Status:** completed  
 **Date:** 2026-03-25  
 **Scope:** paloma  
 **Slug:** kelsey-file-management  
