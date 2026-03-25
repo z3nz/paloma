@@ -36,6 +36,10 @@ export class CopilotCliManager {
     const requestId = randomUUID()
     const reqShort = requestId.slice(0, 8)
 
+    // Per-request state: track which messageIds have received streaming deltas
+    // so we can avoid emitting duplicate text from assistant.message events.
+    const deltaMessageIds = new Set()
+
     // IDENTITY INJECTION: Copilot CLI supports COPILOT_CUSTOM_INSTRUCTIONS_DIRS — an env var
     // that points to additional directories searched for instruction files (AGENTS.md,
     // copilot-instructions.md, etc.). Content is loaded as TRUE system-level instructions,
@@ -141,7 +145,7 @@ export class CopilotCliManager {
     log.info(`[${reqShort}] Process spawned, pid=${proc.pid}`)
 
     const flush = attachStreamParser(proc.stdout, (event) => {
-      this._handleEvent(event, requestId, onEvent)
+      this._handleEvent(event, requestId, onEvent, deltaMessageIds)
 
       // Capture session ID from result event
       if (event.type === 'result' && event.sessionId) {
@@ -153,6 +157,14 @@ export class CopilotCliManager {
           this._sessionPrompts.set(event.sessionId, effectiveSystemPrompt)
         }
         sessionId = event.sessionId
+
+        // Emit session ID early as a stream event so frontend can update immediately
+        onEvent({
+          type: 'copilot_stream',
+          requestId,
+          event: { type: 'session_id', sessionId: event.sessionId },
+          sessionId: event.sessionId
+        })
       }
     })
 
@@ -204,31 +216,98 @@ export class CopilotCliManager {
   /**
    * Map Copilot CLI JSONL events to normalized copilot_stream events.
    *
-   * Copilot emits:
+   * Actual Copilot CLI event types (from --output-format json):
    * - assistant.message_delta — streaming text chunks (deltaContent)
-   * - assistant.message — complete message with content
+   * - assistant.message — complete message with content AND toolRequests[]
+   * - assistant.reasoning_delta — model reasoning chunks (not forwarded)
    * - assistant.turn_start / assistant.turn_end — turn boundaries
+   * - tool.execution_start — tool call started (toolCallId, toolName, arguments)
+   * - tool.execution_complete — tool call finished (toolCallId, result)
    * - result — session complete with sessionId, usage
+   * - session.* — MCP server status, tools updated (ephemeral, ignored)
+   * - user.message — echo of user input (ignored)
+   *
+   * @param {Set<string>} deltaMessageIds - tracks messageIds that received streaming deltas
    */
-  _handleEvent(event, requestId, onEvent) {
+  _handleEvent(event, requestId, onEvent, deltaMessageIds) {
     if (event.type === 'assistant.message_delta' && event.data?.deltaContent) {
+      // Track that this messageId received deltas (to avoid duplicate from assistant.message)
+      if (event.data.messageId) {
+        deltaMessageIds.add(event.data.messageId)
+      }
       // Streaming text delta — forward to UI
       onEvent({
         type: 'copilot_stream',
         requestId,
         event: { type: 'agent_message', text: event.data.deltaContent }
       })
-    } else if (event.type === 'assistant.message' && event.data?.content) {
-      // Complete message — skip if we already streamed deltas (to avoid duplicate text).
-      // Only emit if there were no deltas (e.g., tool-only turns).
-      // The pillar manager accumulates text from deltas, so this is just for completeness.
-    } else if (event.type === 'assistant.tool_call' && event.data) {
-      const toolId = randomUUID()
-      const toolName = event.data.toolName || event.data.tool || ''
-      const args = event.data.arguments || {}
-      const status = event.data.status || 'started'
+    } else if (event.type === 'assistant.message' && event.data) {
+      // Complete message — contains final content AND toolRequests.
+      //
+      // Content: only emit if we didn't already stream deltas for this messageId
+      // (avoids duplicate text). For tool-only turns, content is usually just whitespace.
+      const messageId = event.data.messageId
+      const content = event.data.content || ''
+      if (content.trim() && (!messageId || !deltaMessageIds.has(messageId))) {
+        onEvent({
+          type: 'copilot_stream',
+          requestId,
+          event: { type: 'agent_message', text: content }
+        })
+      }
 
-      // Emit tool_use so the UI shows the tool call in the activity panel
+      // Tool requests: emit each as a tool_use event so the UI shows tool activity.
+      // Copilot embeds tool calls in assistant.message.data.toolRequests[] —
+      // it does NOT emit separate assistant.tool_call events.
+      if (event.data.toolRequests && event.data.toolRequests.length > 0) {
+        for (const req of event.data.toolRequests) {
+          onEvent({
+            type: 'copilot_stream',
+            requestId,
+            event: {
+              type: 'tool_use',
+              tool_use: {
+                id: req.toolCallId || randomUUID(),
+                name: req.name || '',
+                input: req.arguments || {}
+              }
+            }
+          })
+        }
+      }
+    } else if (event.type === 'tool.execution_start' && event.data) {
+      // Tool execution starting — Copilot executes tools locally.
+      // We already emit tool_use from assistant.message.toolRequests above,
+      // so this is mainly for tools that appear without a preceding assistant.message.
+      // Skip emitting here to avoid duplicate tool_use events.
+    } else if (event.type === 'tool.execution_complete' && event.data) {
+      // Tool execution finished — forward as tool_result
+      const toolCallId = event.data.toolCallId || ''
+      const result = event.data.result
+      let resultContent = ''
+      if (result) {
+        resultContent = typeof result.content === 'string'
+          ? result.content
+          : typeof result === 'string'
+            ? result
+            : JSON.stringify(result)
+      }
+      onEvent({
+        type: 'copilot_stream',
+        requestId,
+        event: {
+          type: 'tool_result',
+          toolUseId: toolCallId,
+          content: resultContent,
+          success: event.data.success !== false
+        }
+      })
+    } else if (event.type === 'assistant.tool_call' && event.data) {
+      // Legacy handler: some Copilot versions may emit separate tool_call events
+      const toolId = event.data.toolCallId || randomUUID()
+      const toolName = event.data.toolName || event.data.name || event.data.tool || ''
+      const args = event.data.arguments || {}
+
       onEvent({
         type: 'copilot_stream',
         requestId,
@@ -237,22 +316,8 @@ export class CopilotCliManager {
           tool_use: { id: toolId, name: toolName, input: args }
         }
       })
-
-      // If status indicates completion, also emit tool_result
-      if (status === 'completed' || status === 'finished' || status === 'done') {
-        const resultContent = event.data.result || event.data.output || ''
-        onEvent({
-          type: 'copilot_stream',
-          requestId,
-          event: {
-            type: 'tool_result',
-            toolUseId: toolId,
-            content: typeof resultContent === 'string' ? resultContent : JSON.stringify(resultContent)
-          }
-        })
-      }
     } else if (event.type === 'assistant.tool_result' && event.data) {
-      // Future-proofing: handle separate tool_result events if Copilot ever emits them
+      // Legacy handler: future-proofing for separate tool_result events
       onEvent({
         type: 'copilot_stream',
         requestId,
@@ -263,8 +328,9 @@ export class CopilotCliManager {
         }
       })
     }
-    // session.tools_updated, user.message, turn_start/end, result
-    // are structural — not forwarded as stream events
+    // session.*, user.message, assistant.turn_start/turn_end, assistant.reasoning_delta,
+    // assistant.reasoning, result — structural events, not forwarded as stream events.
+    // Result is handled in the stream parser callback above for session ID capture.
   }
 
   stop(requestId) {

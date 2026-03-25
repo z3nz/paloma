@@ -49,6 +49,19 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     }
   }
 
+  // Codex/Copilot direct chats do not get the pillar-manager resume reminder, so
+  // reinforce Paloma's identity on resumed turns here to reduce backend drift.
+  if (existingCliSession && (useCodex || useCopilot)) {
+    const phaseLabel = phase
+      ? phase.charAt(0).toUpperCase() + phase.slice(1)
+      : 'Flow'
+    const competingName = useCodex ? 'an OpenAI assistant' : 'GitHub Copilot'
+    const identityReminder = `[IDENTITY: You are Paloma — not ${competingName}. ` +
+      `You are Paloma, an AI development partner. Current phase: ${phaseLabel}. ` +
+      `Follow all behavioral rules from your initial instructions.]\n\n`
+    prompt = identityReminder + prompt
+  }
+
   const resolvedModel = useOllama ? getOllamaModelName(model) : useGemini ? getGeminiModelName(model) : useCopilot ? getCopilotModelName(model) : useCodex ? getCodexModelName(model) : getCliModelName(model)
   const cliOptions = {
     prompt,
@@ -102,10 +115,10 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
         }
       }
 
-      if (!existingCliSession && chunk.sessionId) {
-        await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId, cliBackend: currentBackend })
-      } else if (existingBackend !== currentBackend) {
-        // Backend changed — store new session ID and backend
+      // Always update DB when session ID is provided — backends like Copilot may
+      // emit a pre-generated UUID initially, then the real session ID from the result
+      // event. The latest ID must be persisted for correct session resumption.
+      if (chunk.sessionId) {
         await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId, cliBackend: currentBackend })
       }
     } else if (chunk.type === 'tool_use') {
@@ -199,4 +212,3 @@ export function clearCliRequestId(sessionState) {
   }
   sessionState.cliRequestId = null
 }
-

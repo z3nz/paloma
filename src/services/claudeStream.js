@@ -26,6 +26,8 @@ export const CLI_MODELS = [
   { id: 'copilot-cli:claude-opus-4.6', name: 'Claude Opus 4.6 (Copilot)', context_length: 200000, copilot: true, pricing: ANTHROPIC_PRICING.opus },
   { id: 'copilot-cli:gpt-5.4', name: 'GPT-5.4 (Copilot)', context_length: 200000, copilot: true, pricing: FREE_PRICING },
   { id: 'copilot-cli:gemini-3-pro-preview', name: 'Gemini 3 Pro (Copilot)', context_length: 200000, copilot: true, pricing: FREE_PRICING },
+  { id: 'gemini-cli:gemini-3-pro', name: 'Gemini 3 Pro', context_length: 2000000, gemini: true, pricing: FREE_PRICING },
+  { id: 'gemini-cli:gemini-3-flash', name: 'Gemini 3 Flash', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
   { id: 'gemini-cli:gemini-2.5-flash', name: 'Gemini 2.5 Flash', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
   { id: 'gemini-cli:gemini-2.5-pro', name: 'Gemini 2.5 Pro', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
   { id: 'gemini-cli:gemini-2.0-flash', name: 'Gemini 2.0 Flash', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
@@ -52,7 +54,7 @@ export function isGeminiModel(modelId) {
 }
 
 export function getGeminiModelName(modelId) {
-  return modelId?.split(':')[1] || 'gemini-2.5-flash'
+  return modelId?.split(':')[1] || 'gemini-3-flash'
 }
 
 export function isOllamaModel(modelId) {
@@ -261,6 +263,11 @@ export async function* streamCodexChat(sendFn, options) {
         yield { type: 'content', text: event.text }
       } else if (event.type === 'session_id') {
         yield { type: 'session_id', sessionId: event.sessionId, requestId }
+      } else if (event.type === 'tool_use') {
+        const tu = event.tool_use || {}
+        yield { type: 'tool_use', id: tu.id, name: tu.name, input: tu.input || {} }
+      } else if (event.type === 'tool_result') {
+        yield { type: 'tool_result', toolUseId: event.toolUseId, content: event.content }
       } else if (event.type === 'command_execution') {
         // Surface command executions as content so user sees what Codex did
         let text = ''
@@ -277,7 +284,7 @@ export async function* streamCodexChat(sendFn, options) {
 
 /**
  * Async generator for Copilot CLI events. Same agent_message format as Codex.
- * Yields: { type: 'content', text } | { type: 'session_id', sessionId }
+ * Yields: { type: 'content', text } | { type: 'session_id', sessionId } | { type: 'tool_use' } | { type: 'tool_result' }
  */
 export async function* streamCopilotChat(sendFn, options) {
   const queue = []
@@ -326,12 +333,19 @@ export async function* streamCopilotChat(sendFn, options) {
 
       if (event.type === 'agent_message' && event.text) {
         yield { type: 'content', text: event.text }
+      } else if (event.type === 'session_id') {
+        // Real session ID from result event — update frontend's stored ID
+        yield { type: 'session_id', sessionId: event.sessionId, requestId }
       } else if (event.type === 'tool_use') {
         const tu = event.tool_use || {}
         yield { type: 'tool_use', id: tu.id, name: tu.name, input: tu.input || {} }
       } else if (event.type === 'tool_result') {
         yield { type: 'tool_result', toolUseId: event.toolUseId, content: event.content }
       } else if (event.type === 'result' && event.subtype === 'done') {
+        // Propagate final session ID so frontend updates its stored ID
+        if (event.sessionId) {
+          yield { type: 'session_id', sessionId: event.sessionId, requestId }
+        }
         continue
       }
     }
