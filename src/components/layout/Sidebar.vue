@@ -26,6 +26,16 @@
           {{ unreadCount }}
         </span>
       </button>
+      <button 
+        @click="$emit('switch-view', 'files')"
+        class="flex-1 flex items-center justify-center gap-2 py-3 text-xs font-bold uppercase tracking-wider transition-colors"
+        :class="activeView === 'files' ? 'text-accent border-b-2 border-accent bg-bg-primary/30' : 'text-text-muted hover:text-text-primary hover:bg-bg-tertiary'"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        Files
+      </button>
     </div>
 
     <!-- Project indicator + New chat -->
@@ -60,7 +70,7 @@
     </div>
 
     <!-- Inbox mini-list placeholder or simple switcher logic -->
-    <div v-else class="flex-1 flex flex-col items-center justify-center p-6 text-center text-text-muted">
+    <div v-else-if="activeView === 'inbox'" class="flex-1 flex flex-col items-center justify-center p-6 text-center text-text-muted">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="mb-4 opacity-20">
         <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
         <polyline points="22,6 12,13 2,6"></polyline>

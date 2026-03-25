@@ -49,6 +49,7 @@
       </div>
     </template>
     <InboxView v-else-if="activeView === 'inbox'" />
+    <FilesView v-else-if="activeView === 'files'" />
 
     <template #right-sidebar>
       <ChangesPanel
@@ -106,6 +107,7 @@ import WelcomeScreen from './components/welcome/WelcomeScreen.vue'
 import AppLayout from './components/layout/AppLayout.vue'
 import ChatView from './components/chat/ChatView.vue'
 import InboxView from './components/inbox/InboxView.vue'
+import FilesView from './components/files/FilesView.vue'
 import SettingsModal from './components/settings/SettingsModal.vue'
 import ChangesPanel from './components/chat/ChangesPanel.vue'
 import DiffPreview from './components/chat/DiffPreview.vue'
