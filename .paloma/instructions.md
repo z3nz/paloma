@@ -149,8 +149,8 @@ Only Lynch Tower sets `continuityOwner: true` — it's the only machine that sen
 **Gmail abuse prevention is critical. Excessive email sending WILL get our Gmail account shut down.**
 
 **Code-enforced in `mcp-servers/gmail.js`** — not just policy, a hard stop that no session can bypass:
-- **Rolling 24h window limits:** Max 5 outbound emails total. Max 2 new emails (`email_send`). Max 3 replies (`email_reply`).
-- **Replies to received threads are always allowed** — conversation continuity is never blocked.
+- Max 1 daily continuity email + Max 1 new outbound email (`email_send`). That's it.
+- Replies (`email_reply`) are always allowed — conversation continuity is never blocked, no limit.
 - **On limit hit:** Returns MCP error. The email simply does not send.
 - **Tracking file:** `~/.paloma/email-send-log.json` — persistent across restarts.
 

@@ -254,16 +254,39 @@ export function useChat() {
         }
         const tools = dirHandle ? getAllTools(enabledMcpTools) : enabledMcpTools.length ? getAllTools(enabledMcpTools) : []
 
+        // Track the primary assistant message across tool rounds so all rounds
+        // consolidate into a single chat message instead of creating duplicates.
+        let primaryAssistantMsg = null
+
         const result = await runOpenRouterLoop({
           apiKey, model, apiMessages, tools, sessionId,
           isAutoApproved, mcpConfig, callMcpTool, searchFn, dirHandle,
           signal: s.abortController.signal,
           onContent(text) { s.streamingContent.value = text },
           onResetStreaming() { s.streamingContent.value = '' },
-          async onSaveAssistant(content, toolCalls, usage, model) {
-            // Don't attach toolActivity here — tools haven't executed yet.
-            // We'll update the message after tool execution via onUpdateAssistantActivity.
-            return saveAssistantMessage(sessionId, s, content, toolCalls, usage, model)
+          async onSaveAssistant(content, toolCalls, usage, modelName) {
+            if (primaryAssistantMsg) {
+              // Subsequent tool round — update the existing message
+              const updates = {}
+              if (content) {
+                primaryAssistantMsg.content = (primaryAssistantMsg.content || '') + content
+                updates.content = primaryAssistantMsg.content
+              }
+              if (toolCalls) {
+                primaryAssistantMsg.toolCalls = [...(primaryAssistantMsg.toolCalls || []), ...toolCalls]
+                updates.toolCalls = primaryAssistantMsg.toolCalls
+              }
+              if (usage) {
+                primaryAssistantMsg.usage = usage
+                updates.usage = usage
+              }
+              await db.messages.update(primaryAssistantMsg.id, sanitizeForDB(updates))
+              s.messages.value = [...s.messages.value]
+              return primaryAssistantMsg
+            }
+            // First tool round — create the message
+            primaryAssistantMsg = await saveAssistantMessage(sessionId, s, content, toolCalls, usage, modelName)
+            return primaryAssistantMsg
           },
           async onSaveTool(callId, toolName, args, content, activityId) {
             const toolMsg = sanitizeForDB({
@@ -282,12 +305,11 @@ export function useChat() {
             s.messages.value.push(toolMsg)
           },
           async onToolsComplete(assistantMsg) {
-            // Attach the tool activity snapshot now that all tools have finished
+            // Attach the tool activity snapshot now that all tools have finished this round
             const snapshot = snapshotActivity()
             if (snapshot.length && assistantMsg?.id) {
               assistantMsg.toolActivity = snapshot
               await db.messages.update(assistantMsg.id, { toolActivity: snapshot })
-              // Trigger reactivity
               s.messages.value = [...s.messages.value]
             }
           },
@@ -300,7 +322,24 @@ export function useChat() {
 
         if (!s.streamInterrupted) {
           if (result) {
-            await saveAssistantMessage(sessionId, s, result.content, null, result.usage, result.model, snapshotActivity())
+            const activity = snapshotActivity()
+            if (primaryAssistantMsg) {
+              // Had tool rounds — update the existing message with final content
+              const updates = { toolActivity: activity }
+              if (result.content) {
+                primaryAssistantMsg.content = (primaryAssistantMsg.content || '') + result.content
+                updates.content = primaryAssistantMsg.content
+              }
+              if (result.usage) {
+                primaryAssistantMsg.usage = result.usage
+                updates.usage = result.usage
+              }
+              await db.messages.update(primaryAssistantMsg.id, sanitizeForDB(updates))
+              s.messages.value = [...s.messages.value]
+            } else {
+              // No tool rounds — single response, create the message
+              await saveAssistantMessage(sessionId, s, result.content, null, result.usage, result.model, activity)
+            }
             checkContextUsage(s, result.usage, model)
             completed = true
 
