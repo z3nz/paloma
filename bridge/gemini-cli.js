@@ -83,6 +83,9 @@ export class GeminiCliManager {
     const env = { ...process.env }
     if (systemPromptPath) {
       env.GEMINI_SYSTEM_MD = systemPromptPath
+    } else {
+      // Ensure we don't leak bridge-level env var into the CLI session
+      delete env.GEMINI_SYSTEM_MD
     }
 
     const proc = spawn('gemini', args, {
@@ -219,20 +222,28 @@ export class GeminiCliManager {
   stop(requestId) {
     const entry = this.processes.get(requestId)
     if (entry) {
-      if (entry.sessionDir) {
-        try { rmSync(entry.sessionDir, { recursive: true, force: true }) } catch {}
-      }
+      log.info(`[${requestId.slice(0, 8)}] Stop requested`)
+      // Capture session ID if we have it before killing/deleting
+      const sessionId = entry.sessionId
+      
+      // Kill the process first. The 'close' handler will perform 
+      // the final cleanup of the entry and sessionDir.
       entry.process.kill('SIGTERM')
-      this.processes.delete(requestId)
+      
+      // We DON'T delete from this.processes yet, so the 'close' handler
+      // can still find the entry to get the sessionId for the 'gemini_done' event.
     }
   }
 
   shutdown() {
-    for (const [, entry] of this.processes) {
+    log.info('Shutting down Gemini manager')
+    for (const [requestId, entry] of this.processes) {
+      if (entry.process) {
+        entry.process.kill('SIGTERM')
+      }
       if (entry.sessionDir) {
         try { rmSync(entry.sessionDir, { recursive: true, force: true }) } catch {}
       }
-      entry.process.kill('SIGTERM')
     }
     this.processes.clear()
   }
