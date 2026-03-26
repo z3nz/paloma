@@ -132,7 +132,7 @@ async function loadRoots(callMcpTool, root) {
   return loaded
 }
 
-async function loadProjectContext(callMcpTool, root) {
+async function loadProjectContext(callMcpTool, root, { includePlanContent = false } = {}) {
   // Read instructions
   const instructions = await mcpReadFile(callMcpTool, `${root}/.paloma/instructions.md`)
 
@@ -141,10 +141,12 @@ async function loadProjectContext(callMcpTool, root) {
   const planEntries = await mcpListDir(callMcpTool, `${root}/.paloma/plans`)
   for (const entry of planEntries) {
     if (entry.kind === 'file' && entry.name.startsWith('active-') && entry.name.endsWith('.md')) {
-      const content = await mcpReadFile(callMcpTool, `${root}/.paloma/plans/${entry.name}`)
-      if (content) {
-        plans.push({ name: entry.name, content })
+      const plan = { name: entry.name }
+      if (includePlanContent) {
+        const content = await mcpReadFile(callMcpTool, `${root}/.paloma/plans/${entry.name}`)
+        if (content) plan.content = content
       }
+      plans.push(plan)
     }
   }
   plans.sort((a, b) => a.name.localeCompare(b.name))

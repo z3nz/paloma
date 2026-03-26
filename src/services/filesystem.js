@@ -74,16 +74,24 @@ export async function readProjectInstructions(dirHandle) {
   }
 }
 
-export async function readActivePlans(dirHandle) {
+/**
+ * List active plans in .paloma/plans.
+ * Defaults to lazy mode (names only) to avoid loading large plan files into memory/context.
+ * Pass { includeContent: true } if a caller explicitly needs full text.
+ */
+export async function readActivePlans(dirHandle, { includeContent = false } = {}) {
   try {
     const palomaDir = await dirHandle.getDirectoryHandle('.paloma')
     const plansDir = await palomaDir.getDirectoryHandle('plans')
     const plans = []
     for await (const entry of plansDir.values()) {
       if (entry.kind === 'file' && entry.name.startsWith('active-') && entry.name.endsWith('.md')) {
-        const file = await entry.getFile()
-        const content = await file.text()
-        plans.push({ name: entry.name, content })
+        const plan = { name: entry.name }
+        if (includeContent) {
+          const file = await entry.getFile()
+          plan.content = await file.text()
+        }
+        plans.push(plan)
       }
     }
     plans.sort((a, b) => a.name.localeCompare(b.name))

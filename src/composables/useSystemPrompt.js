@@ -20,9 +20,8 @@ export function buildSystemPrompt(phase, projectInstructions, activePlans, enabl
 
   if (activePlans?.length > 0) {
     prompt += '\n\n## Active Plans\n\n'
-    prompt += activePlans.map(p =>
-      `<plan name="${p.name}">\n${p.content}\n</plan>`
-    ).join('\n\n')
+    prompt += 'The following plans are active. Read the full content with filesystem tools when needed (e.g., `mcp__filesystem__read_text_file` on `.paloma/plans/<name>`).\n\n'
+    prompt += activePlans.map(p => `- \`.paloma/plans/${p.name}\``).join('\n')
   }
 
   const activePillar = phase || 'flow'
@@ -53,4 +52,3 @@ export function buildOllamaSystemPrompt(phase, projectInstructions) {
 
   return prompt
 }
-
