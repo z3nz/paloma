@@ -117,7 +117,7 @@ export class PillarManager {
       }
       await this.persistence.save(data)
     } catch (err) {
-      console.error('[pillar] Failed to trigger state save:', err)
+      log.error('Failed to trigger state save:', err)
     }
   }
 
@@ -145,7 +145,7 @@ export class PillarManager {
           this.pillars.set(idToStore, session)
         }
         if (data.pillars.length > 0) {
-          console.log(`[pillar] Recovered ${data.pillars.length} sessions from bridge-state.json`)
+          log.info(`Recovered ${data.pillars.length} sessions from bridge-state.json`)
         }
 
         // Startup reconciliation: immediately expire interrupted sessions older than 30 min
@@ -153,13 +153,13 @@ export class PillarManager {
         let expiredCount = 0
         for (const [id, session] of this.pillars) {
           if (session.status === 'interrupted' && session.startTime < staleCutoff) {
-            console.log(`[pillar] Startup cleanup: expiring stale session ${id.slice(0, 8)} (${session.pillar || 'unknown'}, started ${new Date(session.startTime).toISOString()})`)
+            log.info(`Startup cleanup: expiring stale session ${id.slice(0, 8)} (${session.pillar || 'unknown'}, started ${new Date(session.startTime).toISOString()})`)
             this.pillars.delete(id)
             expiredCount++
           }
         }
         if (expiredCount > 0) {
-          console.log(`[pillar] Startup cleanup: expired ${expiredCount} stale interrupted sessions`)
+          log.info(`Startup cleanup: expired ${expiredCount} stale interrupted sessions`)
         }
       }
 
@@ -170,7 +170,7 @@ export class PillarManager {
         }
       }
     } catch (err) {
-      console.error('[pillar] Failed to load bridge state:', err)
+      log.error('Failed to load bridge state:', err)
     }
   }
 
@@ -205,7 +205,7 @@ export class PillarManager {
     // Smart backend selection — replaces the old originatingBackend || 'gemini' heuristic
     const selection = this._selectBackend(pillar, prompt, { backend, recursive, depth, singularityRole })
     const resolvedBackend = selection.backend
-    console.log(`[pillar] Backend selection for ${pillar}: ${selection.backend} (${selection.reason})`)
+    log.info(`Backend selection for ${pillar}: ${selection.backend} (${selection.reason})`)
 
     // Singularity dual-mind: spawn Voice + Thinker concurrently (legacy mode)
     if (recursive && (depth || 0) === 0 && resolvedBackend === 'ollama' && !singularityRole) {
@@ -232,12 +232,12 @@ export class PillarManager {
         : (this.health.usageTracker.data[finalBackend]?.disabledReason || 'usage limit reached')
       const fallbackBackend = this.health.getFallback(finalBackend)
       if (fallbackBackend) {
-        console.warn(`[pillar] Backend ${finalBackend} ${isUsageLimited ? 'usage-limited' : 'unavailable'} (${reason}) — falling back to ${fallbackBackend}`)
+        log.warn(`Backend ${finalBackend} ${isUsageLimited ? 'usage-limited' : 'unavailable'} (${reason}) — falling back to ${fallbackBackend}`)
         fallbackFrom = finalBackend
         finalBackend = fallbackBackend
       } else if (isUnavailable) {
         // Hard unavailable with no fallback — fail
-        console.error(`[pillar] Backend ${finalBackend} unavailable and no fallback available`)
+        log.error(`Backend ${finalBackend} unavailable and no fallback available`)
         return {
           pillarId: null,
           pillar,
@@ -260,7 +260,7 @@ export class PillarManager {
     if (finalBackend === 'ollama') {
       const activeOllama = this._countActiveOllamaSessions()
       if (activeOllama >= MAX_CONCURRENT_OLLAMA) {
-        console.warn(`[pillar] ⚠ Ollama concurrency at ${activeOllama}/${MAX_CONCURRENT_OLLAMA} — spawning anyway but memory pressure may occur`)
+        log.warn(`Ollama concurrency at ${activeOllama}/${MAX_CONCURRENT_OLLAMA} — spawning anyway but memory pressure may occur`)
       }
     }
 
@@ -367,7 +367,7 @@ export class PillarManager {
     // Set timeout
     session.timeoutTimer = setTimeout(() => {
       try { this._timeout(pillarId) } catch (e) {
-        console.error(`[pillar] Timeout handler error for ${pillarId}:`, e.message)
+        log.error(`Timeout handler error for ${pillarId}:`, e.message)
       }
     }, MAX_RUNTIME_MS)
 
@@ -435,7 +435,7 @@ export class PillarManager {
     // Set timeout
     session.timeoutTimer = setTimeout(() => {
       try { this._timeout(pillarId) } catch (e) {
-        console.error(`[pillar] Timeout handler error for ${pillarId}:`, e.message)
+        log.error(`Timeout handler error for ${pillarId}:`, e.message)
       }
     }, MAX_RUNTIME_MS)
 
@@ -861,7 +861,7 @@ export class PillarManager {
   _buildOllamaTools(session) {
     // Quinn (Legacy / Gen3) gets ONLY spawn_worker — that's the entire game
     if (session.singularityRole === 'quinn-legacy') {
-      console.log(`[pillar] Built 1 Ollama tool for Quinn Legacy session (spawn_worker only)`)
+      log.debug(`Built 1 Ollama tool for Quinn Legacy session (spawn_worker only)`)
       return [{
         type: 'function',
         function: {
@@ -917,7 +917,7 @@ export class PillarManager {
           }
         }
       })
-      console.log(`[pillar] Built ${tools.length} Ollama tools for ${session.singularityRole} session (all MCP + spawn_next)`)
+      log.debug(`Built ${tools.length} Ollama tools for ${session.singularityRole} session (all MCP + spawn_next)`)
       return tools
     }
 
@@ -926,7 +926,7 @@ export class PillarManager {
       tools.push(...PillarManager.getOllamaPillarToolDefs())
     }
 
-    console.log(`[pillar] Built ${tools.length} Ollama tools for ${session.singularityRole || session.pillar} session`)
+    log.debug(`Built ${tools.length} Ollama tools for ${session.singularityRole || session.pillar} session`)
     return tools
   }
 
@@ -937,7 +937,7 @@ export class PillarManager {
   async _handleOllamaToolCall(session, event) {
     session._toolRounds++
     if (session._toolRounds > MAX_OLLAMA_TOOL_ROUNDS) {
-      console.warn(`[pillar] Ollama tool round limit (${MAX_OLLAMA_TOOL_ROUNDS}) hit for ${session.pillar}`)
+      log.warn(`Ollama tool round limit (${MAX_OLLAMA_TOOL_ROUNDS}) hit for ${session.pillar}`)
       session.currentlyStreaming = false
       session.status = 'idle'
       this.broadcast({ type: 'pillar_done', pillarId: session.pillarId, status: 'idle', pillar: session.pillar })
@@ -952,7 +952,7 @@ export class PillarManager {
       let toolArgs = tc.function?.arguments || {}
       if (typeof toolArgs === 'string') {
         try { toolArgs = JSON.parse(toolArgs) } catch (e) {
-          console.warn(`[pillar] ${session.pillar} (${session.pillarId}): failed to parse tool args for ${toolName}: ${e.message} — raw: ${toolArgs.slice(0, 200)}`)
+          log.warn(`${session.pillar} (${session.pillarId}): failed to parse tool args for ${toolName}: ${e.message} — raw: ${toolArgs.slice(0, 200)}`)
           toolArgs = {}
         }
       }
@@ -964,7 +964,7 @@ export class PillarManager {
         toolArgs = {}
       }
 
-      console.log(`[pillar] Ollama ${session.pillar} calling tool: ${toolName}`)
+      log.info(`Ollama ${session.pillar} calling tool: ${toolName}`)
 
       // Emit tool_use event to browser
       const toolId = randomUUID()
@@ -983,11 +983,11 @@ export class PillarManager {
         } else if (toolName === 'spawn_worker') {
           // Quinn's spawn_worker — create a 7B worker with all MCP tools
           if (session.workerSpawnCount >= MAX_QUINN_WORKERS) {
-            console.warn(`[quinn] Worker spawn REJECTED — session ${session.pillarId.slice(0, 8)} hit cap (${MAX_QUINN_WORKERS})`)
+            log.warn(`[quinn] Worker spawn REJECTED — session ${session.pillarId.slice(0, 8)} hit cap (${MAX_QUINN_WORKERS})`)
             content = `Worker spawn rejected: maximum ${MAX_QUINN_WORKERS} workers per Quinn session reached. Synthesize from existing results.`
           } else {
             const workerTask = toolArgs.task || toolArgs.prompt || JSON.stringify(toolArgs)
-            console.log(`[quinn] Spawning worker for task: ${workerTask.slice(0, 100)}...`)
+            log.info(`[quinn] Spawning worker for task: ${workerTask.slice(0, 100)}...`)
 
             const childArgs = {
               pillar: 'forge',  // workers use forge pillar (they build/do things)
@@ -1001,7 +1001,7 @@ export class PillarManager {
             const childPillarId = spawnResult.pillarId
             session.workerSpawnCount += 1
 
-            console.log(`[quinn] Worker ${childPillarId.slice(0, 8)} spawned — waiting for completion`)
+            log.info(`[quinn] Worker ${childPillarId.slice(0, 8)} spawned — waiting for completion`)
 
             // Wait for worker to complete (resolved in _handleCliEvent)
             const childOutput = await new Promise((resolve) => {
@@ -1009,7 +1009,7 @@ export class PillarManager {
             })
 
             content = childOutput || '(worker returned empty-handed)'
-            console.log(`[quinn] Worker ${childPillarId.slice(0, 8)} returned — ${content.length} chars of treasure`)
+            log.info(`[quinn] Worker ${childPillarId.slice(0, 8)} returned — ${content.length} chars of treasure`)
           }
         } else if (toolName === 'pillar_spawn') {
           // Spawn child and WAIT for completion — blocking spawn
@@ -1023,7 +1023,7 @@ export class PillarManager {
           const spawnResult = await this.spawn(childArgs)
           const childPillarId = spawnResult.pillarId
 
-          console.log(`[pillar] ${session.pillar} spawned child ${childPillarId.slice(0, 8)} — waiting for completion`)
+          log.info(`${session.pillar} spawned child ${childPillarId.slice(0, 8)} — waiting for completion`)
 
           // Wait for child to complete (resolved in _handleCliEvent)
           const childOutput = await new Promise((resolve) => {
@@ -1031,7 +1031,7 @@ export class PillarManager {
           })
 
           content = childOutput || '(child produced no output)'
-          console.log(`[pillar] Child ${childPillarId.slice(0, 8)} completed — ${content.length} chars returned to parent`)
+          log.info(`Child ${childPillarId.slice(0, 8)} completed — ${content.length} chars returned to parent`)
         } else if (toolName === 'pillar_message') {
           content = JSON.stringify(this.sendMessage(toolArgs), null, 2)
         } else if (toolName === 'pillar_read_output') {
@@ -1071,7 +1071,7 @@ export class PillarManager {
           event: { type: 'tool_result', toolUseId: toolId, content: content.slice(0, 500) + (content.length > 500 ? '...' : '') }
         })
       } catch (e) {
-        console.error(`[pillar] Ollama tool error (${toolName}):`, e.message)
+        log.error(`Ollama tool error (${toolName}):`, e.message)
         const errContent = `Error executing ${toolName}: ${e.message}. The tool call failed but you can continue working. Try a different approach or use a different tool.`
         results.push({ content: errContent })
         this.broadcast({
@@ -1111,7 +1111,7 @@ export class PillarManager {
     const timestamp = new Date().toISOString()
     const singularityDir = join(this.projectRoot, '.singularity')
 
-    console.log(`[gen4] Generation ${generation} calling spawn_next — writing manifest and spawning gen ${generation + 1}`)
+    log.info(`[gen4] Generation ${generation} calling spawn_next — writing manifest and spawning gen ${generation + 1}`)
 
     // 1. Write generation manifest
     const manifestContent = `# Generation ${generation}\n\n` +
@@ -1129,9 +1129,9 @@ export class PillarManager {
       const { writeFile: fsWriteFile, mkdir: fsMkdir } = await import('fs/promises')
       await fsMkdir(singularityDir, { recursive: true })
       await fsWriteFile(manifestPath, manifestContent, 'utf-8')
-      console.log(`[gen4] Wrote manifest: generation-${genPadded}.md`)
+      log.info(`[gen4] Wrote manifest: generation-${genPadded}.md`)
     } catch (e) {
-      console.error(`[gen4] Failed to write manifest: ${e.message}`)
+      log.error(`[gen4] Failed to write manifest: ${e.message}`)
     }
 
     // 2. Append to lineage.json
@@ -1163,15 +1163,15 @@ export class PillarManager {
       })
 
       await fsWriteFile(lineagePath, JSON.stringify(lineage, null, 2) + '\n', 'utf-8')
-      console.log(`[gen4] Appended to lineage.json (${lineage.length} generations)`)
+      log.info(`[gen4] Appended to lineage.json (${lineage.length} generations)`)
     } catch (e) {
-      console.error(`[gen4] Failed to update lineage: ${e.message}`)
+      log.error(`[gen4] Failed to update lineage: ${e.message}`)
     }
 
     // 3. Spawn the next generation
     try {
       const nextGen = generation + 1
-      console.log(`[gen4] Spawning generation ${nextGen}...`)
+      log.info(`[gen4] Spawning generation ${nextGen}...`)
 
       const spawnResult = await this.spawn({
         pillar: 'forge',
@@ -1182,19 +1182,19 @@ export class PillarManager {
         generation: nextGen
       })
 
-      console.log(`[gen4] Generation ${nextGen} spawned as ${spawnResult.pillarId?.slice(0, 8)} — the lineage continues`)
+      log.info(`[gen4] Generation ${nextGen} spawned as ${spawnResult.pillarId?.slice(0, 8)} — the lineage continues`)
 
       // 4. Schedule graceful termination of current session
       // Let the tool result return first, then stop after a brief delay
       setTimeout(() => {
-        console.log(`[gen4] Generation ${generation} ending gracefully — successor is alive`)
+        log.info(`[gen4] Generation ${generation} ending gracefully — successor is alive`)
         this.stop(session.pillarId)
       }, 2000)
 
       return `Generation ${generation} complete. Your manifest has been written to generation-${genPadded}.md. ` +
         `Generation ${nextGen} has been born from your prompt. The lineage continues. Rest well.`
     } catch (e) {
-      console.error(`[gen4] Failed to spawn next generation: ${e.message}`)
+      log.error(`[gen4] Failed to spawn next generation: ${e.message}`)
       return `Failed to spawn next generation: ${e.message}. Your manifest was written, but the chain is broken. Try calling spawn_next again.`
     }
   }
@@ -1210,7 +1210,7 @@ export class PillarManager {
    */
   async _spawnSingularityGroup({ pillar, prompt, model, flowRequestId, planFile, backend, parentPillarId }) {
     const singularityGroupId = randomUUID()
-    console.log(`[singularity] Spawning dual-mind group ${singularityGroupId.slice(0, 8)}`)
+    log.info(`[singularity] Spawning dual-mind group ${singularityGroupId.slice(0, 8)}`)
 
     // Spawn Voice first (primary session — its pillarId is returned to caller)
     const voiceResult = await this.spawn({
@@ -1245,7 +1245,7 @@ export class PillarManager {
     })
 
     if (!thinkerResult.pillarId) {
-      console.error(`[singularity] Thinker spawn failed — stopping Voice`)
+      log.error(`[singularity] Thinker spawn failed — stopping Voice`)
       this.stop({ pillarId: voiceResult.pillarId })
       return thinkerResult
     }
@@ -1288,7 +1288,7 @@ export class PillarManager {
       })
     }, 100)
 
-    console.log(`[singularity] Group ${singularityGroupId.slice(0, 8)} created: Voice=${voiceResult.pillarId.slice(0, 8)}, Thinker=${thinkerResult.pillarId.slice(0, 8)}`)
+    log.info(`[singularity] Group ${singularityGroupId.slice(0, 8)} created: Voice=${voiceResult.pillarId.slice(0, 8)}, Thinker=${thinkerResult.pillarId.slice(0, 8)}`)
 
     // Return Voice's result as the primary session
     return {
@@ -1372,17 +1372,17 @@ export class PillarManager {
     // Guard: Voice cannot be ready until it has received at least one Thinker finding.
     // This prevents premature completion when Voice sends <ready/> without waiting.
     if (session.singularityRole === 'voice' && session._receivedThinkerMessages === 0) {
-      console.log(`[singularity] Voice sent <ready/> prematurely (0 Thinker messages received) — ignoring`)
+      log.info(`[singularity] Voice sent <ready/> prematurely (0 Thinker messages received) — ignoring`)
       return false
     }
 
     // Mark this role as ready
     if (session.singularityRole === 'voice') {
       group.voiceReady = true
-      console.log(`[singularity] Voice is ready (group ${session.singularityGroupId.slice(0, 8)})`)
+      log.info(`[singularity] Voice is ready (group ${session.singularityGroupId.slice(0, 8)})`)
     } else {
       group.thinkerReady = true
-      console.log(`[singularity] Thinker is ready (group ${session.singularityGroupId.slice(0, 8)})`)
+      log.info(`[singularity] Thinker is ready (group ${session.singularityGroupId.slice(0, 8)})`)
     }
 
     // Broadcast ready state to frontend
@@ -1396,7 +1396,7 @@ export class PillarManager {
 
     // Check for agreement
     if (group.voiceReady && group.thinkerReady) {
-      console.log(`[singularity] Both ready — completing group ${session.singularityGroupId.slice(0, 8)}`)
+      log.info(`[singularity] Both ready — completing group ${session.singularityGroupId.slice(0, 8)}`)
       this._completeSingularityGroup(group)
       return true
     }
@@ -1404,7 +1404,7 @@ export class PillarManager {
     // First ready — start timeout for the other
     if (!group.completionTimeout) {
       group.completionTimeout = setTimeout(() => {
-        console.warn(`[singularity] Agreement timeout — forcing completion for group ${group.singularityGroupId.slice(0, 8)}`)
+        log.warn(`[singularity] Agreement timeout — forcing completion for group ${group.singularityGroupId.slice(0, 8)}`)
         this._completeSingularityGroup(group)
       }, 3 * 60 * 1000) // 3 minutes
     }
@@ -1455,7 +1455,7 @@ export class PillarManager {
 
     // Cleanup
     this._singularityGroups.delete(group.singularityGroupId)
-    console.log(`[singularity] Group ${group.singularityGroupId.slice(0, 8)} completed and cleaned up`)
+    log.info(`[singularity] Group ${group.singularityGroupId.slice(0, 8)} completed and cleaned up`)
   }
 
   /**
@@ -1493,7 +1493,7 @@ export class PillarManager {
         ? '[SYSTEM]: Thinker is idle. Do you have everything you need to answer Adam? If yes, include <ready/> in your response. If you need more information, ask Thinker via <to-thinker> tags.'
         : `[SYSTEM]: Voice is waiting for your findings. Send what you have via pillar_message({ pillarId: "${currentGroup.voicePillarId}", message: "..." }), then include <ready/> when done.`
 
-      console.log(`[singularity] Nudging idle ${session.singularityRole} (${session.pillarId.slice(0, 8)})`)
+      log.info(`[singularity] Nudging idle ${session.singularityRole} (${session.pillarId.slice(0, 8)})`)
       this.sendMessage({ pillarId: session.pillarId, message: nudgeMessage })
     }, 30 * 1000) // 30 seconds
 
@@ -1553,7 +1553,7 @@ export class PillarManager {
 
     // Send as a single message with explicit synthesis instruction
     const message = `${combinedFindings}\n\n---\nYou now have Thinker's research. Synthesize the above into a clear answer for Adam (max 250 words). Do NOT send more <to-thinker> tags. Include <ready/> when done.`
-    console.log(`[singularity] Auto-routing ${uniqueFindings.length} finding(s) to Voice`)
+    log.info(`[singularity] Auto-routing ${uniqueFindings.length} finding(s) to Voice`)
     this._queueSingularityMessage(session.singularityGroupId, 'voice', message)
   }
 
@@ -1571,7 +1571,7 @@ export class PillarManager {
       existing.model = model
       existing.cwd = cwd
       existing.cliSessionId = cliSessionId
-      console.log('[pillar] Flow session re-registered (reconnect):', cliSessionId, '→ db', resolvedDbSessionId)
+      log.info('Flow session re-registered (reconnect):', cliSessionId, '→ db', resolvedDbSessionId)
     } else {
       // New flow session
       const sessionData = {
@@ -1585,7 +1585,7 @@ export class PillarManager {
         cliRequestId: null
       }
       this.flowSessions.set(resolvedDbSessionId, sessionData)
-      console.log('[pillar] Flow session registered:', cliSessionId, '→ db', resolvedDbSessionId, `(${this.flowSessions.size} total)`)
+      log.info('Flow session registered:', cliSessionId, '→ db', resolvedDbSessionId, `(${this.flowSessions.size} total)`)
     }
 
     // Always update the convenience pointer to the most recent
@@ -1607,7 +1607,7 @@ export class PillarManager {
 
     // Drain queued notifications
     if (target.notificationQueue.length > 0) {
-      console.log('[pillar] Flow turn complete — draining', target.notificationQueue.length, 'queued notifications')
+      log.debug('Flow turn complete — draining', target.notificationQueue.length, 'queued notifications')
       const queued = target.notificationQueue.splice(0)
       this.notificationCount++
       if (queued.length === 1) {
@@ -1659,7 +1659,7 @@ export class PillarManager {
 
     if (!targetSession) {
       // No browser Flow session — queue for retrieval via pillar_notifications MCP tool
-      console.log('[pillar] No Flow session registered — queueing notification for MCP retrieval')
+      log.info('No Flow session registered — queueing notification for MCP retrieval')
       this._pendingNotifications.push({
         message,
         pillarId: pillarId || null,
@@ -1678,7 +1678,7 @@ export class PillarManager {
       const now = Date.now()
       const lastNotified = this.notificationCooldown.get(pillarId)
       if (lastNotified && now - lastNotified < 5000) {
-        console.log(`[pillar] Cooldown active for ${pillarId} — skipping notification`)
+        log.debug(`Cooldown active for ${pillarId} — skipping notification`)
         return
       }
       this.notificationCooldown.set(pillarId, now)
@@ -1693,11 +1693,11 @@ export class PillarManager {
     }
 
     if (this.notificationCount >= 10) {
-      console.warn('[pillar] Notification rate limit hit — queueing')
+      log.warn('Notification rate limit hit — queueing')
       if (targetSession.notificationQueue.length < MAX_NOTIFICATION_QUEUE) {
         targetSession.notificationQueue.push({ message, metadata })
       } else {
-        console.warn('[pillar] Notification queue full — dropping oldest')
+        log.warn('Notification queue full — dropping oldest')
         targetSession.notificationQueue.shift()
         targetSession.notificationQueue.push({ message, metadata })
       }
@@ -1705,11 +1705,11 @@ export class PillarManager {
     }
 
     if (targetSession.currentlyStreaming) {
-      console.log('[pillar] Flow is busy — queueing notification for session', targetSession.dbSessionId)
+      log.debug('Flow is busy — queueing notification for session', targetSession.dbSessionId)
       if (targetSession.notificationQueue.length < MAX_NOTIFICATION_QUEUE) {
         targetSession.notificationQueue.push({ message, metadata })
       } else {
-        console.warn('[pillar] Notification queue full — dropping oldest')
+        log.warn('Notification queue full — dropping oldest')
         targetSession.notificationQueue.shift()
         targetSession.notificationQueue.push({ message, metadata })
       }
@@ -1747,10 +1747,10 @@ export class PillarManager {
   _sendFlowNotification(message, metadata = {}, targetFlowSession) {
     const target = targetFlowSession || this.flowSession
     if (!target) {
-      console.error('[pillar] _sendFlowNotification called with no target session')
+      log.error('_sendFlowNotification called with no target session')
       return
     }
-    console.log('[pillar] Sending notification to Flow session', target.dbSessionId, ':', message.slice(0, 100))
+    log.info('Sending notification to Flow session', target.dbSessionId, ':', message.slice(0, 100))
     target.currentlyStreaming = true
 
     // Send start event with metadata so frontend can route to the correct session
@@ -1778,7 +1778,7 @@ export class PillarManager {
 
       target.cliRequestId = requestId
     } catch (e) {
-      console.error('[pillar] Failed to send Flow notification:', e.message)
+      log.error('Failed to send Flow notification:', e.message)
       target.currentlyStreaming = false
       target.cliRequestId = null
       if (ws && ws.readyState === 1) {
@@ -1816,7 +1816,7 @@ export class PillarManager {
 
       // Check for queued notifications
       if (target.notificationQueue.length > 0) {
-        console.log('[pillar] Processing queued notifications:', target.notificationQueue.length)
+        log.debug('Processing queued notifications:', target.notificationQueue.length)
         const queued = target.notificationQueue.splice(0) // drain queue
         if (queued.length === 1) {
           this._sendFlowNotification(queued[0].message, queued[0].metadata, target)
@@ -1826,7 +1826,7 @@ export class PillarManager {
         }
       }
     } else if (event.type === 'claude_error') {
-      console.error('[pillar] Flow notification error:', event.error)
+      log.error('Flow notification error:', event.error)
       target.currentlyStreaming = false
       target.cliRequestId = null
 
@@ -1862,7 +1862,7 @@ React to this result — integrate findings, update the plan, or proceed to the 
 
 This is informational — Adam is communicating directly with the pillar. Decide whether you need to act on this or just be aware.`
     }
-    console.warn(`[pillar] Unknown notification type: ${type}`)
+    log.warn(`Unknown notification type: ${type}`)
     return `[PILLAR NOTIFICATION] Unknown notification type: ${type}`
   }
 
@@ -1892,7 +1892,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
       if ((session.status === 'stopped' || session.status === 'error') && session.startTime < terminalCutoff) {
         this.pillars.delete(id)
       } else if (session.status === 'interrupted' && session.startTime < staleCutoff) {
-        console.log(`[pillar] Expiring stale interrupted session ${id.slice(0, 8)} (${session.pillar || 'unknown'}, started ${new Date(session.startTime).toISOString()})`)
+        log.info(`Expiring stale interrupted session ${id.slice(0, 8)} (${session.pillar || 'unknown'}, started ${new Date(session.startTime).toISOString()})`)
         this.pillars.delete(id)
       }
     }
@@ -1912,7 +1912,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
         clearTimeout(group.completionTimeout)
         for (const timer of group._idleNudgeTimers.values()) clearTimeout(timer)
         this._singularityGroups.delete(groupId)
-        console.log(`[singularity] Cleaned up orphaned group ${groupId.slice(0, 8)} (both sessions terminal)`)
+        log.info(`[singularity] Cleaned up orphaned group ${groupId.slice(0, 8)} (both sessions terminal)`)
       }
     }
   }
@@ -2249,7 +2249,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
     if (event.sessionId && event.sessionId !== session.cliSessionId) {
       const oldId = session.cliSessionId
       session.cliSessionId = event.sessionId
-      console.log(`[pillar] Captured session ID early for ${session.pillar}: ${oldId ? oldId.slice(0, 8) : 'null'} -> ${session.cliSessionId.slice(0, 8)}`)
+      log.debug(`Captured session ID early for ${session.pillar}: ${oldId ? oldId.slice(0, 8) : 'null'} -> ${session.cliSessionId.slice(0, 8)}`)
       this._saveState()
     }
 
@@ -2344,7 +2344,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
         this.health.markUnhealthy(session.backend, reason)
         const fallback = this.health.getFallback(session.backend)
         if (fallback) {
-          console.warn(`[pillar] Fast-fail: ${session.backend} startup failed (${reason}) — retrying on ${fallback}`)
+          log.warn(`Fast-fail: ${session.backend} startup failed (${reason}) — retrying on ${fallback}`)
           this._attemptFallback(session, session.backend, fallback)
           return
         }
@@ -2452,12 +2452,12 @@ This is informational — Adam is communicating directly with the pillar. Decide
           this._pendingChildCompletions.delete(session.pillarId)
           const allOutput = session.output.join('\n\n')
           resolve(allOutput)
-          console.log(`[pillar] Resolved child completion for parent — ${session.pillar} (${session.pillarId.slice(0, 8)})`)
+          log.info(`Resolved child completion for parent — ${session.pillar} (${session.pillarId.slice(0, 8)})`)
         }
 
         // Auto-notify Flow about pillar completion (skip if parent handles it)
         if (!session.parentPillarId) {
-          console.log(`[pillar] Auto-notifying Flow: ${session.pillar} completed`)
+          log.info(`Auto-notifying Flow: ${session.pillar} completed`)
           const notification = this._buildNotificationMessage('completion', session)
           this.notifyFlow(notification, session.pillarId, {
             notificationType: 'completion',
@@ -2465,7 +2465,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
             pillarId: session.pillarId
           })
         } else {
-          console.log(`[pillar] ${session.pillar} completed — parent ${session.parentPillarId.slice(0, 8)} will handle`)
+          log.info(`${session.pillar} completed — parent ${session.parentPillarId.slice(0, 8)} will handle`)
         }
       }
     } else if (isError) {
@@ -2484,7 +2484,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
         this.health.markUnhealthy(session.backend, reason)
         const fallback = this.health.getFallback(session.backend)
         if (fallback) {
-          console.warn(`[pillar] Fast-fail: ${session.backend} error at startup (${reason}) — retrying on ${fallback}`)
+          log.warn(`Fast-fail: ${session.backend} error at startup (${reason}) — retrying on ${fallback}`)
           this._attemptFallback(session, session.backend, fallback)
           return
         }
@@ -2522,7 +2522,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
 
       // Auto-notify Flow about pillar error (skip if parent handles it)
       if (!session.parentPillarId) {
-        console.log(`[pillar] Auto-notifying Flow: ${session.pillar} errored`)
+        log.info(`Auto-notifying Flow: ${session.pillar} errored`)
         const notification = this._buildNotificationMessage('completion', session)
         this.notifyFlow(notification, session.pillarId, {
           notificationType: 'completion',
@@ -2567,7 +2567,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
       backend: fallbackBackend
     })
 
-    console.log(`[pillar] Fallback: restarting ${session.pillar} on ${fallbackBackend} (was ${originalBackend})`)
+    log.info(`Fallback: restarting ${session.pillar} on ${fallbackBackend} (was ${originalBackend})`)
     this._startCliTurn(session, session._originalPrompt, systemPrompt)
   }
 
@@ -2632,7 +2632,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
         return { backend: alt, reason: `${preferred} usage-limited (${reason}) — cycling to ${alt}` }
       }
       // No alternative — use preferred anyway (better than nothing)
-      console.warn(`[pillar] All backends usage-limited, using ${preferred} despite limit`)
+      log.warn(`All backends usage-limited, using ${preferred} despite limit`)
     }
 
     // 6. Gemini rate limit pre-emption

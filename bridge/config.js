@@ -1,6 +1,9 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { createLogger } from './logger.js'
+
+const log = createLogger('config')
 
 const CONFIG_PATH = join(homedir(), '.paloma', 'mcp-settings.json')
 
@@ -11,10 +14,10 @@ export async function loadConfig() {
     return config.servers || {}
   } catch (e) {
     if (e.code === 'ENOENT') {
-      console.log(`No MCP config found at ${CONFIG_PATH}`)
+      log.info(`No MCP config found at ${CONFIG_PATH}`)
       return {}
     }
-    console.error(`Error reading MCP config: ${e.message}`)
+    log.error(`Error reading MCP config: ${e.message}`)
     return {}
   }
 }

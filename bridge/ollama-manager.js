@@ -1,6 +1,9 @@
 import { randomUUID } from 'crypto'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { dirname } from 'path'
+import { createLogger } from './logger.js'
+
+const log = createLogger('ollama')
 
 const MAX_TOOL_ROUNDS = 20  // Safety limit on tool call loops
 const MAX_SESSION_MESSAGES = 100  // Sliding window to prevent unbounded message growth
@@ -45,9 +48,9 @@ export class OllamaManager {
         session.messages.push({ role: 'system', content: systemPrompt })
       }
       this.sessions.set(sessionId, session)
-      console.log(`[ollama] New session ${sessionId}, model=${session.model}`)
+      log.info(`New session ${sessionId}, model=${session.model}`)
     } else {
-      console.log(`[ollama] Resuming session ${sessionId}`)
+      log.info(`Resuming session ${sessionId}`)
     }
 
     // Update model if provided (allows switching mid-session)
@@ -151,7 +154,7 @@ export class OllamaManager {
           : userMsg
         session.messages.push({ role: 'user', content: combinedContent })
 
-        console.log(`[ollama] Fresh context: loaded ${context.length} chars from ${session.contextFile}`)
+        log.debug(`Fresh context: loaded ${context.length} chars from ${session.contextFile}`)
       }
 
       const body = {
@@ -176,7 +179,7 @@ export class OllamaManager {
       if (!response.ok) {
         const responseBody = await response.text().catch(() => '')
         const errorMsg = `Ollama API error ${response.status}: ${responseBody || response.statusText}`
-        console.error(`[ollama] ${errorMsg}`)
+        log.error(errorMsg)
         this.requests.delete(requestId)
         onEvent({ type: 'ollama_error', requestId, error: errorMsg })
         return
@@ -227,7 +230,7 @@ export class OllamaManager {
                 if (tc.function?.name) {
                   collectedToolCalls.push(tc)
                 } else {
-                  console.warn(`[ollama] Skipping malformed tool call (missing function.name):`, JSON.stringify(tc).slice(0, 200))
+                  log.warn('Skipping malformed tool call (missing function.name):', JSON.stringify(tc).slice(0, 200))
                 }
               }
             }
@@ -264,7 +267,7 @@ export class OllamaManager {
               if (tc.function?.name) {
                 collectedToolCalls.push(tc)
               } else {
-                console.warn(`[ollama] Skipping malformed tool call in buffer flush (missing function.name):`, JSON.stringify(tc).slice(0, 200))
+                log.warn('Skipping malformed tool call in buffer flush (missing function.name):', JSON.stringify(tc).slice(0, 200))
               }
             }
           }
@@ -275,7 +278,7 @@ export class OllamaManager {
 
       // If tool calls were returned via native API, emit them for bridge to execute
       if (collectedToolCalls.length > 0) {
-        console.log(`[ollama] ${collectedToolCalls.length} native tool call(s): ${collectedToolCalls.map(tc => tc.function?.name).join(', ')}`)
+        log.debug(`${collectedToolCalls.length} native tool call(s): ${collectedToolCalls.map(tc => tc.function?.name).join(', ')}`)
 
         // WU-2: Strip any JSON tool call text that the model also wrote as content
         // This prevents double-display (raw JSON + tool result) in the chat
@@ -311,7 +314,7 @@ export class OllamaManager {
       if (session.tools?.length > 0 && fullAssistantText.trim()) {
         const parsedCalls = this._parseToolCallsFromText(fullAssistantText, session.tools)
         if (parsedCalls.length > 0) {
-          console.log(`[ollama] ${parsedCalls.length} text-parsed tool call(s): ${parsedCalls.map(tc => tc.function?.name).join(', ')}`)
+          log.debug(`${parsedCalls.length} text-parsed tool call(s): ${parsedCalls.map(tc => tc.function?.name).join(', ')}`)
 
           // Strip tool call text (both JSON and XML) from the assistant message
           let cleanedFallbackText = fullAssistantText
@@ -351,7 +354,7 @@ export class OllamaManager {
             session2.contextFile,
             session2._lastUserMessage || '',
             fullAssistantText
-          ).catch(err => console.error('[ollama] Fresh context update failed:', err.message))
+          ).catch(err => log.error('Fresh context update failed:', err.message))
         }
       }
 
@@ -362,7 +365,7 @@ export class OllamaManager {
       this.requests.delete(requestId)
 
       if (err.name === 'AbortError') {
-        console.log(`[ollama] Request ${requestId} aborted`)
+        log.info(`Request ${requestId} aborted`)
         onEvent({ type: 'ollama_done', requestId, sessionId, exitCode: 0 })
         return
       }
@@ -370,7 +373,7 @@ export class OllamaManager {
       const errorMsg = err.code === 'ECONNREFUSED'
         ? 'Cannot connect to Ollama. Is it running? Try: ollama serve'
         : err.message
-      console.error(`[ollama] Stream error: ${errorMsg}`)
+      log.error(`Stream error: ${errorMsg}`)
       onEvent({ type: 'ollama_error', requestId, error: errorMsg })
     }
   }
@@ -565,7 +568,7 @@ export class OllamaManager {
       if (resolvedName) {
         calls.push({ function: { name: resolvedName, arguments: args } })
       } else {
-        console.log(`[ollama] XML tool call for unknown tool: ${rawName}`)
+        log.warn(`XML tool call for unknown tool: ${rawName}`)
       }
     }
 
@@ -608,14 +611,14 @@ export class OllamaManager {
     summary = summary.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
 
     if (!summary) {
-      console.warn('[ollama] Summarizer produced empty output — keeping existing context')
+      log.warn('Summarizer produced empty output — keeping existing context')
       return
     }
 
     // Ensure directory exists and write
     await mkdir(dirname(contextFile), { recursive: true })
     await writeFile(contextFile, summary, 'utf8')
-    console.log(`[ollama] Fresh context updated: ${contextFile} (${summary.length} chars)`)
+    log.debug(`Fresh context updated: ${contextFile} (${summary.length} chars)`)
   }
 
   _cleanupSessions() {
@@ -623,7 +626,7 @@ export class OllamaManager {
     const now = Date.now()
     for (const [sessionId, session] of this.sessions) {
       if (now - session.lastActivity > maxAge) {
-        console.log(`[ollama] Expiring inactive session ${sessionId}`)
+        log.info(`Expiring inactive session ${sessionId}`)
         // Abort any active requests for this session
         for (const [reqId, entry] of this.requests) {
           if (entry.sessionId === sessionId) {

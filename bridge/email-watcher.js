@@ -31,7 +31,8 @@ const POLL_INTERVAL_MS = 30_000 // 30 seconds
 // All other emails still spawn sessions so Paloma can triage them like a human would
 // (read, evaluate, archive, mark spam, flag for Adam, etc.)
 const TRUSTED_SENDERS = [
-  'adam@verifesto.com',         // Adam
+  'adam@verifesto.com',         // Adam (Verifesto)
+  'adamlynchmob@gmail.com',    // Adam (personal Gmail)
   'kelsey',                     // Kelsey (partial match — catches any address)
   'downesbruce@gmail.com',     // Bruce D
   'paloma@verifesto.com',      // Paloma (main — Lynch Tower)
@@ -222,10 +223,93 @@ export class EmailWatcher {
       const messages = result.data.messages || []
 
       if (silent) {
-        for (const msg of messages) {
-          this.seenIds.add(msg.id)
+        // On startup, fetch each message to check its age.
+        // Recent emails (< 2 hours old) get processed normally so they aren't silently swallowed.
+        // Older unread emails are just marked as seen (they were likely from a previous bridge session).
+        const RECENT_THRESHOLD_MS = 2 * 60 * 60 * 1000 // 2 hours
+        const now = Date.now()
+        const recentMessages = []
+
+        for (const ref of messages) {
+          try {
+            const msg = await this.gmail.users.messages.get({
+              userId: 'me',
+              id: ref.id,
+              format: 'metadata',
+              metadataHeaders: ['Date']
+            })
+            const dateStr = this._getHeader(msg.data, 'Date')
+            const emailTime = dateStr ? new Date(dateStr).getTime() : 0
+            if (now - emailTime < RECENT_THRESHOLD_MS) {
+              recentMessages.push(ref)
+              log.info(`Initial sync: recent email found (${ref.id}), will process normally`)
+            } else {
+              this.seenIds.add(ref.id)
+            }
+          } catch (err) {
+            // If we can't fetch metadata, mark as seen to be safe
+            this.seenIds.add(ref.id)
+            log.warn(`Initial sync: couldn't check age for ${ref.id}: ${err.message}`)
+          }
         }
-        log.info(`Initial sync: ${messages.length} unread messages tracked`)
+
+        const silentCount = messages.length - recentMessages.length
+        log.info(`Initial sync: ${silentCount} older messages tracked, ${recentMessages.length} recent messages queued for processing`)
+
+        // Process recent messages through the normal flow (will spawn sessions)
+        if (recentMessages.length > 0) {
+          for (const ref of recentMessages) {
+            this.seenIds.add(ref.id)
+            try {
+              const msg = await this.gmail.users.messages.get({
+                userId: 'me',
+                id: ref.id,
+                format: 'full',
+                metadataHeaders: ['From', 'Subject', 'Date', 'To', 'Delivered-To']
+              })
+              const from = this._getHeader(msg.data, 'From') || 'Unknown'
+              const subject = this._getHeader(msg.data, 'Subject') || '(no subject)'
+              const body = this._extractBody(msg.data) || msg.data.snippet || ''
+              const to = this._getHeader(msg.data, 'To') || 'Unknown'
+              const timestamp = this._getHeader(msg.data, 'Date') || new Date().toISOString()
+              const htmlBody = this._findMimePart(msg.data.payload, 'text/html') || ''
+
+              emailStore.addMessage({
+                messageId: ref.id, threadId: ref.threadId,
+                from, to, subject, body, htmlBody, timestamp,
+                unread: msg.data.labelIds?.includes('UNREAD'),
+                labels: msg.data.labelIds || []
+              })
+              this.broadcast({ type: 'email_store_updated' })
+
+              // Apply same recipient + instance filters as normal poll
+              if (this.emailAlias) {
+                const toHeader = (this._getHeader(msg.data, 'To') || '').toLowerCase()
+                const deliveredTo = (this._getHeader(msg.data, 'Delivered-To') || '').toLowerCase()
+                const alias = this.emailAlias.toLowerCase()
+                if (!toHeader.includes(alias) && !deliveredTo.includes(alias)) {
+                  log.debug(`Initial sync: skipping email not addressed to ${this.emailAlias}: "${subject}"`)
+                  continue
+                }
+              }
+
+              const isInstanceEmail = PALOMA_INSTANCE_SENDERS.some(addr => from.toLowerCase().includes(addr.toLowerCase()))
+              if (isInstanceEmail) {
+                log.info(`Initial sync: inter-instance email from ${from} stored (no session): ${subject}`)
+                continue
+              }
+
+              const trusted = this._isTrustedSender(from)
+              log.info(`Initial sync: spawning session for recent email from ${from} (${trusted ? 'trusted' : 'unknown'}): ${subject}`)
+              this._spawnEmailSession({ messageId: ref.id, threadId: ref.threadId, from, subject, body, trusted })
+              this.broadcast({ type: 'email_received', messageId: ref.id, threadId: ref.threadId, from, subject, body })
+            } catch (err) {
+              log.error(`Initial sync: failed to process recent email ${ref.id}: ${err.message}`)
+            }
+          }
+        }
+
+        this._saveSeenIds()
         return
       }
 

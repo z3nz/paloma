@@ -101,14 +101,15 @@ Continued QW-9 structured logger migration across all remaining bridge modules. 
 - [x] Removed ~130 lines dead commented-out code from `src/prompts/base.js` → commit b6bbb5e
 - [x] Deep codebase scan findings documented → commit 263e235
 
-**Still remaining (logger migration):**
-- [ ] `bridge/pillar-manager.js` — 69 console calls (biggest target, already has logger import)
-- [ ] `bridge/ollama-manager.js` — 15 console calls
-- [ ] `bridge/config.js` — 2 console calls
+**Logger migration (COMPLETE):**
+- [x] `bridge/pillar-manager.js` — 69 console calls → commit 397f4d4
+- [x] `bridge/ollama-manager.js` — 15 console calls → commit 397f4d4
+- [x] `bridge/config.js` — 2 console calls → commit 397f4d4
+- Zero `console.log/warn/error` calls remain in the entire bridge layer.
 
-**Still remaining (frontend polish):**
-- [ ] Wrap `console.time/timeEnd` perf logs in `import.meta.env.DEV` checks (useChat.js, useOpenRouter.js, useFileIndex.js)
-- [ ] Add `aria-label` to 5 TopBar/Sidebar buttons missing accessible labels
+**Frontend polish (COMPLETE):**
+- [x] Wrap `console.time/timeEnd` perf logs in `import.meta.env.DEV` checks → commit dd4d5ff
+- [x] Add `aria-label` to 5 TopBar/Sidebar buttons + aria-expanded on project switcher → commit f9641ef
 
 **Deferred (large effort — needs Chart):**
 - useChat.js god object decomposition
