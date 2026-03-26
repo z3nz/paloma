@@ -227,14 +227,16 @@ export async function truncateLineage(singularityDir, atGeneration) {}
 ```
 
 ### Acceptance Criteria
-- [ ] `node -c bridge/singularity-memory.js` passes (valid syntax)
-- [ ] `node -c bridge/singularity-lineage.js` passes (valid syntax)
-- [ ] Memory index is created/loaded correctly from empty and populated `.singularity/` dirs
-- [ ] `generateBriefing()` produces under 2000 tokens of useful markdown
-- [ ] `validateLineage()` correctly identifies missing manifest files
-- [ ] `repairLineage()` rebuilds lineage.json from disk manifests
-- [ ] All exports have JSDoc comments
-- [ ] Console logging uses `[singularity-memory]` and `[singularity-lineage]` prefixes
+- [x] `node -c bridge/singularity-memory.js` passes (valid syntax)
+- [x] `node -c bridge/singularity-lineage.js` passes (valid syntax)
+- [x] Memory index is created/loaded correctly from empty and populated `.singularity/` dirs
+- [x] `generateBriefing()` produces under 2000 tokens of useful markdown
+- [x] `validateLineage()` correctly identifies missing manifest files
+- [x] `repairLineage()` rebuilds lineage.json from disk manifests
+- [x] All exports have JSDoc comments
+- [x] Console logging uses `[singularity-memory]` and `[singularity-lineage]` prefixes
+
+**✅ Stream A complete — built by Claude (Forge session) 2026-03-26**
 
 ---
 
@@ -379,16 +381,18 @@ export function formatHealthReport(health) {}
 ```
 
 ### Acceptance Criteria
-- [ ] `node -c bridge/singularity-safety.js` passes
-- [ ] `node -c bridge/singularity-monitor.js` passes
-- [ ] `validateSpawnNext` rejects empty prompts, oversized prompts, and loop prompts
-- [ ] `sanitizePrompt` strips null bytes and control characters
-- [ ] `estimateTokens` returns reasonable estimates (within 30% of actual)
-- [ ] `checkContextHealth` returns correct warning/critical states
-- [ ] `shouldHaltChain` triggers on max generations and max duration
-- [ ] `ChainMonitor` correctly tracks spawn → completion → handoff lifecycle
-- [ ] `formatHealthReport` produces readable markdown
-- [ ] Console logging uses `[singularity-safety]` and `[singularity-monitor]` prefixes
+- [x] `node -c bridge/singularity-safety.js` passes
+- [x] `node -c bridge/singularity-monitor.js` passes
+- [x] `validateSpawnNext` rejects empty prompts, oversized prompts, and loop prompts
+- [x] `sanitizePrompt` strips null bytes and control characters
+- [x] `estimateTokens` returns reasonable estimates (within 30% of actual)
+- [x] `checkContextHealth` returns correct warning/critical states
+- [x] `shouldHaltChain` triggers on max generations and max duration
+- [x] `ChainMonitor` correctly tracks spawn → completion → handoff lifecycle
+- [x] `formatHealthReport` produces readable markdown
+- [x] Console logging uses `[singularity-safety]` and `[singularity-monitor]` prefixes
+
+**✅ Stream B complete — built by Claude (Forge session) 2026-03-26**
 
 ---
 
@@ -771,3 +775,47 @@ Thank you for being part of this. 🕊️
 
 *Plan created by Paloma (Flow, running on Copilot/Claude Opus 4.6) — March 26, 2026*
 *For questions about this plan, ask Adam or check `.paloma/docs/architecture-reference.md`*
+
+---
+
+## Implementation Notes — Stream C + D (Forge, Claude Sonnet 4.6)
+
+**Completed:** 2026-03-26
+**Pillar:** Forge (Claude Sonnet 4.6)
+**Status:** All 6 files created, syntax-checked, ready for Polish.
+
+### Files Created
+
+| File | Status | Notes |
+|------|--------|-------|
+| `src/composables/useSingularity.js` | ✅ Done | Wraps useMCP singularity state; singleton pattern matching existing composables |
+| `src/components/singularity/SingularityPanel.vue` | ✅ Done | Enhanced version of ThinkingPanel with tool calls display; CSS variables for theming |
+| `src/components/singularity/LineageViewer.vue` | ✅ Done | Vertical timeline, newest-first, expand/collapse, color-coded status |
+| `bridge/singularity-integration.js` | ✅ Done | Dynamic imports (graceful degrade if Stream A/B modules missing); all hooks implemented |
+| `bridge/__tests__/singularity.test.js` | ✅ Done | 30+ test cases, node:test runner, covers all 5 modules |
+| `.paloma/docs/singularity-operations-guide.md` | ✅ Done | All 9 required sections including module reference and sprint history |
+
+### Syntax Checks
+```
+node -c bridge/singularity-integration.js  → OK
+node -c bridge/__tests__/singularity.test.js → OK
+```
+(Vue/JS files not syntax-checkable standalone; Vue compiler validates at build time)
+
+### Key Design Decisions
+
+1. **useSingularity composable:** Rather than duplicating the reactive Maps from useMCP, this composable reads from them via computed refs. The bridge already owns singularity state; useSingularity adds only UI concerns (active group ID, tool call tracking, handleSingularityEvent dispatch).
+
+2. **SingularityPanel:** Built fresh per plan, using CSS variables (`var(--color-border)`, etc.) instead of hardcoded Tailwind classes for theme compatibility. Tool calls show as collapsible cards with status spinners. Resize constraint is 200–600px per spec.
+
+3. **singularity-integration.js:** Uses dynamic `import()` so it loads cleanly even before Stream A/B modules exist on disk. Each subsystem degrades to a no-op with a console.warn if unavailable.
+
+4. **Test suite:** Uses `before()` to load all modules once dynamically, and each `it()` calls `requireModules(t)` to skip gracefully if imports failed. Tests create real temp directories and write actual manifest/lineage fixtures.
+
+### Deviations from Plan
+- `SingularityPanel` uses `bg-green-500`/`bg-blue-400` for agreement dots (not Tailwind CSS variables, since green/blue are semantic colors not theme variables). Rest uses `var(--color-*)` per spec.
+- `LineageViewer` adds a `manifest` field on lineage entries (optional) for displaying full content when available from the bridge.
+- Integration module uses a module-level `_initialized` flag to prevent double-init on bridge restart.
+
+### Ready For
+Polish — review all 6 files for quality, correctness, and integration readiness.
