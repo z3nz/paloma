@@ -124,12 +124,12 @@ export function useChat() {
     await recoverStreamingDrafts(sessionId)
 
     const s = getState(sessionId)
-    console.time('[perf] loadMessages:db')
+    if (import.meta.env.DEV) console.time('[perf] loadMessages:db')
     const result = await db.messages
       .where('sessionId')
       .equals(sessionId)
       .sortBy('timestamp')
-    console.timeEnd('[perf] loadMessages:db')
+    if (import.meta.env.DEV) console.timeEnd('[perf] loadMessages:db')
     s.messages.value = result
   }
 

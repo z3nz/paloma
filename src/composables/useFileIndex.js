@@ -26,7 +26,7 @@ function pathToEntry(path) {
 
 export function useFileIndex() {
   async function buildIndex(dirHandle) {
-    console.time('[perf] buildIndex')
+    if (import.meta.env.DEV) console.time('[perf] buildIndex')
     indexing.value = true
     files.value = []
 
@@ -50,11 +50,11 @@ export function useFileIndex() {
     fuse.value = rebuildFuse(fileList)
 
     indexing.value = false
-    console.timeEnd('[perf] buildIndex')
+    if (import.meta.env.DEV) console.timeEnd('[perf] buildIndex')
   }
 
   async function updatePaths(dirHandle, changedPaths) {
-    console.time('[perf] updatePaths')
+    if (import.meta.env.DEV) console.time('[perf] updatePaths')
     const updated = [...files.value]
 
     for (const change of changedPaths) {
@@ -84,7 +84,7 @@ export function useFileIndex() {
 
     files.value = updated
     fuse.value = rebuildFuse(updated)
-    console.timeEnd('[perf] updatePaths')
+    if (import.meta.env.DEV) console.timeEnd('[perf] updatePaths')
   }
 
   function search(query) {

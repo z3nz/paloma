@@ -25,9 +25,9 @@ export function useOpenRouter() {
     modelsError.value = null
 
     try {
-      console.time('[perf] loadModels:fetch')
+      if (import.meta.env.DEV) console.time('[perf] loadModels:fetch')
       const all = await fetchModelsApi(apiKey)
-      console.timeEnd('[perf] loadModels:fetch')
+      if (import.meta.env.DEV) console.timeEnd('[perf] loadModels:fetch')
       models.value = all
       // Cache for fallback on future failures
       try {
