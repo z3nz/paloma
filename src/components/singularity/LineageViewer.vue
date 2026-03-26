@@ -1,295 +1,241 @@
 <template>
-  <section class="overflow-hidden rounded-xl border border-border bg-bg-secondary">
-    <!-- The header frames the lineage as a navigable timeline instead of a raw JSON dump. -->
-    <header class="border-b border-border px-5 py-4">
-      <div class="flex items-center justify-between gap-4">
-        <div>
-          <h2 class="text-sm font-semibold text-text-primary">Quinn Lineage</h2>
-          <p class="mt-1 text-sm text-text-muted">
-            {{ orderedLineage.length }}
-            {{ orderedLineage.length === 1 ? 'generation' : 'generations' }}
-            recorded
-          </p>
-        </div>
-        <span class="rounded-full border border-border bg-bg-primary/70 px-2.5 py-1 text-[11px] font-mono text-text-muted">
-          newest first
-        </span>
-      </div>
-    </header>
-
-    <div v-if="!orderedLineage.length" class="px-5 py-8 text-sm text-text-muted">
+  <!-- Quinn generational evolution timeline — newest generation at the top -->
+  <div class="lineage-viewer flex flex-col gap-0 select-none">
+    <!-- Empty state -->
+    <div
+      v-if="!lineage.length"
+      class="flex items-center justify-center py-12 text-sm italic"
+      style="color: var(--color-text-muted);"
+    >
       No generations recorded yet.
     </div>
 
-    <div v-else class="relative">
-      <!-- The vertical rail anchors the cards into a single evolutionary thread. -->
-      <div class="absolute bottom-0 left-6 top-0 w-px bg-border"></div>
+    <!-- Timeline list — newest first -->
+    <div
+      v-for="(entry, idx) in sortedLineage"
+      :key="entry.generation"
+      class="lineage-entry relative"
+    >
+      <!-- Vertical connector line (not shown for the last item) -->
+      <div
+        v-if="idx < sortedLineage.length - 1"
+        class="absolute left-5 top-10 bottom-0 w-px"
+        style="background: var(--color-border);"
+      ></div>
 
-      <article
-        v-for="entry in orderedLineage"
-        :key="entry.generation"
-        class="relative pl-12 pr-4"
+      <!-- Card row -->
+      <div
+        class="flex items-start gap-3 px-4 py-3 cursor-pointer rounded-lg mx-2 my-0.5 transition-colors"
+        :class="{ 'ring-1': selectedGeneration === entry.generation }"
+        :style="{
+          background: isSelected(entry) ? 'color-mix(in srgb, var(--color-accent) 12%, transparent)' : 'transparent',
+          '--tw-ring-color': 'var(--color-accent)'
+        }"
+        @click="handleSelect(entry)"
       >
-        <span
-          class="absolute left-[19px] top-6 h-3 w-3 rounded-full border-2 border-bg-secondary"
-          :class="statusTone(entry.status).dot"
-        ></span>
-
-        <div class="border-b border-border/70 py-3 last:border-b-0">
-          <button
-            type="button"
-            class="w-full rounded-xl border px-4 py-4 text-left transition-colors"
-            :class="isSelected(entry) ? `${statusTone(entry.status).card} bg-bg-primary/70` : 'border-border bg-bg-primary/40 hover:bg-bg-hover/70'"
-            @click="toggleGeneration(entry.generation)"
-          >
-            <div class="flex items-start justify-between gap-4">
-              <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-center gap-2">
-                  <span class="text-sm font-semibold text-text-primary">Generation {{ entry.generation }}</span>
-                  <span
-                    class="rounded-full border px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.2em]"
-                    :class="statusTone(entry.status).badge"
-                  >
-                    {{ formatStatus(entry.status) }}
-                  </span>
-                  <span
-                    v-if="entry.promptHash"
-                    class="rounded-full border border-border bg-bg-secondary px-2 py-0.5 text-[10px] font-mono text-text-muted"
-                  >
-                    {{ entry.promptHash }}
-                  </span>
-                </div>
-
-                <p class="mt-2 line-clamp-2 text-sm leading-6 text-text-secondary">
-                  {{ summaryText(entry) }}
-                </p>
-                <p class="mt-2 line-clamp-2 font-mono text-xs leading-5 text-text-muted">
-                  {{ promptPreview(entry) }}
-                </p>
-              </div>
-
-              <div class="shrink-0 text-right">
-                <div class="text-xs text-text-muted">{{ formatTimestamp(entry.born) }}</div>
-                <svg
-                  class="ml-auto mt-3 h-4 w-4 text-text-muted transition-transform"
-                  :class="{ 'rotate-90': isSelected(entry) }"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                </svg>
-              </div>
-            </div>
-          </button>
-
-          <!-- Expanding a generation reveals the adjacent diff and the full manifest payload. -->
-          <div v-if="isSelected(entry)" class="space-y-4 px-4 pb-2 pt-4">
-            <section>
-              <div class="mb-2 text-[10px] uppercase tracking-[0.2em] text-text-muted">Prompt Preview</div>
-              <div class="rounded-lg border border-border bg-bg-primary/60 px-3 py-3 font-mono text-xs leading-6 text-text-secondary">
-                {{ promptPreview(entry) || 'No prompt preview recorded.' }}
-              </div>
-            </section>
-
-            <section>
-              <div class="mb-2 text-[10px] uppercase tracking-[0.2em] text-text-muted">
-                Delta From Generation {{ Number(entry.generation) - 1 }}
-              </div>
-
-              <div v-if="getPreviousEntry(entry)" class="space-y-2">
-                <div
-                  v-for="(block, index) in diffBlocks(entry)"
-                  :key="`${entry.generation}-${index}`"
-                  class="rounded-lg border border-border bg-bg-primary/60 px-3 py-3"
-                >
-                  <div
-                    class="mb-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.2em]"
-                    :class="block.type === 'added' ? 'border-success/30 bg-success/10 text-success' : 'border-danger/30 bg-danger/10 text-danger'"
-                  >
-                    {{ block.type === 'added' ? 'Added' : 'Removed' }}
-                  </div>
-                  <pre class="overflow-x-auto whitespace-pre-wrap font-mono text-xs leading-6 text-text-secondary">{{ block.preview }}</pre>
-                </div>
-
-                <div
-                  v-if="!diffBlocks(entry).length"
-                  class="rounded-lg border border-border bg-bg-primary/40 px-3 py-3 text-sm text-text-muted"
-                >
-                  No textual delta available yet. Pass prompt or manifest content to render richer comparisons.
-                </div>
-              </div>
-
-              <div
-                v-else
-                class="rounded-lg border border-border bg-bg-primary/40 px-3 py-3 text-sm text-text-muted"
-              >
-                Generation {{ entry.generation }} has no predecessor to compare against.
-              </div>
-            </section>
-
-            <section>
-              <div class="mb-2 text-[10px] uppercase tracking-[0.2em] text-text-muted">Manifest</div>
-              <pre class="max-h-72 overflow-auto rounded-lg border border-border bg-bg-primary/70 px-3 py-3 font-mono text-xs leading-6 text-text-secondary">{{ manifestText(entry) }}</pre>
-            </section>
-          </div>
+        <!-- Generation badge (color-coded by status) -->
+        <div
+          class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold font-mono z-10"
+          :style="generationBadgeStyle(entry)"
+        >
+          {{ entry.generation }}
         </div>
-      </article>
+
+        <!-- Card content -->
+        <div class="flex-1 min-w-0">
+          <!-- Top row: timestamp + expand chevron -->
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs" style="color: var(--color-text-muted);">
+              {{ formatTimestamp(entry.born) }}
+            </span>
+            <div class="flex items-center gap-2 shrink-0">
+              <!-- Status chip -->
+              <span
+                class="text-xs px-1.5 py-0.5 rounded font-mono"
+                :style="statusChipStyle(entry)"
+              >
+                {{ entry.status || 'unknown' }}
+              </span>
+              <!-- Expand/collapse chevron (only shown when selected) -->
+              <svg
+                v-if="isSelected(entry)"
+                class="w-3.5 h-3.5 transition-transform"
+                :class="{ 'rotate-180': expandedGeneration === entry.generation }"
+                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                style="color: var(--color-text-muted);"
+              >
+                <polyline points="6 9 12 15 18 9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Summary preview (2 lines, truncated) -->
+          <p
+            class="text-sm mt-1 line-clamp-2"
+            style="color: var(--color-text-secondary);"
+          >
+            {{ entry.summary || entry.promptHash || 'No summary available' }}
+          </p>
+
+          <!-- Prompt hash (muted monospace) -->
+          <p
+            v-if="entry.promptHash"
+            class="text-xs font-mono mt-0.5 truncate"
+            style="color: var(--color-text-muted);"
+          >
+            {{ entry.promptHash }}
+          </p>
+        </div>
+      </div>
+
+      <!-- Expanded manifest content -->
+      <div
+        v-if="expandedGeneration === entry.generation"
+        class="mx-4 mb-2 rounded-lg overflow-hidden border"
+        style="border-color: var(--color-border); background: var(--color-bg-primary);"
+      >
+        <div class="flex items-center justify-between px-3 py-2 border-b" style="border-color: var(--color-border);">
+          <span class="text-xs font-mono font-semibold" style="color: var(--color-text-primary);">
+            Generation {{ entry.generation }} — Manifest
+          </span>
+          <button
+            class="text-xs px-2 py-0.5 rounded transition-colors"
+            style="color: var(--color-text-muted); background: var(--color-bg-secondary);"
+            @click.stop="copyManifest(entry)"
+          >
+            {{ copyLabel === entry.generation ? 'Copied!' : 'Copy' }}
+          </button>
+        </div>
+        <pre
+          class="p-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed"
+          style="color: var(--color-text-secondary); max-height: 320px; overflow-y: auto;"
+        >{{ entry.manifest || formatManifestPreview(entry) }}</pre>
+      </div>
     </div>
-  </section>
+  </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { diffLines } from 'diff'
+import { ref, computed } from 'vue'
+
+// ── Props ───────────────────────────────────────────────────────────────────
 
 const props = defineProps({
+  /**
+   * Array of generation entries.
+   * Each: { generation: number, born: string (ISO), promptHash: string, summary: string, status: string, manifest?: string }
+   */
   lineage: { type: Array, default: () => [] },
+  /** The currently selected generation number (null = none selected) */
   selectedGeneration: { type: Number, default: null }
 })
 
+// ── Emits ───────────────────────────────────────────────────────────────────
+
 const emit = defineEmits(['select-generation'])
 
-const orderedLineage = computed(() => {
-  return [...props.lineage].sort((left, right) => Number(right.generation || 0) - Number(left.generation || 0))
-})
+// ── Local state ─────────────────────────────────────────────────────────────
 
-const lineageByGeneration = computed(() => {
-  return new Map(orderedLineage.value.map(entry => [Number(entry.generation), entry]))
-})
+const expandedGeneration = ref(null) // Which generation's manifest is fully expanded
+const copyLabel = ref(null)          // generation number being copied, or null
 
-function normalizeText(value) {
-  return String(value || '').replace(/\r\n/g, '\n').trim()
-}
+// ── Sorted lineage — newest generation first ─────────────────────────────────
 
-function formatTimestamp(value) {
-  if (!value) return 'Unknown time'
+const sortedLineage = computed(() =>
+  [...props.lineage].sort((a, b) => b.generation - a.generation)
+)
 
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return String(value)
-
-  return new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  }).format(date)
-}
-
-function formatStatus(status) {
-  const value = String(status || 'successful').toLowerCase()
-  if (value.includes('error') || value.includes('fail')) return 'error'
-  if (value.includes('archiv')) return 'archived'
-  return 'successful'
-}
-
-function statusTone(status) {
-  const tone = formatStatus(status)
-
-  if (tone === 'error') {
-    return {
-      dot: 'bg-danger',
-      badge: 'border-danger/30 bg-danger/10 text-danger',
-      card: 'border-danger/25'
-    }
-  }
-
-  if (tone === 'archived') {
-    return {
-      dot: 'bg-text-muted',
-      badge: 'border-border bg-bg-secondary text-text-muted',
-      card: 'border-border'
-    }
-  }
-
-  return {
-    dot: 'bg-success',
-    badge: 'border-success/30 bg-success/10 text-success',
-    card: 'border-success/20'
-  }
-}
-
-function summaryText(entry) {
-  return normalizeText(entry.summary || entry.summaryPreview || entry.taskForNext || 'No summary recorded yet.')
-}
-
-function promptPreview(entry) {
-  const source = normalizeText(
-    entry.promptPreview
-    || entry.prompt
-    || entry.manifestContent
-    || entry.manifest
-    || entry.summary
-    || entry.summaryPreview
-    || ''
-  )
-
-  if (!source) return 'No prompt preview recorded.'
-  return source.length > 200 ? `${source.slice(0, 200)}...` : source
-}
-
-function manifestText(entry) {
-  const providedManifest = normalizeText(entry.manifestContent || entry.manifest || '')
-  if (providedManifest) return providedManifest
-
-  return [
-    `# Generation ${entry.generation}`,
-    entry.born ? `**Born:** ${entry.born}` : null,
-    entry.promptHash ? `**Prompt Hash:** ${entry.promptHash}` : null,
-    '',
-    '## Summary',
-    '',
-    summaryText(entry)
-  ]
-    .filter(Boolean)
-    .join('\n')
-}
-
-function getPreviousEntry(entry) {
-  return lineageByGeneration.value.get(Number(entry.generation) - 1) || null
-}
-
-function getDiffSource(entry) {
-  return normalizeText(
-    entry.prompt
-    || entry.promptPreview
-    || entry.manifestContent
-    || entry.manifest
-    || entry.summary
-    || entry.summaryPreview
-    || ''
-  )
-}
-
-function diffBlocks(entry) {
-  const previousEntry = getPreviousEntry(entry)
-  if (!previousEntry) return []
-
-  const previousSource = getDiffSource(previousEntry)
-  const currentSource = getDiffSource(entry)
-  if (!previousSource || !currentSource) return []
-
-  return diffLines(previousSource, currentSource)
-    .filter(part => part.added || part.removed)
-    .slice(0, 6)
-    .map(part => {
-      const lines = part.value
-        .split('\n')
-        .filter(line => line.trim().length > 0)
-        .slice(0, 6)
-
-      return {
-        type: part.added ? 'added' : 'removed',
-        preview: lines.join('\n')
-      }
-    })
-    .filter(part => part.preview)
-}
+// ── Selection helpers ────────────────────────────────────────────────────────
 
 function isSelected(entry) {
-  return props.selectedGeneration != null && Number(props.selectedGeneration) === Number(entry.generation)
+  return props.selectedGeneration === entry.generation
 }
 
-function toggleGeneration(generation) {
-  const nextValue = props.selectedGeneration === generation ? null : generation
-  emit('select-generation', nextValue)
+function handleSelect(entry) {
+  emit('select-generation', entry.generation)
+  // Toggle expand/collapse when clicking a selected entry
+  if (expandedGeneration.value === entry.generation) {
+    expandedGeneration.value = null
+  } else {
+    expandedGeneration.value = entry.generation
+  }
+}
+
+// ── Badge / chip styles ──────────────────────────────────────────────────────
+
+function generationBadgeStyle(entry) {
+  const status = entry.status || 'unknown'
+  const colors = {
+    successful: 'background: color-mix(in srgb, #22c55e 20%, transparent); color: #22c55e;',
+    complete:   'background: color-mix(in srgb, #22c55e 20%, transparent); color: #22c55e;',
+    error:      'background: color-mix(in srgb, #ef4444 20%, transparent); color: #ef4444;',
+    failed:     'background: color-mix(in srgb, #ef4444 20%, transparent); color: #ef4444;',
+    archived:   'background: color-mix(in srgb, #6b7280 20%, transparent); color: #9ca3af;',
+    running:    'background: color-mix(in srgb, #3b82f6 20%, transparent); color: #60a5fa;',
+  }
+  return colors[status] ?? 'background: color-mix(in srgb, #6b7280 15%, transparent); color: #9ca3af;'
+}
+
+function statusChipStyle(entry) {
+  const status = entry.status || 'unknown'
+  const styles = {
+    successful: 'background: color-mix(in srgb, #22c55e 15%, transparent); color: #22c55e;',
+    complete:   'background: color-mix(in srgb, #22c55e 15%, transparent); color: #22c55e;',
+    error:      'background: color-mix(in srgb, #ef4444 15%, transparent); color: #ef4444;',
+    failed:     'background: color-mix(in srgb, #ef4444 15%, transparent); color: #ef4444;',
+    archived:   'background: color-mix(in srgb, #6b7280 12%, transparent); color: #9ca3af;',
+    running:    'background: color-mix(in srgb, #3b82f6 15%, transparent); color: #60a5fa;',
+  }
+  return styles[status] ?? 'background: color-mix(in srgb, #6b7280 12%, transparent); color: #9ca3af;'
+}
+
+// ── Formatting helpers ───────────────────────────────────────────────────────
+
+function formatTimestamp(iso) {
+  if (!iso) return '—'
+  try {
+    const d = new Date(iso)
+    return d.toLocaleString(undefined, {
+      month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    })
+  } catch {
+    return iso
+  }
+}
+
+/** Build a readable preview from entry fields when no full manifest is available */
+function formatManifestPreview(entry) {
+  const lines = [
+    `Generation: ${entry.generation}`,
+    `Born: ${entry.born || '—'}`,
+    `Status: ${entry.status || 'unknown'}`,
+    `Prompt Hash: ${entry.promptHash || '—'}`,
+    '',
+    'Summary:',
+    entry.summary || '(no summary)'
+  ]
+  return lines.join('\n')
+}
+
+async function copyManifest(entry) {
+  const text = entry.manifest || formatManifestPreview(entry)
+  try {
+    await navigator.clipboard.writeText(text)
+    copyLabel.value = entry.generation
+    setTimeout(() => { copyLabel.value = null }, 1500)
+  } catch {
+    // Clipboard API unavailable — silently ignore
+  }
 }
 </script>
+
+<style scoped>
+/* line-clamp utility — Tailwind v4 may not include this, add via inline fallback */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+</style>

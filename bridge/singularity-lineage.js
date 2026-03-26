@@ -1,279 +1,244 @@
 /**
- * Singularity Lineage Tools — validation, diffing, repair, and querying
- * for the Quinn generational chain.
+ * Singularity Lineage Tools
  *
- * Lineage state lives in two places:
- *   .singularity/lineage.json — array of generation records
- *   .singularity/generation-NNN.md — per-generation manifest files
+ * Validation, diffing, repair, and summarization for Quinn singularity
+ * generation chains. Keeps the lineage healthy and provides introspection
+ * tools for understanding how Quinn evolves across generations.
  *
- * These tools keep the two in sync and provide observability into
- * how the singularity is evolving across generations.
+ * Reads: .singularity/lineage.json + .singularity/generation-NNN.md manifests
+ * Writes: .singularity/lineage.json + .singularity/archive/ (on truncate)
  */
 
-import { readFile, writeFile, readdir, mkdir, rename } from 'node:fs/promises'
+import { readFile, writeFile, readdir, mkdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import crypto from 'node:crypto'
+import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { createLogger } from './logger.js'
 
-const TAG = '[singularity-lineage]'
+const log = createLogger('singularity-lineage')
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
+const LINEAGE_FILE = 'lineage.json'
+const ARCHIVE_DIR = 'archive'
+
+// ─── Internal helpers ─────────────────────────────────────────────────────────
 
 /**
- * Load lineage.json from disk, or return empty array.
+ * Load lineage.json. Returns [] on missing/corrupt file.
  * @param {string} singularityDir
  * @returns {Promise<Array>}
  */
 async function loadLineage(singularityDir) {
-  const lineagePath = join(singularityDir, 'lineage.json')
+  const lineagePath = join(singularityDir, LINEAGE_FILE)
   try {
-    const raw = await readFile(lineagePath, 'utf-8')
+    const raw = await readFile(lineagePath, 'utf8')
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed) ? parsed : []
-  } catch { return [] }
+  } catch {
+    return []
+  }
 }
 
 /**
- * Persist lineage array to disk.
+ * Save lineage.json to disk.
  * @param {string} singularityDir
  * @param {Array} lineage
  */
 async function saveLineage(singularityDir, lineage) {
-  await mkdir(singularityDir, { recursive: true })
-  const lineagePath = join(singularityDir, 'lineage.json')
-  await writeFile(lineagePath, JSON.stringify(lineage, null, 2) + '\n', 'utf-8')
+  const lineagePath = join(singularityDir, LINEAGE_FILE)
+  await writeFile(lineagePath, JSON.stringify(lineage, null, 2), 'utf8')
 }
 
 /**
- * List all generation manifest files on disk, sorted by generation number.
+ * List all generation manifest files sorted by generation number.
  * @param {string} singularityDir
- * @returns {Promise<Array<{ filename: string, generation: number }>>}
+ * @returns {Promise<Array<{ generation: number, filename: string }>>}
  */
 async function listManifests(singularityDir) {
-  let files
   try {
-    files = await readdir(singularityDir)
-  } catch { return [] }
-
-  return files
-    .filter(f => /^generation-\d+\.md$/.test(f))
-    .map(f => ({
-      filename: f,
-      generation: parseInt(f.match(/generation-(\d+)\.md$/)[1], 10)
-    }))
-    .sort((a, b) => a.generation - b.generation)
+    const files = await readdir(singularityDir)
+    return files
+      .filter(f => /^generation-\d+\.md$/.test(f))
+      .map(f => ({ generation: parseInt(f.match(/(\d+)/)[1], 10), filename: f }))
+      .sort((a, b) => a.generation - b.generation)
+  } catch {
+    return []
+  }
 }
 
 /**
- * Parse a generation manifest and extract its key fields.
+ * Read a generation manifest file. Returns null if not found.
+ * @param {string} singularityDir
+ * @param {number} generation
+ * @returns {Promise<string|null>}
+ */
+async function readManifest(singularityDir, generation) {
+  // Zero-padded to 3 digits to match pillar-manager convention
+  const filename = `generation-${String(generation).padStart(3, '0')}.md`
+  const filePath = join(singularityDir, filename)
+  try {
+    return await readFile(filePath, 'utf8')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Hash a prompt to a short fingerprint for identity comparison.
+ * @param {string} text
+ * @returns {string} 12-char hex hash
+ */
+function hashPrompt(text) {
+  return createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 12)
+}
+
+/**
+ * Extract the prompt section from a manifest. Falls back to full content.
  * @param {string} content
- * @returns {{ born: string|null, ended: string|null, model: string|null, session: string|null, summary: string, taskForNext: string, promptBlock: string }}
- */
-function parseManifest(content) {
-  const bornMatch = content.match(/\*\*Born:\*\*\s*(.+)/)
-  const endedMatch = content.match(/\*\*Ended:\*\*\s*(.+)/)
-  const modelMatch = content.match(/\*\*Model:\*\*\s*(.+)/)
-  const sessionMatch = content.match(/\*\*Session:\*\*\s*(.+)/)
-
-  const summaryMatch = content.match(/## Summary\s*\n\n([\s\S]*?)(?=\n## |$)/)
-  const taskMatch = content.match(/## Task Passed Forward\s*\n\n([\s\S]*?)(?=\n## |$)/)
-  const promptMatch = content.match(/## Prompt Written for Next Generation\s*\n\n```\n([\s\S]*?)\n```/)
-
-  return {
-    born: bornMatch ? bornMatch[1].trim() : null,
-    ended: endedMatch ? endedMatch[1].trim() : null,
-    model: modelMatch ? modelMatch[1].trim() : null,
-    session: sessionMatch ? sessionMatch[1].trim() : null,
-    summary: summaryMatch ? summaryMatch[1].trim() : '',
-    taskForNext: taskMatch ? taskMatch[1].trim() : '',
-    promptBlock: promptMatch ? promptMatch[1].trim() : ''
-  }
-}
-
-/**
- * Simple hash for a prompt string (matches the hash used in pillar-manager).
- * @param {string} text
  * @returns {string}
  */
-function simpleHash(text) {
-  let hash = 0
-  for (let i = 0; i < text.length; i++) {
-    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0
-  }
-  return hash.toString(16)
+function extractPrompt(content) {
+  const match = content.match(/##\s+(?:Prompt|Next Prompt)\n([\s\S]*?)(?=\n##|$)/i)
+  return match ? match[1].trim() : content.trim()
 }
 
 /**
- * SHA-256 short hash (first 12 hex chars).
- * @param {string} text
+ * Extract a summary preview from a manifest. Falls back to first 300 chars.
+ * @param {string} content
  * @returns {string}
  */
-function sha256Short(text) {
-  return crypto.createHash('sha256').update(text, 'utf-8').digest('hex').slice(0, 12)
+function extractSummary(content) {
+  const match = content.match(/##\s+(?:Summary|State Summary|What I Did)\n([\s\S]*?)(?=\n##|$)/i)
+  if (match) return match[1].trim().slice(0, 300)
+  // Strip first heading, return first meaningful text
+  return content.replace(/^#[^\n]*\n/, '').trim().slice(0, 300)
 }
 
 /**
- * Rough token estimate (~4 chars per token).
- * @param {string} text
- * @returns {number}
+ * Extract born timestamp from manifest frontmatter or content.
+ * @param {string} content
+ * @returns {string}
  */
-function estimateTokens(text) {
-  return Math.ceil(text.length / 4)
+function extractBorn(content) {
+  // Look for frontmatter-style born field
+  const match = content.match(/^(?:born|timestamp|date)[:\s]+([^\n]+)/im)
+  if (match) return match[1].trim()
+  return new Date().toISOString()
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+// ─── Exports ──────────────────────────────────────────────────────────────────
 
 /**
- * Validate the entire lineage — check that all manifest files exist,
+ * Validate the entire lineage — check that manifest files exist,
  * lineage.json is well-formed, and generation numbers are contiguous.
  * @param {string} singularityDir
  * @returns {Promise<{ valid: boolean, issues: string[], generationCount: number, gaps: number[] }>}
  */
 export async function validateLineage(singularityDir) {
   const issues = []
+
   const lineage = await loadLineage(singularityDir)
   const manifests = await listManifests(singularityDir)
+  const manifestGenerations = new Set(manifests.map(m => m.generation))
 
-  const manifestGens = new Set(manifests.map(m => m.generation))
-  const lineageGens = new Set(lineage.map(e => e.gen))
-
-  // Check lineage.json entries
-  if (lineage.length === 0 && manifests.length === 0) {
-    console.log(`${TAG} Validation: empty lineage (no generations yet)`)
-    return { valid: true, issues: [], generationCount: 0, gaps: [] }
-  }
-
-  // Check for lineage entries without matching manifests
+  // Check lineage entries have required structure
   for (const entry of lineage) {
-    if (!manifestGens.has(entry.gen)) {
-      issues.push(`Lineage entry for gen ${entry.gen} has no matching manifest file`)
-    }
-    if (!entry.gen || typeof entry.gen !== 'number') {
-      issues.push(`Lineage entry has invalid generation number: ${JSON.stringify(entry.gen)}`)
+    if (typeof entry.generation !== 'number') {
+      issues.push(`Lineage entry missing generation number: ${JSON.stringify(entry).slice(0, 80)}`)
     }
   }
 
-  // Check for manifest files not tracked in lineage
-  for (const manifest of manifests) {
-    if (!lineageGens.has(manifest.generation)) {
-      issues.push(`Manifest ${manifest.filename} is not tracked in lineage.json`)
-    }
-  }
-
-  // Check for duplicate generations in lineage
-  const genCounts = {}
+  // Check every lineage entry has a corresponding manifest file
   for (const entry of lineage) {
-    genCounts[entry.gen] = (genCounts[entry.gen] || 0) + 1
-  }
-  for (const [gen, count] of Object.entries(genCounts)) {
-    if (count > 1) {
-      issues.push(`Duplicate lineage entries for generation ${gen} (${count} entries)`)
+    if (typeof entry.generation === 'number' && !manifestGenerations.has(entry.generation)) {
+      issues.push(`Missing manifest file for generation ${entry.generation}`)
     }
   }
 
-  // Check for contiguity — find gaps
-  const allGens = [...new Set([...manifestGens, ...lineageGens])].sort((a, b) => a - b)
+  // Find gaps in the generation sequence from manifests on disk
+  const allGens = [...manifestGenerations].sort((a, b) => a - b)
   const gaps = []
-  if (allGens.length > 0) {
-    for (let g = allGens[0]; g <= allGens[allGens.length - 1]; g++) {
-      if (!manifestGens.has(g) && !lineageGens.has(g)) {
+  for (let i = 1; i < allGens.length; i++) {
+    if (allGens[i] - allGens[i - 1] > 1) {
+      for (let g = allGens[i - 1] + 1; g < allGens[i]; g++) {
         gaps.push(g)
       }
     }
-    if (gaps.length > 0) {
-      issues.push(`Gap(s) in generation sequence: ${gaps.join(', ')}`)
-    }
+  }
+  if (gaps.length > 0) {
+    issues.push(`Generation gaps detected: ${gaps.join(', ')}`)
   }
 
   const valid = issues.length === 0
-  console.log(`${TAG} Validation: ${valid ? 'PASS' : 'FAIL'} — ${allGens.length} generations, ${issues.length} issues`)
-  return { valid, issues, generationCount: allGens.length, gaps }
+  log.info('Lineage validated', {
+    valid,
+    issueCount: issues.length,
+    generationCount: manifests.length,
+    gapCount: gaps.length
+  })
+  return { valid, issues, generationCount: manifests.length, gaps }
 }
 
 /**
- * Diff two generations' prompts and show what evolved.
- * Returns a human-readable summary of changes.
+ * Diff two generations' prompts to show what evolved between them.
+ * Returns a human-readable summary of what changed.
  * @param {string} singularityDir
  * @param {number} genA
  * @param {number} genB
- * @returns {Promise<{ genA: { summary: string, tokenEstimate: number }, genB: { summary: string, tokenEstimate: number }, diff: string, evolutionNotes: string }>}
+ * @returns {Promise<{ genA: { summary, tokenEstimate }, genB: { summary, tokenEstimate }, diff: string, evolutionNotes: string }>}
  */
 export async function diffGenerations(singularityDir, genA, genB) {
-  const padA = String(genA).padStart(3, '0')
-  const padB = String(genB).padStart(3, '0')
+  const manifestA = await readManifest(singularityDir, genA)
+  const manifestB = await readManifest(singularityDir, genB)
 
-  let manifestA, manifestB
-  try {
-    const rawA = await readFile(join(singularityDir, `generation-${padA}.md`), 'utf-8')
-    manifestA = parseManifest(rawA)
-  } catch {
-    throw new Error(`Manifest for generation ${genA} not found`)
-  }
+  if (!manifestA) throw new Error(`Generation ${genA} manifest not found`)
+  if (!manifestB) throw new Error(`Generation ${genB} manifest not found`)
 
-  try {
-    const rawB = await readFile(join(singularityDir, `generation-${padB}.md`), 'utf-8')
-    manifestB = parseManifest(rawB)
-  } catch {
-    throw new Error(`Manifest for generation ${genB} not found`)
-  }
+  const promptA = extractPrompt(manifestA)
+  const promptB = extractPrompt(manifestB)
+  const summaryA = extractSummary(manifestA)
+  const summaryB = extractSummary(manifestB)
 
-  // Build a line-by-line diff of the prompt blocks
-  const linesA = manifestA.promptBlock.split('\n')
-  const linesB = manifestB.promptBlock.split('\n')
+  // Simple line-based diff (set operations — not a full Myers diff, but readable)
+  const linesA = promptA.split('\n').map(l => l.trim()).filter(Boolean)
+  const linesB = promptB.split('\n').map(l => l.trim()).filter(Boolean)
+  const setA = new Set(linesA)
+  const setB = new Set(linesB)
 
-  const diffLines = []
-  const maxLines = Math.max(linesA.length, linesB.length)
+  const removed = linesA.filter(l => !setB.has(l)).slice(0, 15)
+  const added = linesB.filter(l => !setA.has(l)).slice(0, 15)
 
-  // Simple line-by-line comparison (not a full LCS diff, but useful for quick review)
-  const setA = new Set(linesA.map(l => l.trim()).filter(Boolean))
-  const setB = new Set(linesB.map(l => l.trim()).filter(Boolean))
+  const diffParts = [
+    `--- Generation ${genA} (${Math.round(promptA.length / 4)} tokens)`,
+    `+++ Generation ${genB} (${Math.round(promptB.length / 4)} tokens)`,
+    '',
+    ...removed.map(l => `- ${l}`),
+    removed.length > 0 && added.length > 0 ? '' : null,
+    ...added.map(l => `+ ${l}`)
+  ].filter(l => l !== null)
 
-  for (const line of linesB) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    if (!setA.has(trimmed)) {
-      diffLines.push(`+ ${trimmed}`)
-    }
-  }
-  for (const line of linesA) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    if (!setB.has(trimmed)) {
-      diffLines.push(`- ${trimmed}`)
-    }
-  }
+  const diff = diffParts.join('\n')
 
-  const tokensA = estimateTokens(manifestA.promptBlock)
-  const tokensB = estimateTokens(manifestB.promptBlock)
-  const tokenDelta = tokensB - tokensA
+  const evolutionNotes = [
+    `Generation ${genB} vs ${genA}:`,
+    `  Lines added:   ${added.length}`,
+    `  Lines removed: ${removed.length}`,
+    `  Token delta:   ${Math.round((promptB.length - promptA.length) / 4)} tokens`,
+    `  Prompt hash A: ${hashPrompt(promptA)}`,
+    `  Prompt hash B: ${hashPrompt(promptB)}`
+  ].join('\n')
 
-  // Evolution notes
-  const notes = []
-  if (tokenDelta > 0) notes.push(`Prompt grew by ~${tokenDelta} tokens`)
-  else if (tokenDelta < 0) notes.push(`Prompt shrank by ~${Math.abs(tokenDelta)} tokens`)
-  else notes.push('Prompt size unchanged')
-
-  if (diffLines.length === 0) notes.push('Prompts are identical in content')
-  else notes.push(`${diffLines.filter(l => l.startsWith('+')).length} lines added, ${diffLines.filter(l => l.startsWith('-')).length} lines removed`)
-
-  if (manifestA.taskForNext) notes.push(`Gen ${genA} tasked next with: "${manifestA.taskForNext.slice(0, 100)}"`)
-  if (manifestB.taskForNext) notes.push(`Gen ${genB} tasked next with: "${manifestB.taskForNext.slice(0, 100)}"`)
-
-  console.log(`${TAG} Diff gen ${genA} vs ${genB}: ${diffLines.length} changes`)
-
+  log.info('Generations diffed', { genA, genB, added: added.length, removed: removed.length })
   return {
-    genA: { summary: manifestA.summary.slice(0, 300), tokenEstimate: tokensA },
-    genB: { summary: manifestB.summary.slice(0, 300), tokenEstimate: tokensB },
-    diff: diffLines.join('\n') || '(no differences)',
-    evolutionNotes: notes.join('\n')
+    genA: { summary: summaryA, tokenEstimate: Math.round(promptA.length / 4) },
+    genB: { summary: summaryB, tokenEstimate: Math.round(promptB.length / 4) },
+    diff,
+    evolutionNotes
   }
 }
 
 /**
- * Repair a broken lineage. Rebuilds lineage.json from manifest files on disk.
+ * Repair a broken lineage by rebuilding lineage.json from manifest files on disk.
+ * Use this when lineage.json is missing, corrupt, or out of sync with manifests.
  * @param {string} singularityDir
  * @returns {Promise<{ repaired: boolean, generationsFound: number, lineageEntries: number }>}
  */
@@ -281,93 +246,124 @@ export async function repairLineage(singularityDir) {
   const manifests = await listManifests(singularityDir)
 
   if (manifests.length === 0) {
-    console.log(`${TAG} Repair: no manifests found, writing empty lineage`)
-    await saveLineage(singularityDir, [])
-    return { repaired: true, generationsFound: 0, lineageEntries: 0 }
+    log.warn('No manifests found — nothing to repair from')
+    return { repaired: false, generationsFound: 0, lineageEntries: 0 }
   }
 
-  const newLineage = []
+  const lineage = []
 
-  for (const { filename, generation } of manifests) {
-    const raw = await readFile(join(singularityDir, filename), 'utf-8')
-    const manifest = parseManifest(raw)
+  for (const { generation } of manifests) {
+    const content = await readManifest(singularityDir, generation)
+    if (!content) continue
 
-    newLineage.push({
-      gen: generation,
-      born: manifest.born || null,
-      ended: manifest.ended || null,
-      model: manifest.model || 'unknown',
-      pillarId: manifest.session || 'unknown',
-      summary: manifest.summary.slice(0, 500),
-      taskForNext: manifest.taskForNext.slice(0, 500),
-      promptHash: simpleHash(manifest.promptBlock),
-      promptLength: manifest.promptBlock.length
+    const prompt = extractPrompt(content)
+    const promptHash = hashPrompt(prompt)
+    const summary = extractSummary(content)
+    const born = extractBorn(content)
+
+    lineage.push({
+      generation,
+      born,
+      promptHash,
+      summary: summary.slice(0, 300),
+      repairedAt: new Date().toISOString()
     })
   }
 
-  await saveLineage(singularityDir, newLineage)
-  console.log(`${TAG} Repair: rebuilt lineage.json from ${manifests.length} manifests`)
-  return { repaired: true, generationsFound: manifests.length, lineageEntries: newLineage.length }
+  await saveLineage(singularityDir, lineage)
+
+  log.info('Lineage repaired', {
+    generationsFound: manifests.length,
+    lineageEntries: lineage.length
+  })
+  return { repaired: true, generationsFound: manifests.length, lineageEntries: lineage.length }
 }
 
 /**
  * Get a compact lineage summary suitable for display or logging.
+ * Merges data from lineage.json and manifest files on disk.
  * @param {string} singularityDir
- * @returns {Promise<Array<{ generation: number, born: string|null, promptHash: string, summaryPreview: string }>>}
+ * @returns {Promise<Array<{ generation, born, promptHash, summaryPreview }>>}
  */
 export async function getLineageSummary(singularityDir) {
   const lineage = await loadLineage(singularityDir)
+  const manifests = await listManifests(singularityDir)
 
-  return lineage.map(entry => ({
-    generation: entry.gen,
-    born: entry.born || null,
-    promptHash: entry.promptHash || '',
-    summaryPreview: (entry.summary || '').slice(0, 120)
-  }))
+  // Union of all known generations from both sources
+  const lineageMap = new Map(lineage.map(e => [e.generation, e]))
+  const manifestGens = new Set(manifests.map(m => m.generation))
+  const allGens = new Set([...lineageMap.keys(), ...manifestGens])
+
+  const summaries = []
+
+  for (const gen of [...allGens].sort((a, b) => a - b)) {
+    const lineageEntry = lineageMap.get(gen) || {}
+
+    // Read manifest if we don't have complete lineage data
+    let promptHash = lineageEntry.promptHash
+    let summaryPreview = lineageEntry.summary
+
+    if (!promptHash || !summaryPreview) {
+      const content = await readManifest(singularityDir, gen)
+      if (content) {
+        if (!promptHash) promptHash = hashPrompt(extractPrompt(content))
+        if (!summaryPreview) summaryPreview = extractSummary(content)
+      }
+    }
+
+    summaries.push({
+      generation: gen,
+      born: lineageEntry.born || 'unknown',
+      promptHash: promptHash || 'unknown',
+      summaryPreview: (summaryPreview || 'No summary available').slice(0, 120)
+    })
+  }
+
+  log.info('Lineage summary retrieved', { generations: summaries.length })
+  return summaries
 }
 
 /**
- * Truncate the lineage at a specific generation (for recovery from bad handoffs).
- * Moves truncated manifests to .singularity/archive/
+ * Truncate the lineage at a specific generation.
+ * Generations after atGeneration are archived (moved to .singularity/archive/).
+ * lineage.json is also trimmed to match.
  * @param {string} singularityDir
- * @param {number} atGeneration - Keep this gen and all before it
+ * @param {number} atGeneration - Keep this generation and all before it
  * @returns {Promise<{ kept: number, archived: number }>}
  */
 export async function truncateLineage(singularityDir, atGeneration) {
-  if (typeof atGeneration !== 'number' || atGeneration < 1) {
-    throw new Error('atGeneration must be a positive integer')
+  const archivePath = join(singularityDir, ARCHIVE_DIR)
+  if (!existsSync(archivePath)) {
+    await mkdir(archivePath, { recursive: true })
   }
 
-  const lineage = await loadLineage(singularityDir)
   const manifests = await listManifests(singularityDir)
+  let kept = 0
+  let archived = 0
 
-  // Partition lineage entries
-  const kept = lineage.filter(e => e.gen <= atGeneration)
-  const truncated = lineage.filter(e => e.gen > atGeneration)
-
-  // Ensure archive directory exists
-  const archiveDir = join(singularityDir, 'archive')
-  await mkdir(archiveDir, { recursive: true })
-
-  // Move manifest files for truncated generations to archive
-  let archivedCount = 0
-  for (const manifest of manifests) {
-    if (manifest.generation > atGeneration) {
-      const srcPath = join(singularityDir, manifest.filename)
-      const dstPath = join(archiveDir, manifest.filename)
-      try {
-        await rename(srcPath, dstPath)
-        archivedCount++
-        console.log(`${TAG} Archived ${manifest.filename}`)
-      } catch (e) {
-        console.warn(`${TAG} Failed to archive ${manifest.filename}: ${e.message}`)
-      }
+  for (const { generation, filename } of manifests) {
+    if (generation <= atGeneration) {
+      kept++
+      continue
+    }
+    // Archive: copy to archive dir, then delete from singularity dir
+    const srcPath = join(singularityDir, filename)
+    const dstPath = join(archivePath, filename)
+    try {
+      const content = await readFile(srcPath, 'utf8')
+      await writeFile(dstPath, content, 'utf8')
+      await unlink(srcPath)
+      archived++
+    } catch (err) {
+      log.error('Failed to archive manifest', { filename, error: err.message })
     }
   }
 
-  // Write truncated lineage
-  await saveLineage(singularityDir, kept)
+  // Trim lineage.json to match
+  const lineage = await loadLineage(singularityDir)
+  const trimmed = lineage.filter(e => e.generation <= atGeneration)
+  await saveLineage(singularityDir, trimmed)
 
-  console.log(`${TAG} Truncated at gen ${atGeneration}: kept ${kept.length}, archived ${truncated.length} entries + ${archivedCount} manifests`)
-  return { kept: kept.length, archived: truncated.length }
+  log.info('Lineage truncated', { atGeneration, kept, archived })
+  return { kept, archived }
 }

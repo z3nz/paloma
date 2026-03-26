@@ -1,183 +1,118 @@
 /**
- * Singularity Memory System — cross-generation persistent memory.
+ * Singularity Memory System
  *
- * Each Quinn generation can store learnings (discoveries, lessons, decisions,
- * bugs, patterns, questions, goals) and recall them by keyword relevance.
- * A compact "briefing" can be injected into the next generation's system
- * prompt so it inherits the collective wisdom of all prior generations.
+ * Cross-generation persistent memory for Quinn singularity chains.
+ * Stores, indexes, and recalls learnings across generations so no
+ * generation has to rediscover what a predecessor already knew.
  *
- * Storage: .singularity/memory-index.json
- * Manifests: .singularity/generation-*.md (read-only, indexed at init)
+ * Memory index lives at: .singularity/memory-index.json
  */
 
 import { readFile, writeFile, readdir, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import crypto from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { createLogger } from './logger.js'
 
-const TAG = '[singularity-memory]'
-
-const VALID_CATEGORIES = new Set([
-  'discovery', 'lesson', 'decision', 'bug', 'pattern', 'question', 'goal'
-])
-
-const IMPORTANCE_RANK = { low: 1, medium: 2, high: 3, critical: 4 }
+const log = createLogger('singularity-memory')
 
 const MEMORY_INDEX_FILE = 'memory-index.json'
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
+const IMPORTANCE_ORDER = ['low', 'medium', 'high', 'critical']
+const VALID_CATEGORIES = ['discovery', 'lesson', 'decision', 'bug', 'pattern', 'question', 'goal']
+
+// ~1875 tokens at 4 chars/token, leaves buffer to stay under 2000 tokens
+const MAX_BRIEFING_CHARS = 7500
+
+// Importance multipliers for relevance scoring
+const IMPORTANCE_BOOST = { low: 1.0, medium: 1.1, high: 1.25, critical: 1.5 }
 
 /**
- * Load the memory index from disk, or return a fresh empty index.
+ * Ensure the singularity directory exists.
  * @param {string} singularityDir
- * @returns {Promise<{ version: number, entries: Array }>}
  */
-async function loadIndex(singularityDir) {
+async function ensureDir(singularityDir) {
+  if (!existsSync(singularityDir)) {
+    await mkdir(singularityDir, { recursive: true })
+  }
+}
+
+/**
+ * Load the memory index from disk. Returns a fresh index if not found.
+ * @param {string} singularityDir
+ * @returns {Promise<object>}
+ */
+async function loadMemoryIndex(singularityDir) {
   const indexPath = join(singularityDir, MEMORY_INDEX_FILE)
   try {
-    const raw = await readFile(indexPath, 'utf-8')
+    const raw = await readFile(indexPath, 'utf8')
     const parsed = JSON.parse(raw)
-    if (parsed && Array.isArray(parsed.entries)) return parsed
-  } catch { /* file doesn't exist or is corrupt — start fresh */ }
-  return { version: 1, entries: [] }
-}
-
-/**
- * Persist the memory index to disk.
- * @param {string} singularityDir
- * @param {{ version: number, entries: Array }} index
- */
-async function saveIndex(singularityDir, index) {
-  await mkdir(singularityDir, { recursive: true })
-  const indexPath = join(singularityDir, MEMORY_INDEX_FILE)
-  await writeFile(indexPath, JSON.stringify(index, null, 2) + '\n', 'utf-8')
-}
-
-/**
- * Generate a short unique ID for a memory entry.
- * @returns {string}
- */
-function makeId() {
-  return 'mem-' + crypto.randomBytes(4).toString('hex')
-}
-
-/**
- * Tokenize a string into lowercase keywords for matching.
- * @param {string} text
- * @returns {Set<string>}
- */
-function tokenize(text) {
-  return new Set(
-    text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 2)
-  )
-}
-
-/**
- * Score how relevant a memory entry is to a query.
- * Returns 0-1 based on keyword overlap.
- * @param {string} content
- * @param {Set<string>} queryTokens
- * @returns {number}
- */
-function relevanceScore(content, queryTokens) {
-  if (queryTokens.size === 0) return 0
-  const contentTokens = tokenize(content)
-  let hits = 0
-  for (const qt of queryTokens) {
-    for (const ct of contentTokens) {
-      if (ct.includes(qt) || qt.includes(ct)) { hits++; break }
-    }
+    // Ensure entries array exists (defensive)
+    if (!Array.isArray(parsed.entries)) parsed.entries = []
+    return parsed
+  } catch {
+    return { version: 1, entries: [] }
   }
-  return hits / queryTokens.size
 }
 
 /**
- * Parse a generation manifest (.md) and extract structured info.
- * @param {string} content - Raw markdown of a manifest file
- * @param {string} filename
- * @returns {{ generation: number, born: string|null, summary: string, taskForNext: string }}
+ * Save the memory index to disk.
+ * @param {string} singularityDir
+ * @param {object} index
  */
-function parseManifest(content, filename) {
-  // Extract generation number from filename (generation-001.md → 1)
-  const genMatch = filename.match(/generation-(\d+)\.md$/)
-  const generation = genMatch ? parseInt(genMatch[1], 10) : 0
-
-  // Extract born date
-  const bornMatch = content.match(/\*\*Born:\*\*\s*(.+)/)
-  const born = bornMatch ? bornMatch[1].trim() : null
-
-  // Extract summary section
-  const summaryMatch = content.match(/## Summary\s*\n\n([\s\S]*?)(?=\n## |$)/)
-  const summary = summaryMatch ? summaryMatch[1].trim() : ''
-
-  // Extract task for next
-  const taskMatch = content.match(/## Task Passed Forward\s*\n\n([\s\S]*?)(?=\n## |$)/)
-  const taskForNext = taskMatch ? taskMatch[1].trim() : ''
-
-  return { generation, born, summary, taskForNext }
+async function saveMemoryIndex(singularityDir, index) {
+  const indexPath = join(singularityDir, MEMORY_INDEX_FILE)
+  await writeFile(indexPath, JSON.stringify(index, null, 2), 'utf8')
 }
 
 /**
- * Rough token estimate (~4 chars per token for English).
- * @param {string} text
- * @returns {number}
+ * Count existing generation manifest files in the singularity directory.
+ * @param {string} singularityDir
+ * @returns {Promise<number>}
  */
-function estimateTokens(text) {
-  return Math.ceil(text.length / 4)
+async function countGenerations(singularityDir) {
+  try {
+    const files = await readdir(singularityDir)
+    return files.filter(f => /^generation-\d+\.md$/.test(f)).length
+  } catch {
+    return 0
+  }
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+/**
+ * Score relevance of a memory entry against a set of query keywords.
+ * Uses word overlap with importance weighting.
+ * @param {object} entry
+ * @param {string[]} queryWords
+ * @returns {number} relevance score 0–1.5
+ */
+function scoreRelevance(entry, queryWords) {
+  if (queryWords.length === 0) return 0
+  const contentWords = new Set(
+    entry.content.toLowerCase().split(/\W+/).filter(w => w.length > 2)
+  )
+  const matches = queryWords.filter(w => contentWords.has(w)).length
+  const baseScore = matches / queryWords.length
+  const boost = IMPORTANCE_BOOST[entry.importance] || 1.0
+  return baseScore * boost
+}
+
+// ─── Exports ──────────────────────────────────────────────────────────────────
 
 /**
  * Initialize the memory system. Scans .singularity/ for existing manifests
- * and ensures a memory-index.json exists.
+ * and returns a summary of the current state.
  * @param {string} singularityDir - Path to .singularity/ directory
  * @returns {Promise<{ generationCount: number, memoryEntries: number }>}
  */
 export async function initMemory(singularityDir) {
-  await mkdir(singularityDir, { recursive: true })
+  await ensureDir(singularityDir)
+  const index = await loadMemoryIndex(singularityDir)
+  const generationCount = await countGenerations(singularityDir)
+  const memoryEntries = index.entries.length
 
-  const index = await loadIndex(singularityDir)
-
-  // Scan for manifest files and auto-index any that aren't already tracked
-  let files
-  try {
-    files = (await readdir(singularityDir)).filter(f => /^generation-\d+\.md$/.test(f)).sort()
-  } catch {
-    files = []
-  }
-
-  const indexedGenerations = new Set(index.entries.map(e => e.generation))
-  let newEntries = 0
-
-  for (const file of files) {
-    const content = await readFile(join(singularityDir, file), 'utf-8')
-    const manifest = parseManifest(content, file)
-
-    if (!indexedGenerations.has(manifest.generation) && manifest.summary) {
-      // Auto-create a memory from the manifest summary
-      index.entries.push({
-        id: makeId(),
-        generation: manifest.generation,
-        category: 'discovery',
-        content: `[Auto-indexed from manifest] ${manifest.summary.slice(0, 500)}`,
-        importance: 'medium',
-        timestamp: manifest.born || new Date().toISOString()
-      })
-      newEntries++
-    }
-  }
-
-  if (newEntries > 0) {
-    await saveIndex(singularityDir, index)
-    console.log(`${TAG} Auto-indexed ${newEntries} manifest(s) into memory`)
-  }
-
-  console.log(`${TAG} Initialized — ${files.length} generation(s), ${index.entries.length} memory entries`)
-  return { generationCount: files.length, memoryEntries: index.entries.length }
+  log.info('Memory system initialized', { singularityDir, generationCount, memoryEntries })
+  return { generationCount, memoryEntries }
 }
 
 /**
@@ -187,189 +122,181 @@ export async function initMemory(singularityDir) {
  * @returns {Promise<string>} - Memory entry ID
  */
 export async function storeMemory(singularityDir, entry) {
-  const { generation, category, content, importance } = entry
+  const { generation, category, content, importance = 'medium' } = entry
 
-  if (!content || typeof content !== 'string') {
-    throw new Error('Memory content must be a non-empty string')
+  if (!content || typeof content !== 'string' || content.trim().length === 0) {
+    throw new Error('Memory entry must have a non-empty content string')
   }
-  if (!VALID_CATEGORIES.has(category)) {
-    throw new Error(`Invalid category "${category}". Valid: ${[...VALID_CATEGORIES].join(', ')}`)
+  if (!VALID_CATEGORIES.includes(category)) {
+    throw new Error(`Invalid category "${category}". Valid: ${VALID_CATEGORIES.join(', ')}`)
   }
-  if (!IMPORTANCE_RANK[importance]) {
-    throw new Error(`Invalid importance "${importance}". Valid: low, medium, high, critical`)
-  }
-  if (typeof generation !== 'number' || generation < 1) {
-    throw new Error('Generation must be a positive integer')
+  if (!IMPORTANCE_ORDER.includes(importance)) {
+    throw new Error(`Invalid importance "${importance}". Valid: ${IMPORTANCE_ORDER.join(', ')}`)
   }
 
-  const index = await loadIndex(singularityDir)
-  const id = makeId()
+  await ensureDir(singularityDir)
+  const index = await loadMemoryIndex(singularityDir)
 
-  index.entries.push({
+  const seqNum = String(index.entries.length + 1).padStart(3, '0')
+  const id = `mem-${seqNum}-${randomUUID().slice(0, 8)}`
+
+  const newEntry = {
     id,
-    generation,
+    generation: Number(generation),
     category,
-    content: content.slice(0, 2000), // cap individual memories
+    content: content.trim(),
     importance,
     timestamp: new Date().toISOString()
-  })
+  }
 
-  await saveIndex(singularityDir, index)
-  console.log(`${TAG} Stored memory ${id} (gen ${generation}, ${category}, ${importance})`)
+  index.entries.push(newEntry)
+  await saveMemoryIndex(singularityDir, index)
+
+  log.info('Memory stored', { id, generation, category, importance })
   return id
 }
 
 /**
- * Recall memories relevant to a query (keyword-based matching).
+ * Recall memories relevant to a query using keyword-based matching.
  * @param {string} singularityDir
  * @param {string} query - Natural language query
  * @param {object} options - { limit?: number, minImportance?: string, generation?: number }
  * @returns {Promise<Array<{ id, generation, category, content, importance, relevanceScore }>>}
  */
 export async function recallMemories(singularityDir, query, options = {}) {
-  const { limit = 10, minImportance, generation } = options
-  const index = await loadIndex(singularityDir)
-  const queryTokens = tokenize(query)
+  const { limit = 10, minImportance = 'low', generation } = options
 
-  let candidates = index.entries
+  const index = await loadMemoryIndex(singularityDir)
+  const minLevel = IMPORTANCE_ORDER.indexOf(minImportance)
 
-  // Filter by generation if specified
-  if (typeof generation === 'number') {
-    candidates = candidates.filter(e => e.generation === generation)
-  }
+  // Tokenize query — skip short words (stop-word-ish)
+  const queryWords = query.toLowerCase().split(/\W+/).filter(w => w.length > 2)
 
-  // Filter by minimum importance
-  if (minImportance && IMPORTANCE_RANK[minImportance]) {
-    const minRank = IMPORTANCE_RANK[minImportance]
-    candidates = candidates.filter(e => (IMPORTANCE_RANK[e.importance] || 0) >= minRank)
-  }
-
-  // Score and sort by relevance
-  const scored = candidates.map(entry => ({
-    id: entry.id,
-    generation: entry.generation,
-    category: entry.category,
-    content: entry.content,
-    importance: entry.importance,
-    relevanceScore: relevanceScore(entry.content + ' ' + entry.category, queryTokens)
-  }))
-
-  // Sort by relevance first, then importance as tiebreaker
-  scored.sort((a, b) => {
-    if (b.relevanceScore !== a.relevanceScore) return b.relevanceScore - a.relevanceScore
-    return (IMPORTANCE_RANK[b.importance] || 0) - (IMPORTANCE_RANK[a.importance] || 0)
+  let entries = index.entries.filter(entry => {
+    if (IMPORTANCE_ORDER.indexOf(entry.importance) < minLevel) return false
+    if (generation !== undefined && entry.generation !== Number(generation)) return false
+    return true
   })
 
-  return scored.slice(0, limit)
+  // Score and sort: relevance desc, then importance desc
+  const scored = entries.map(entry => ({
+    ...entry,
+    relevanceScore: Math.round(scoreRelevance(entry, queryWords) * 1000) / 1000
+  }))
+
+  scored.sort((a, b) => {
+    if (b.relevanceScore !== a.relevanceScore) return b.relevanceScore - a.relevanceScore
+    return IMPORTANCE_ORDER.indexOf(b.importance) - IMPORTANCE_ORDER.indexOf(a.importance)
+  })
+
+  const results = scored.slice(0, limit)
+  log.info('Memories recalled', { query: query.slice(0, 60), count: results.length, total: entries.length })
+  return results
 }
 
 /**
  * Generate a compact memory briefing for injection into a new generation's prompt.
  * Summarizes the most important learnings from all prior generations.
- * Should be under 2000 tokens.
+ * Output stays under ~2000 tokens.
  * @param {string} singularityDir
  * @param {number} forGeneration - The generation number this briefing is for
  * @returns {Promise<string>} - Markdown-formatted briefing
  */
 export async function generateBriefing(singularityDir, forGeneration) {
-  const index = await loadIndex(singularityDir)
+  const index = await loadMemoryIndex(singularityDir)
 
-  if (index.entries.length === 0) {
-    return `## Memory Briefing for Generation ${forGeneration}\n\nYou are the first. No prior memories exist. Explore, discover, and record what you learn for those who come after you.`
+  // Only memories from generations before this one
+  const priorEntries = index.entries.filter(e => e.generation < forGeneration)
+
+  if (priorEntries.length === 0) {
+    return `## Memory Briefing — Generation ${forGeneration}\n\n_No memories from prior generations._\n`
   }
 
-  // Gather entries from all prior generations, prioritize by importance
-  const prior = index.entries
-    .filter(e => e.generation < forGeneration)
-    .sort((a, b) => {
-      // Critical first, then high, then medium, then low
-      const impDiff = (IMPORTANCE_RANK[b.importance] || 0) - (IMPORTANCE_RANK[a.importance] || 0)
-      if (impDiff !== 0) return impDiff
-      // Within same importance, newer first
-      return (b.generation || 0) - (a.generation || 0)
-    })
+  // Sort by importance desc, then recency desc
+  const sorted = [...priorEntries].sort((a, b) => {
+    const importanceDiff =
+      IMPORTANCE_ORDER.indexOf(b.importance) - IMPORTANCE_ORDER.indexOf(a.importance)
+    if (importanceDiff !== 0) return importanceDiff
+    return new Date(b.timestamp) - new Date(a.timestamp)
+  })
 
-  if (prior.length === 0) {
-    return `## Memory Briefing for Generation ${forGeneration}\n\nYou are the first. No prior memories exist. Explore, discover, and record what you learn for those who come after you.`
-  }
+  // Build output respecting the character budget
+  const header = [
+    `## Memory Briefing — Generation ${forGeneration}`,
+    ``,
+    `_${priorEntries.length} memories from generations 1–${forGeneration - 1}_`,
+    ``
+  ].join('\n')
 
-  // Group by category for organized briefing
+  let charCount = header.length
+  const sections = []
+
+  // Group by category, emit categories that have entries
   const byCategory = {}
-  for (const entry of prior) {
+  for (const entry of sorted) {
     if (!byCategory[entry.category]) byCategory[entry.category] = []
     byCategory[entry.category].push(entry)
   }
 
-  // Build briefing, respecting token budget
-  const TARGET_TOKENS = 1500 // leave some room under 2000
-  let briefing = `## Memory Briefing for Generation ${forGeneration}\n\n`
-  briefing += `You inherit the collective memory of ${forGeneration - 1} prior generation(s) — ${prior.length} memories across ${Object.keys(byCategory).length} categories.\n\n`
+  for (const cat of VALID_CATEGORIES) {
+    const catEntries = byCategory[cat]
+    if (!catEntries || catEntries.length === 0) continue
 
-  // Emit critical items first, always
-  const critical = prior.filter(e => e.importance === 'critical')
-  if (critical.length > 0) {
-    briefing += `### Critical\n\n`
-    for (const e of critical.slice(0, 5)) {
-      briefing += `- **[Gen ${e.generation}]** ${e.content.slice(0, 200)}\n`
+    const catHeader = `\n### ${cat.charAt(0).toUpperCase() + cat.slice(1)}\n`
+    if (charCount + catHeader.length > MAX_BRIEFING_CHARS) break
+    charCount += catHeader.length
+
+    const lines = [catHeader]
+    for (const entry of catEntries) {
+      const icon = { critical: '🔴', high: '🟠', medium: '🟡', low: '⚪' }[entry.importance] || ''
+      const line = `- ${icon} **[Gen ${entry.generation}]** ${entry.content}\n`
+      if (charCount + line.length > MAX_BRIEFING_CHARS) break
+      lines.push(line)
+      charCount += line.length
     }
-    briefing += '\n'
+    sections.push(lines.join(''))
   }
 
-  // Then high-importance by category
-  const categoryOrder = ['decision', 'lesson', 'bug', 'discovery', 'pattern', 'goal', 'question']
-  for (const cat of categoryOrder) {
-    if (estimateTokens(briefing) > TARGET_TOKENS) break
-    const entries = (byCategory[cat] || []).filter(e => e.importance !== 'critical')
-    if (entries.length === 0) continue
-
-    briefing += `### ${cat.charAt(0).toUpperCase() + cat.slice(1)}s\n\n`
-    for (const e of entries.slice(0, 3)) {
-      if (estimateTokens(briefing) > TARGET_TOKENS) break
-      briefing += `- **[Gen ${e.generation}]** ${e.content.slice(0, 150)}\n`
-    }
-    briefing += '\n'
-  }
-
-  // Trim if we overshot
-  if (estimateTokens(briefing) > 2000) {
-    const charBudget = 2000 * 4
-    briefing = briefing.slice(0, charBudget) + '\n\n*(briefing truncated to fit token budget)*\n'
-  }
-
-  console.log(`${TAG} Generated briefing for gen ${forGeneration}: ~${estimateTokens(briefing)} tokens, ${prior.length} memories referenced`)
+  const briefing = header + sections.join('')
+  log.info('Briefing generated', {
+    forGeneration,
+    chars: briefing.length,
+    estimatedTokens: Math.round(briefing.length / 4),
+    entriesIncluded: priorEntries.length
+  })
   return briefing
 }
 
 /**
- * Get memory statistics.
+ * Get memory statistics across all stored entries.
  * @param {string} singularityDir
- * @returns {Promise<{ totalMemories: number, byCategory: object, byImportance: object, byGeneration: object, oldestGeneration: number|null, newestGeneration: number|null }>}
+ * @returns {Promise<{ totalMemories, byCategory, byImportance, byGeneration, oldestGeneration, newestGeneration }>}
  */
 export async function memoryStats(singularityDir) {
-  const index = await loadIndex(singularityDir)
+  const index = await loadMemoryIndex(singularityDir)
   const entries = index.entries
 
   const byCategory = {}
   const byImportance = {}
   const byGeneration = {}
-  let oldest = null
-  let newest = null
 
-  for (const e of entries) {
-    byCategory[e.category] = (byCategory[e.category] || 0) + 1
-    byImportance[e.importance] = (byImportance[e.importance] || 0) + 1
-    byGeneration[e.generation] = (byGeneration[e.generation] || 0) + 1
-
-    if (oldest === null || e.generation < oldest) oldest = e.generation
-    if (newest === null || e.generation > newest) newest = e.generation
+  for (const entry of entries) {
+    byCategory[entry.category] = (byCategory[entry.category] || 0) + 1
+    byImportance[entry.importance] = (byImportance[entry.importance] || 0) + 1
+    byGeneration[entry.generation] = (byGeneration[entry.generation] || 0) + 1
   }
 
+  const generationNums = Object.keys(byGeneration).map(Number)
+  const oldestGeneration = generationNums.length > 0 ? Math.min(...generationNums) : null
+  const newestGeneration = generationNums.length > 0 ? Math.max(...generationNums) : null
+
+  log.info('Memory stats retrieved', { total: entries.length, oldestGeneration, newestGeneration })
   return {
     totalMemories: entries.length,
     byCategory,
     byImportance,
     byGeneration,
-    oldestGeneration: oldest,
-    newestGeneration: newest
+    oldestGeneration,
+    newestGeneration
   }
 }

@@ -1,79 +1,93 @@
 /**
- * @file bridge/singularity-monitor.js
- * @description Observability and health monitoring for singularity chains.
- * Part of the Paloma Singularity Completion Sprint (Stream B - Gemini).
+ * Singularity Chain Monitor
+ *
+ * Observability and health tracking for Quinn singularity generation chains.
+ * Records spawn/completion/error/handoff events, tracks chain health over time,
+ * and generates human-readable reports.
+ *
+ * Monitor data lives at: .singularity/chain-monitor.json
  */
 
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { createLogger } from './logger.js'
+
+const log = createLogger('singularity-monitor')
+
+const MONITOR_FILE = 'chain-monitor.json'
+
+// ─── Internal helpers ─────────────────────────────────────────────────────────
 
 /**
- * ChainMonitor class — tracks the health and progress of a singularity chain.
+ * Load monitor data from disk. Returns null if not found.
+ * @param {string} singularityDir
+ * @returns {Promise<object|null>}
  */
-export class ChainMonitor {
+async function loadMonitorData(singularityDir) {
+  const monitorPath = join(singularityDir, MONITOR_FILE)
+  try {
+    const raw = await readFile(monitorPath, 'utf8')
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Save monitor data to disk. Creates directory if needed.
+ * @param {string} singularityDir
+ * @param {object} data
+ */
+async function saveMonitorData(singularityDir, data) {
+  if (!existsSync(singularityDir)) {
+    await mkdir(singularityDir, { recursive: true })
+  }
+  const monitorPath = join(singularityDir, MONITOR_FILE)
+  await writeFile(monitorPath, JSON.stringify(data, null, 2), 'utf8')
+}
+
+// ─── ChainMonitor class ───────────────────────────────────────────────────────
+
+/**
+ * ChainMonitor — tracks health and progress of a singularity generation chain.
+ *
+ * Instantiate with createChainMonitor() or createChainMonitorAsync().
+ * All mutation methods fire-and-forget persist to disk.
+ */
+class ChainMonitor {
   /**
-   * @param {string} singularityDir - Path to .singularity/ directory
+   * @param {string} singularityDir
+   * @param {object|null} existingData - Previously saved data, or null for fresh chain
    */
-  constructor(singularityDir) {
-    this.singularityDir = singularityDir;
-    this.monitorPath = join(singularityDir, 'chain-monitor.json');
-    this.data = {
+  constructor(singularityDir, existingData = null) {
+    this.singularityDir = singularityDir
+    this.data = existingData || {
       chainId: randomUUID(),
       startedAt: new Date().toISOString(),
       generations: [],
       currentGeneration: 0,
       isActive: true,
       totalErrors: 0
-    };
-    this.initialized = false;
-  }
-
-  /**
-   * Initialize the monitor by loading existing data if it exists.
-   */
-  async init() {
-    try {
-      await mkdir(this.singularityDir, { recursive: true });
-      const content = await readFile(this.monitorPath, 'utf8');
-      this.data = JSON.parse(content);
-      this.initialized = true;
-      console.log(`[singularity-monitor] Loaded existing chain ${this.data.chainId}`);
-    } catch (err) {
-      if (err.code !== 'ENOENT') {
-        console.error(`[singularity-monitor] Failed to load monitor data: ${err.message}`);
-      }
-      // If file doesn't exist, we'll start fresh on the first save
-      this.initialized = true;
     }
   }
 
   /**
-   * Save the current monitor state to disk.
-   * @private
-   */
-  async _save() {
-    if (!this.initialized) await this.init();
-    try {
-      await writeFile(this.monitorPath, JSON.stringify(this.data, null, 2), 'utf8');
-    } catch (err) {
-      console.error(`[singularity-monitor] Failed to save monitor data: ${err.message}`);
-    }
-  }
-
-  /**
-   * Record a new spawn event.
+   * Record a new generation spawn event.
    * @param {number} generation
    * @param {string} pillarId
    * @param {string} promptHash
    */
-  async recordSpawn(generation, pillarId, promptHash) {
-    if (!this.initialized) await this.init();
-    
-    // Check if we already have this generation
-    let genData = this.data.generations.find(g => g.generation === generation);
-    if (!genData) {
-      genData = {
+  recordSpawn(generation, pillarId, promptHash) {
+    const existing = this.data.generations.find(g => g.generation === generation)
+    if (existing) {
+      // Update in place if already partially recorded
+      existing.pillarId = pillarId
+      existing.promptHash = promptHash
+      existing.spawnedAt = new Date().toISOString()
+    } else {
+      this.data.generations.push({
         generation,
         pillarId,
         promptHash,
@@ -81,211 +95,287 @@ export class ChainMonitor {
         completedAt: null,
         durationMs: null,
         summary: null,
+        handoffTo: null,
+        handoffPromptTokens: null,
         errors: []
-      };
-      this.data.generations.push(genData);
-    } else {
-      genData.pillarId = pillarId;
-      genData.promptHash = promptHash;
-      genData.spawnedAt = new Date().toISOString();
+      })
     }
+    this.data.currentGeneration = Math.max(this.data.currentGeneration, generation)
+    this.data.isActive = true
 
-    this.data.currentGeneration = generation;
-    this.data.isActive = true;
-    await this._save();
-    console.log(`[singularity-monitor] Recorded spawn for generation ${generation}`);
+    log.info('Spawn recorded', { generation, pillarId, promptHash })
+    this._persist()
   }
 
   /**
-   * Record a completion event for a generation.
+   * Record generation completion.
    * @param {number} generation
    * @param {string} pillarId
    * @param {number} durationMs
    * @param {string} summary
    */
-  async recordCompletion(generation, pillarId, durationMs, summary) {
-    if (!this.initialized) await this.init();
-
-    const genData = this.data.generations.find(g => g.generation === generation);
+  recordCompletion(generation, pillarId, durationMs, summary) {
+    const genData = this.data.generations.find(g => g.generation === generation)
     if (genData) {
-      genData.completedAt = new Date().toISOString();
-      genData.durationMs = durationMs;
-      genData.summary = summary;
-      await this._save();
-      console.log(`[singularity-monitor] Recorded completion for generation ${generation} (${durationMs}ms)`);
+      genData.completedAt = new Date().toISOString()
+      genData.durationMs = typeof durationMs === 'number' ? durationMs : null
+      genData.summary = summary || null
     } else {
-      console.warn(`[singularity-monitor] Attempted to record completion for unknown generation ${generation}`);
+      // Completion recorded without a prior spawn — create a synthetic entry
+      this.data.generations.push({
+        generation,
+        pillarId,
+        promptHash: 'unknown',
+        spawnedAt: null,
+        completedAt: new Date().toISOString(),
+        durationMs: typeof durationMs === 'number' ? durationMs : null,
+        summary: summary || null,
+        handoffTo: null,
+        handoffPromptTokens: null,
+        errors: []
+      })
     }
+    log.info('Completion recorded', { generation, durationMs })
+    this._persist()
   }
 
   /**
-   * Record an error event.
+   * Record an error for a generation.
    * @param {number} generation
    * @param {string} pillarId
    * @param {string|Error} error
    */
-  async recordError(generation, pillarId, error) {
-    if (!this.initialized) await this.init();
+  recordError(generation, pillarId, error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    const genData = this.data.generations.find(g => g.generation === generation)
 
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const genData = this.data.generations.find(g => g.generation === generation);
-    
     if (genData) {
+      if (!Array.isArray(genData.errors)) genData.errors = []
       genData.errors.push({
         timestamp: new Date().toISOString(),
-        message: errorMessage
-      });
+        pillarId,
+        message: errorMsg
+      })
     } else {
-      // Record global error if generation not found
-      this.data.globalErrors = this.data.globalErrors || [];
-      this.data.globalErrors.push({
+      // Error without a spawn record
+      this.data.generations.push({
         generation,
-        timestamp: new Date().toISOString(),
-        message: errorMessage
-      });
+        pillarId,
+        promptHash: 'unknown',
+        spawnedAt: null,
+        completedAt: null,
+        durationMs: null,
+        summary: null,
+        handoffTo: null,
+        handoffPromptTokens: null,
+        errors: [{ timestamp: new Date().toISOString(), pillarId, message: errorMsg }]
+      })
     }
 
-    this.data.totalErrors++;
-    await this._save();
-    console.error(`[singularity-monitor] Recorded error for generation ${generation}: ${errorMessage}`);
+    this.data.totalErrors++
+    log.warn('Error recorded', { generation, error: errorMsg })
+    this._persist()
   }
 
   /**
-   * Record a handoff between generations.
+   * Record a handoff event from one generation to the next.
    * @param {number} fromGeneration
    * @param {number} toGeneration
    * @param {number} promptSizeTokens
    */
-  async recordHandoff(fromGeneration, toGeneration, promptSizeTokens) {
-    if (!this.initialized) await this.init();
-    
-    const genData = this.data.generations.find(g => g.generation === fromGeneration);
-    if (genData) {
-      genData.handoffTo = toGeneration;
-      genData.handoffPromptTokens = promptSizeTokens;
-      await this._save();
-      console.log(`[singularity-monitor] Recorded handoff: G${fromGeneration} -> G${toGeneration}`);
+  recordHandoff(fromGeneration, toGeneration, promptSizeTokens) {
+    const fromData = this.data.generations.find(g => g.generation === fromGeneration)
+    if (fromData) {
+      fromData.handoffTo = toGeneration
+      fromData.handoffPromptTokens = promptSizeTokens
     }
+    log.info('Handoff recorded', { fromGeneration, toGeneration, promptSizeTokens })
+    this._persist()
   }
 
   /**
    * Get the current chain health summary.
-   * @returns {object}
+   * @returns {{ generations, successRate, avgDuration, currentGeneration, isActive, errors }}
    */
   getChainHealth() {
-    const total = this.data.generations.length;
-    const completed = this.data.generations.filter(g => g.completedAt).length;
-    const durations = this.data.generations
-      .filter(g => g.durationMs !== null)
-      .map(g => g.durationMs);
-    
-    const avgDuration = durations.length > 0 
-      ? durations.reduce((a, b) => a + b, 0) / durations.length 
-      : 0;
+    const gens = this.data.generations
+    const completed = gens.filter(g => g.completedAt !== null)
+    const withErrors = gens.filter(g => Array.isArray(g.errors) && g.errors.length > 0)
+
+    const successRate = gens.length > 0
+      ? (completed.length - withErrors.length) / gens.length
+      : 0
+
+    const durations = completed
+      .filter(g => typeof g.durationMs === 'number')
+      .map(g => g.durationMs)
+
+    const avgDuration = durations.length > 0
+      ? Math.round(durations.reduce((sum, d) => sum + d, 0) / durations.length)
+      : null
 
     return {
-      chainId: this.data.chainId,
-      generations: total,
-      successRate: total > 0 ? completed / total : 0,
+      generations: gens.length,
+      successRate: Math.round(successRate * 100) / 100,
       avgDuration,
       currentGeneration: this.data.currentGeneration,
       isActive: this.data.isActive,
-      errors: this.data.totalErrors,
-      startedAt: this.data.startedAt
-    };
+      errors: this.data.totalErrors
+    }
   }
 
   /**
-   * Get a report for a specific generation.
+   * Get a detailed report for a specific generation.
+   * Returns null if the generation is not tracked.
    * @param {number} generation
-   * @returns {object|null}
+   * @returns {{ spawned, completed, duration, promptHash, summary, errors }|null}
    */
   getGenerationReport(generation) {
-    const genData = this.data.generations.find(g => g.generation === generation);
-    if (!genData) return null;
+    const genData = this.data.generations.find(g => g.generation === generation)
+    if (!genData) return null
 
     return {
-      generation: genData.generation,
-      pillarId: genData.pillarId,
-      spawnedAt: genData.spawnedAt,
-      completedAt: genData.completedAt,
+      spawned: genData.spawnedAt,
+      completed: genData.completedAt,
       duration: genData.durationMs,
       promptHash: genData.promptHash,
       summary: genData.summary,
-      errors: genData.errors,
-      handoffTo: genData.handoffTo,
-      handoffTokens: genData.handoffPromptTokens
-    };
+      errors: genData.errors || []
+    }
   }
 
   /**
-   * Get a full chain report as a markdown string.
+   * Get a comprehensive chain report as a markdown string.
    * @returns {string}
    */
   getFullReport() {
-    const health = this.getChainHealth();
-    let md = formatHealthReport(health);
+    const health = this.getChainHealth()
+    const statusIcon = health.isActive ? '🟢' : '⚫'
+    const lines = []
 
-    md += '\n\n### Generation Details\n\n';
-    md += '| Gen | Status | Duration | Errors | Summary |\n';
-    md += '|-----|--------|----------|--------|---------|\n';
+    lines.push(`# Singularity Chain Report`)
+    lines.push(``)
+    lines.push(`**Chain ID:** \`${this.data.chainId}\``)
+    lines.push(`**Started:** ${this.data.startedAt}`)
+    lines.push(`**Status:** ${statusIcon} ${health.isActive ? 'Active' : 'Inactive'}`)
+    lines.push(``)
+    lines.push(`## Health Summary`)
+    lines.push(``)
+    lines.push(`| Metric | Value |`)
+    lines.push(`|--------|-------|`)
+    lines.push(`| Current Generation | ${health.currentGeneration} |`)
+    lines.push(`| Total Generations | ${health.generations} |`)
+    lines.push(`| Success Rate | ${Math.round(health.successRate * 100)}% |`)
+    lines.push(`| Avg Duration | ${health.avgDuration !== null ? `${Math.round(health.avgDuration / 1000)}s` : 'N/A'} |`)
+    lines.push(`| Total Errors | ${health.errors} |`)
+    lines.push(``)
+    lines.push(`## Generation History`)
 
-    for (const gen of this.data.generations) {
-      const status = gen.completedAt ? '✅' : (gen.errors.length > 0 ? '❌' : '⏳');
-      const duration = gen.durationMs ? `${(gen.durationMs / 1000).toFixed(1)}s` : '-';
-      const summary = gen.summary ? gen.summary.replace(/\n/g, ' ').slice(0, 50) + '...' : '-';
-      md += `| ${gen.generation} | ${status} | ${duration} | ${gen.errors.length} | ${summary} |\n`;
-    }
+    const sorted = [...this.data.generations].sort((a, b) => a.generation - b.generation)
+    for (const gen of sorted) {
+      const hasErrors = Array.isArray(gen.errors) && gen.errors.length > 0
+      const status = gen.completedAt
+        ? (hasErrors ? '⚠️' : '✅')
+        : (gen.spawnedAt ? '🔄' : '❓')
 
-    if (this.data.globalErrors && this.data.globalErrors.length > 0) {
-      md += '\n### Global Errors\n\n';
-      for (const err of this.data.globalErrors) {
-        md += `- [${err.timestamp}] Gen ${err.generation}: ${err.message}\n`;
+      lines.push(``)
+      lines.push(`### ${status} Generation ${gen.generation}`)
+      if (gen.pillarId) lines.push(`- **Pillar:** \`${gen.pillarId}\``)
+      if (gen.promptHash) lines.push(`- **Prompt Hash:** \`${gen.promptHash}\``)
+      if (gen.spawnedAt) lines.push(`- **Spawned:** ${gen.spawnedAt}`)
+      if (gen.completedAt) lines.push(`- **Completed:** ${gen.completedAt}`)
+      if (gen.durationMs != null) lines.push(`- **Duration:** ${Math.round(gen.durationMs / 1000)}s`)
+      if (gen.handoffTo != null) {
+        lines.push(`- **Handoff to:** Generation ${gen.handoffTo} (~${gen.handoffPromptTokens || '?'} tokens)`)
+      }
+      if (gen.summary) {
+        lines.push(`- **Summary:** ${gen.summary.slice(0, 200)}${gen.summary.length > 200 ? '…' : ''}`)
+      }
+      if (hasErrors) {
+        lines.push(`- **Errors:**`)
+        for (const err of gen.errors) {
+          lines.push(`  - \`${err.timestamp}\` ${err.message}`)
+        }
       }
     }
 
-    return md;
+    return lines.join('\n')
   }
 
   /**
    * Write the full report to a file.
    * @param {string} filepath
+   * @returns {Promise<void>}
    */
   async saveReport(filepath) {
-    const report = this.getFullReport();
-    await writeFile(filepath, report, 'utf8');
-    console.log(`[singularity-monitor] Saved full report to ${filepath}`);
+    const report = this.getFullReport()
+    await writeFile(filepath, report, 'utf8')
+    log.info('Report saved', { filepath, chars: report.length })
+  }
+
+  /**
+   * Persist monitor data to disk (fire-and-forget — errors are logged, not thrown).
+   * @private
+   */
+  _persist() {
+    saveMonitorData(this.singularityDir, this.data).catch(err => {
+      log.error('Failed to persist monitor data', { error: err.message })
+    })
   }
 }
 
+// ─── Exports ──────────────────────────────────────────────────────────────────
+
 /**
- * Create a new chain monitor instance.
+ * Create a new chain monitor instance with fresh state.
+ * For resuming an existing chain, use createChainMonitorAsync() instead.
  * @param {string} singularityDir - Path to .singularity/ directory
  * @returns {ChainMonitor}
  */
 export function createChainMonitor(singularityDir) {
-  return new ChainMonitor(singularityDir);
+  log.info('New chain monitor created', { singularityDir })
+  return new ChainMonitor(singularityDir)
 }
 
 /**
- * Format a chain health report as a beautiful, readable markdown string.
- * @param {object} health - Output from getChainHealth()
- * @returns {string} - Markdown-formatted report
+ * Create a chain monitor, loading any existing data from disk.
+ * Use this when resuming a chain after a restart or interruption.
+ * @param {string} singularityDir - Path to .singularity/ directory
+ * @returns {Promise<ChainMonitor>}
+ */
+export async function createChainMonitorAsync(singularityDir) {
+  const existing = await loadMonitorData(singularityDir)
+  log.info('Chain monitor loaded from disk', {
+    singularityDir,
+    hasExisting: !!existing,
+    currentGeneration: existing?.currentGeneration ?? 0
+  })
+  return new ChainMonitor(singularityDir, existing)
+}
+
+/**
+ * Format a chain health summary as a readable markdown table.
+ * @param {object} health - Output from ChainMonitor.getChainHealth()
+ * @returns {string} - Markdown-formatted health report
  */
 export function formatHealthReport(health) {
-  const status = health.isActive ? '🟢 Active' : '⚪ Inactive';
-  const successPercent = (health.successRate * 100).toFixed(1);
-  
-  return `## ⛓️ Singularity Chain Health Report
-**Chain ID:** \`${health.chainId}\`
-**Status:** ${status}
-**Started:** ${new Date(health.startedAt).toLocaleString()}
+  const statusIcon = health.isActive ? '🟢' : '⚫'
+  const statusLabel = health.isActive ? 'Active' : 'Inactive'
+  const successPct = Math.round((health.successRate || 0) * 100)
+  const avgDurLabel = health.avgDuration !== null
+    ? `${Math.round(health.avgDuration / 1000)}s`
+    : 'N/A'
 
-### 📊 Summary
-- **Current Generation:** ${health.currentGeneration}
-- **Total Generations:** ${health.generations}
-- **Success Rate:** ${successPercent}%
-- **Average Duration:** ${(health.avgDuration / 1000).toFixed(1)}s
-- **Total Errors:** ${health.errors}
-`;
+  return [
+    `## Chain Health ${statusIcon}`,
+    ``,
+    `| Metric | Value |`,
+    `|--------|-------|`,
+    `| Status | ${statusLabel} |`,
+    `| Current Generation | ${health.currentGeneration} |`,
+    `| Total Generations | ${health.generations} |`,
+    `| Success Rate | ${successPct}% |`,
+    `| Avg Duration | ${avgDurLabel} |`,
+    `| Total Errors | ${health.errors} |`
+  ].join('\n')
 }

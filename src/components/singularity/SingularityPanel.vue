@@ -1,329 +1,305 @@
 <template>
+  <!-- Singularity Thinker panel — sits to the right of the main chat area -->
   <aside
     v-if="visible"
-    class="relative flex h-full shrink-0 overflow-hidden border-l border-border bg-bg-secondary transition-[width] duration-200 ease-out"
-    :style="{ width: collapsed ? '48px' : `${panelWidth}px` }"
+    class="flex flex-col h-full overflow-hidden shrink-0 relative border-l"
+    style="border-color: var(--color-border); background: var(--color-bg-secondary);"
+    :style="{ width: collapsed ? '48px' : panelWidth + 'px' }"
   >
-    <!-- Dragging the left edge resizes the panel without disturbing the chat column. -->
+    <!-- Resize handle — left edge drag to resize (only when expanded) -->
     <div
       v-if="!collapsed"
-      class="absolute inset-y-0 left-0 z-10 w-1 cursor-col-resize transition-colors hover:bg-accent/40 active:bg-accent/60"
-      @mousedown.prevent="startResize"
+      class="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize z-10 transition-colors"
+      style="hover:background: var(--color-accent);"
+      @mousedown="startResize"
     ></div>
 
-    <!-- The collapsed rail keeps the Thinker visible even when the panel is tucked away. -->
-    <button
+    <!-- ── Collapsed bar ─────────────────────────────────────────────────── -->
+    <div
       v-if="collapsed"
-      type="button"
-      class="flex h-full w-full flex-col items-center gap-3 py-3 text-text-muted transition-colors hover:text-text-primary"
-      @click="expandPanel"
+      class="flex flex-col items-center py-3 gap-2 cursor-pointer h-full select-none"
+      @click="collapsed = false"
+      title="Expand Thinker panel"
     >
-      <span class="mt-1 h-2.5 w-2.5 rounded-full" :class="collapsedDotClass"></span>
+      <!-- Agreement status dots (vertical stack) -->
+      <div class="flex flex-col gap-1.5 items-center">
+        <div
+          class="w-2.5 h-2.5 rounded-full transition-all"
+          :class="voiceDotClass"
+          title="Voice"
+        ></div>
+        <div
+          class="w-2.5 h-2.5 rounded-full transition-all"
+          :class="thinkerDotClass"
+          title="Thinker"
+        ></div>
+      </div>
+      <!-- Vertical "THINKER" label -->
       <span
-        class="text-[10px] font-mono tracking-[0.35em]"
-        style="writing-mode: vertical-rl; transform: rotate(180deg);"
+        class="text-[10px] font-mono tracking-widest"
+        style="color: var(--color-text-muted); writing-mode: vertical-rl; transform: rotate(180deg);"
       >
         THINKER
       </span>
-    </button>
+    </div>
 
-    <!-- The expanded view combines readiness, tools, and the live stream in one place. -->
+    <!-- ── Expanded panel ────────────────────────────────────────────────── -->
     <template v-else>
-      <div class="flex min-w-0 flex-1 flex-col">
-        <header class="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <div class="min-w-0">
-            <div class="flex items-center gap-2">
-              <div class="flex items-center gap-1.5">
-                <span class="h-2.5 w-2.5 rounded-full" :class="voiceDotClass" title="Voice"></span>
-                <span class="h-2.5 w-2.5 rounded-full" :class="thinkerDotClass" title="Thinker"></span>
-              </div>
-              <h2 class="text-sm font-semibold text-text-primary">Dual Mind</h2>
-              <span
-                v-if="isComplete"
-                class="rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.25em] text-success"
-              >
-                Complete
-              </span>
-            </div>
-            <p class="mt-1 text-[11px] uppercase tracking-[0.2em] text-text-muted">{{ statusLabel }}</p>
+      <!-- Header -->
+      <div
+        class="flex items-center justify-between px-4 py-3 shrink-0 border-b"
+        style="border-color: var(--color-border);"
+      >
+        <div class="flex items-center gap-2">
+          <!-- Agreement dots: Voice (left) + Thinker (right) -->
+          <div class="flex items-center gap-1.5" title="Voice / Thinker agreement status">
+            <div class="w-2 h-2 rounded-full transition-all" :class="voiceDotClass" title="Voice"></div>
+            <div class="w-2 h-2 rounded-full transition-all" :class="thinkerDotClass" title="Thinker"></div>
           </div>
-
-          <button
-            type="button"
-            class="rounded-md p-1 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
-            title="Collapse Thinker panel"
-            @click="collapsePanel"
+          <h2 class="text-sm font-semibold" style="color: var(--color-text-primary);">Thinker</h2>
+          <!-- Agreement badge — shown when both are ready -->
+          <span
+            v-if="isComplete"
+            class="text-xs font-mono px-1.5 py-0.5 rounded"
+            style="color: var(--color-success); background: color-mix(in srgb, var(--color-success) 15%, transparent);"
           >
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-            </svg>
-          </button>
-        </header>
-
-        <!-- Tool calls stay in their own section so the stream remains readable. -->
-        <section class="border-b border-border/70">
-          <button
-            type="button"
-            class="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-bg-hover/60"
-            @click="toolSectionOpen = !toolSectionOpen"
-          >
-            <div>
-              <div class="text-xs font-semibold uppercase tracking-[0.2em] text-text-primary">Tool Calls</div>
-              <p class="mt-1 text-xs text-text-muted">
-                {{ normalizedToolCalls.length }}
-                {{ normalizedToolCalls.length === 1 ? 'call' : 'calls' }}
-                tracked
-              </p>
-            </div>
-
-            <svg
-              class="h-4 w-4 text-text-muted transition-transform"
-              :class="{ 'rotate-90': toolSectionOpen }"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-
-          <div v-if="toolSectionOpen" class="max-h-56 overflow-y-auto px-3 pb-3">
-            <div v-if="normalizedToolCalls.length" class="space-y-2">
-              <article
-                v-for="tool in normalizedToolCalls"
-                :key="tool.id"
-                class="overflow-hidden rounded-lg border border-border bg-bg-primary/70"
-              >
-                <button
-                  type="button"
-                  class="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-bg-hover/50"
-                  @click="toggleToolCard(tool.id)"
-                >
-                  <span class="h-2.5 w-2.5 shrink-0 rounded-full" :class="toolStatusDotClass(tool)"></span>
-                  <span class="min-w-0 flex-1">
-                    <span class="block truncate font-mono text-xs text-text-primary">{{ tool.name }}</span>
-                    <span class="block text-[11px] text-text-muted">{{ toolStatusLabel(tool) }}</span>
-                  </span>
-                  <svg
-                    class="h-4 w-4 shrink-0 text-text-muted transition-transform"
-                    :class="{ 'rotate-90': isToolCardOpen(tool.id) }"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-
-                <div v-if="isToolCardOpen(tool.id)" class="space-y-3 border-t border-border/60 px-3 py-3">
-                  <div>
-                    <div class="mb-1 text-[10px] uppercase tracking-[0.2em] text-text-muted">Input</div>
-                    <pre class="overflow-x-auto rounded-md bg-bg-secondary px-3 py-2 text-xs text-text-secondary">{{ formatPayload(tool.input) }}</pre>
-                  </div>
-
-                  <div v-if="tool.output">
-                    <div class="mb-1 text-[10px] uppercase tracking-[0.2em] text-text-muted">Output</div>
-                    <pre class="max-h-40 overflow-auto rounded-md bg-bg-secondary px-3 py-2 text-xs text-text-secondary">{{ tool.output }}</pre>
-                  </div>
-                </div>
-              </article>
-            </div>
-
-            <p v-else class="px-1 pb-1 text-sm italic text-text-muted">
-              Tool calls will appear here as the Thinker explores.
-            </p>
-          </div>
-        </section>
-
-        <!-- The stream stays monospace and auto-scrolls so the newest reasoning is always visible. -->
-        <div class="flex-1 overflow-y-auto px-4 py-4 font-mono text-sm leading-relaxed text-text-secondary">
-          <div v-if="thinkerContent" class="whitespace-pre-wrap break-words">{{ thinkerContent }}</div>
-          <div v-else class="italic text-text-muted">Waiting for Thinker to begin exploring...</div>
-          <div ref="scrollAnchor"></div>
+            AGREED
+          </span>
         </div>
+        <button
+          @click="collapsed = true"
+          class="p-1 rounded transition-colors"
+          style="color: var(--color-text-muted);"
+          title="Collapse"
+        >
+          <!-- Chevron right (collapse) -->
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Tool calls section -->
+      <div
+        v-if="thinkerToolCalls.length > 0"
+        class="shrink-0 border-b"
+        style="border-color: var(--color-border); max-height: 240px; overflow-y: auto;"
+      >
+        <div class="px-3 py-2">
+          <!-- Section header with collapse toggle -->
+          <button
+            class="flex items-center gap-1.5 w-full text-left"
+            @click="toolsExpanded = !toolsExpanded"
+          >
+            <svg
+              class="w-3 h-3 transition-transform shrink-0"
+              :class="{ 'rotate-90': toolsExpanded }"
+              fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              style="color: var(--color-text-muted);"
+            >
+              <polyline points="9 6 15 12 9 18" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="text-xs font-mono" style="color: var(--color-text-muted);">
+              TOOLS ({{ thinkerToolCalls.length }})
+            </span>
+          </button>
+
+          <!-- Individual tool call cards -->
+          <div v-if="toolsExpanded" class="mt-2 flex flex-col gap-1">
+            <div
+              v-for="call in thinkerToolCalls"
+              :key="call.id"
+              class="rounded text-xs overflow-hidden"
+              style="background: var(--color-bg-tertiary, var(--color-bg-primary)); border: 1px solid var(--color-border);"
+            >
+              <!-- Card header row -->
+              <button
+                class="flex items-center gap-2 w-full px-2 py-1.5 text-left"
+                @click="toggleToolCall(call.id)"
+              >
+                <!-- Status icon -->
+                <span class="shrink-0">
+                  <svg v-if="call.status === 'running'" class="w-3 h-3 animate-spin" style="color: var(--color-accent);" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-dasharray="32" stroke-dashoffset="12"/>
+                  </svg>
+                  <svg v-else class="w-3 h-3" style="color: var(--color-success);" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <polyline points="20 6 9 17 4 12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </span>
+                <!-- Tool name (short, strip server prefix) -->
+                <span class="font-mono truncate" style="color: var(--color-text-primary);">
+                  {{ shortToolName(call.name) }}
+                </span>
+                <!-- Input preview -->
+                <span class="truncate opacity-60 flex-1" style="color: var(--color-text-secondary);">
+                  {{ inputPreview(call.input) }}
+                </span>
+                <!-- Expand chevron -->
+                <svg
+                  v-if="call.result"
+                  class="w-3 h-3 shrink-0 transition-transform"
+                  :class="{ 'rotate-90': expandedToolCalls.has(call.id) }"
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  style="color: var(--color-text-muted);"
+                >
+                  <polyline points="9 6 15 12 9 18" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              <!-- Expanded result -->
+              <div
+                v-if="expandedToolCalls.has(call.id) && call.result"
+                class="px-2 pb-2 border-t"
+                style="border-color: var(--color-border);"
+              >
+                <pre class="text-xs overflow-x-auto whitespace-pre-wrap break-words mt-1.5 leading-relaxed" style="color: var(--color-text-secondary);">{{ truncateResult(call.result) }}</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stream content — auto-scrolling monospace area -->
+      <div
+        ref="contentEl"
+        class="flex-1 overflow-y-auto p-4 font-mono text-sm leading-relaxed"
+        style="color: var(--color-text-secondary);"
+      >
+        <div v-if="thinkerContent" class="whitespace-pre-wrap break-words">{{ thinkerContent }}</div>
+        <div
+          v-else
+          class="italic text-sm"
+          style="color: var(--color-text-muted);"
+        >
+          Waiting for Thinker to begin exploring...
+        </div>
+        <!-- Auto-scroll anchor -->
+        <div ref="scrollAnchor"></div>
       </div>
     </template>
   </aside>
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, reactive } from 'vue'
+
+// ── Props ───────────────────────────────────────────────────────────────────
 
 const props = defineProps({
+  /** Accumulated thinker stream text */
   thinkerContent: { type: String, default: '' },
+  /** Array of thinker tool calls: { id, name, input, status, result } */
   thinkerToolCalls: { type: Array, default: () => [] },
+  /** True when the Voice session has emitted <ready/> */
   voiceReady: { type: Boolean, default: false },
+  /** True when the Thinker session has emitted <ready/> */
   thinkerReady: { type: Boolean, default: false },
+  /** True when both Voice and Thinker are ready */
   isComplete: { type: Boolean, default: false },
+  /** Whether to render the panel at all */
   visible: { type: Boolean, default: false }
 })
 
+// ── Emits ───────────────────────────────────────────────────────────────────
+
 const emit = defineEmits(['collapse', 'expand', 'resize'])
 
+// ── Local state ─────────────────────────────────────────────────────────────
+
 const collapsed = ref(false)
-const panelWidth = ref(380)
-const toolSectionOpen = ref(true)
-const openToolCards = ref({})
+const panelWidth = ref(380)            // Default 380px, resizable 200–600px
+const contentEl = ref(null)
 const scrollAnchor = ref(null)
+const toolsExpanded = ref(true)        // Tool calls section expanded by default
+const expandedToolCalls = reactive(new Set()) // IDs of expanded tool call cards
 
-function stringifyValue(value) {
-  if (typeof value === 'string') return value
-  if (value == null) return ''
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
-  }
-}
-
-function normalizeToolCall(toolCall, index) {
-  const output = stringifyValue(toolCall.output ?? toolCall.result ?? '')
-  const isError = Boolean(toolCall.isError || toolCall.status === 'error')
-
-  return {
-    id: toolCall.id || `tool-${index}`,
-    name: toolCall.name || 'tool',
-    input: toolCall.input ?? toolCall.args ?? {},
-    output,
-    status: toolCall.status || (isError ? 'error' : output ? 'done' : 'running'),
-    isError
-  }
-}
-
-const normalizedToolCalls = computed(() => props.thinkerToolCalls.map(normalizeToolCall))
+// ── Computed agreement dot classes ──────────────────────────────────────────
 
 const voiceDotClass = computed(() => {
-  if (!props.visible) return 'bg-text-muted/50'
-  if (props.voiceReady) return 'bg-success shadow-sm'
-  return 'bg-accent animate-pulse'
+  if (props.voiceReady) return 'bg-green-500 shadow-sm'
+  if (props.visible) return 'bg-blue-400 animate-pulse'
+  return 'bg-gray-500'
 })
 
 const thinkerDotClass = computed(() => {
-  if (!props.visible) return 'bg-text-muted/50'
-  if (props.thinkerReady) return 'bg-success shadow-sm'
-  return 'bg-accent animate-pulse'
+  if (props.thinkerReady) return 'bg-green-500 shadow-sm'
+  if (props.visible) return 'bg-blue-400 animate-pulse'
+  return 'bg-gray-500'
 })
 
-const collapsedDotClass = computed(() => {
-  if (props.isComplete) return 'bg-success shadow-sm'
-  if (props.visible) return 'bg-accent animate-pulse'
-  return 'bg-text-muted/50'
+// ── Auto-scroll on new content ───────────────────────────────────────────────
+
+watch(() => props.thinkerContent, async () => {
+  await nextTick()
+  scrollAnchor.value?.scrollIntoView({ behavior: 'smooth', block: 'end' })
 })
 
-const statusLabel = computed(() => {
-  if (props.isComplete) return 'Agreement reached'
-  if (props.voiceReady && props.thinkerReady) return 'Agreement reached'
-  if (props.thinkerReady) return 'Thinker ready'
-  if (props.voiceReady) return 'Voice ready'
-  return 'Thinking'
+// ── Collapse / expand with emits ─────────────────────────────────────────────
+
+watch(collapsed, (val) => {
+  if (val) emit('collapse')
+  else emit('expand')
 })
 
-watch(
-  () => props.visible,
-  async (visible, previousVisible) => {
-    if (!visible) return
+// ── Tool call helpers ────────────────────────────────────────────────────────
 
-    if (!previousVisible || collapsed.value) {
-      collapsed.value = false
-      emit('expand')
-    }
-
-    await nextTick()
-    scrollToBottom()
-  },
-  { immediate: true }
-)
-
-watch(
-  () => props.thinkerContent,
-  async () => {
-    await nextTick()
-    scrollToBottom()
+function toggleToolCall(id) {
+  if (expandedToolCalls.has(id)) {
+    expandedToolCalls.delete(id)
+  } else {
+    expandedToolCalls.add(id)
   }
-)
-
-watch(
-  normalizedToolCalls,
-  (toolCalls) => {
-    for (const toolCall of toolCalls) {
-      if (toolCall.status === 'running' && openToolCards.value[toolCall.id] == null) {
-        openToolCards.value[toolCall.id] = true
-      }
-    }
-  },
-  { immediate: true }
-)
-
-function scrollToBottom() {
-  scrollAnchor.value?.scrollIntoView({ behavior: 'auto', block: 'end' })
 }
 
-function expandPanel() {
-  collapsed.value = false
-  emit('expand')
-  nextTick(() => scrollToBottom())
+/** Strip MCP server prefix (e.g. "mcp__paloma__filesystem__read_text_file" → "read_text_file") */
+function shortToolName(name) {
+  if (!name) return 'unknown'
+  const parts = name.split('__')
+  return parts[parts.length - 1] || name
 }
 
-function collapsePanel() {
-  collapsed.value = true
-  emit('collapse')
+/** Generate a concise preview of tool input */
+function inputPreview(input) {
+  if (!input || typeof input !== 'object') return ''
+  const firstVal = Object.values(input)[0]
+  if (typeof firstVal === 'string') {
+    return firstVal.length > 40 ? firstVal.slice(0, 40) + '…' : firstVal
+  }
+  return JSON.stringify(input).slice(0, 40)
 }
 
-function isToolCardOpen(toolId) {
-  return Boolean(openToolCards.value[toolId])
+/** Truncate long tool results for display */
+function truncateResult(result) {
+  if (!result) return ''
+  const max = 500
+  if (result.length <= max) return result
+  return result.slice(0, max) + '\n… [truncated]'
 }
 
-function toggleToolCard(toolId) {
-  openToolCards.value[toolId] = !openToolCards.value[toolId]
-}
+// ── Resize logic ─────────────────────────────────────────────────────────────
 
-function formatPayload(payload) {
-  return stringifyValue(payload || {})
-}
+let resizing = false
 
-function toolStatusLabel(toolCall) {
-  if (toolCall.isError) return 'Error'
-  if (toolCall.status === 'done') return 'Complete'
-  return 'Running'
-}
-
-function toolStatusDotClass(toolCall) {
-  if (toolCall.isError) return 'bg-danger'
-  if (toolCall.status === 'done') return 'bg-success'
-  return 'bg-accent animate-pulse'
-}
-
-let removeResizeListeners = null
-
-function cleanupResizeListeners() {
-  if (!removeResizeListeners) return
-  removeResizeListeners()
-  removeResizeListeners = null
-}
-
-function startResize(event) {
-  if (collapsed.value) return
-
-  const startX = event.clientX
+function startResize(e) {
+  resizing = true
+  const startX = e.clientX
   const startWidth = panelWidth.value
 
-  const onMove = (moveEvent) => {
-    const nextWidth = Math.max(200, Math.min(600, startWidth + (startX - moveEvent.clientX)))
-    if (nextWidth === panelWidth.value) return
-    panelWidth.value = nextWidth
-    emit('resize', nextWidth)
+  function onMove(e) {
+    if (!resizing) return
+    // Dragging left increases width (panel is on the right)
+    const delta = startX - e.clientX
+    const newWidth = Math.max(200, Math.min(600, startWidth + delta))
+    panelWidth.value = newWidth
+    emit('resize', newWidth)
   }
 
-  const onUp = () => cleanupResizeListeners()
-
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
-
-  removeResizeListeners = () => {
+  function onUp() {
+    resizing = false
     document.removeEventListener('mousemove', onMove)
     document.removeEventListener('mouseup', onUp)
   }
-}
 
-onBeforeUnmount(() => cleanupResizeListeners())
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
 </script>

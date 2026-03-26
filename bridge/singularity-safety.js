@@ -1,13 +1,22 @@
 /**
- * @file bridge/singularity-safety.js
- * @description Safety validation, prompt sanitization, and context monitoring for singularity operations.
- * Part of the Paloma Singularity Completion Sprint (Stream B - Gemini).
+ * Singularity Safety Module
+ *
+ * Input validation, prompt sanitization, and circuit breaker for Quinn
+ * singularity chains. Guards the spawn_next pipeline from bad inputs,
+ * runaway loops, and context overflow.
+ *
+ * All functions are synchronous for low-latency use in the spawn hot path.
  */
 
-import { Buffer } from 'node:buffer';
+import { createLogger } from './logger.js'
+
+const log = createLogger('singularity-safety')
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 /**
- * Default safety limits for the singularity.
+ * Default safety limits for the singularity system.
+ * These can be overridden per-call via the limits parameter.
  */
 export const DEFAULT_LIMITS = {
   maxPromptBytes: 50 * 1024,         // 50KB max prompt
@@ -18,25 +27,29 @@ export const DEFAULT_LIMITS = {
   maxErrorRate: 0.3,                 // 30% error rate triggers halt
   contextWarningThreshold: 0.8,      // Warn at 80% context usage
   contextCriticalThreshold: 0.95,    // Critical at 95%
-  maxStateSummaryTokens: 5000,       // Max tokens for state summary
-  maxTaskForNextTokens: 2000,        // Max tokens for task for next
-};
+}
+
+// Control characters to strip (keep: tab \x09, LF \x0a, CR \x0d)
+const CONTROL_CHAR_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g
+
+// ─── Exports ──────────────────────────────────────────────────────────────────
 
 /**
- * Estimate token count for a string (rough: ~4 chars per token for English).
+ * Estimate token count for a string.
+ * Uses ~4 chars per token heuristic — accurate enough for safety gating.
  * @param {string} text
  * @returns {number}
  */
 export function estimateTokens(text) {
-  if (!text || typeof text !== 'string') return 0;
-  // Standard heuristic for English models
-  return Math.ceil(text.length / 4);
+  if (!text || typeof text !== 'string') return 0
+  return Math.ceil(text.length / 4)
 }
 
 /**
- * Sanitize a prompt string — strip dangerous content, validate encoding, enforce size limits.
+ * Sanitize a prompt string — strip dangerous content, normalize encoding,
+ * and enforce size limits.
  * @param {string} prompt
- * @param {object} options - { maxBytes?: number, maxTokenEstimate?: number, stripControlChars?: boolean }
+ * @param {object} options - { maxBytes?, maxTokenEstimate?, stripControlChars? }
  * @returns {{ sanitized: string, changes: string[], originalSize: number, sanitizedSize: number }}
  */
 export function sanitizePrompt(prompt, options = {}) {
@@ -44,222 +57,282 @@ export function sanitizePrompt(prompt, options = {}) {
     maxBytes = DEFAULT_LIMITS.maxPromptBytes,
     maxTokenEstimate = DEFAULT_LIMITS.maxPromptTokens,
     stripControlChars = true
-  } = options;
+  } = options
 
-  let sanitized = prompt || '';
-  const changes = [];
-  const originalSize = Buffer.byteLength(sanitized, 'utf8');
+  const changes = []
+  let sanitized = String(prompt)
+  const originalSize = Buffer.byteLength(sanitized, 'utf8')
 
-  // 1. Validate UTF-8 and remove null bytes
-  if (sanitized.includes('\u0000')) {
-    sanitized = sanitized.replace(/\0/g, '');
-    changes.push('Removed null bytes');
+  // Strip null bytes
+  if (sanitized.includes('\0')) {
+    sanitized = sanitized.replace(/\0/g, '')
+    changes.push('Stripped null bytes')
   }
 
-  // 2. Strip control characters (except common whitespace like \n, \r, \t)
+  // Strip other dangerous control characters (preserve tab, LF, CR)
   if (stripControlChars) {
-    const beforeLength = sanitized.length;
-    // eslint-disable-next-line no-control-regex
-    sanitized = sanitized.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
-    if (sanitized.length < beforeLength) {
-      changes.push('Stripped non-whitespace control characters');
+    const stripped = sanitized.replace(CONTROL_CHAR_RE, '')
+    if (stripped !== sanitized) {
+      sanitized = stripped
+      changes.push('Stripped control characters')
     }
   }
 
-  // 3. Enforce token limit (heuristic-based)
-  const tokens = estimateTokens(sanitized);
+  // Normalize CRLF/CR → LF
+  const normalized = sanitized.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  if (normalized !== sanitized) {
+    sanitized = normalized
+    changes.push('Normalized line endings')
+  }
+
+  // Enforce byte limit — truncate carefully to avoid cutting mid-character
+  const byteLen = Buffer.byteLength(sanitized, 'utf8')
+  if (byteLen > maxBytes) {
+    const buf = Buffer.from(sanitized, 'utf8').slice(0, maxBytes)
+    // Remove potential partial multi-byte character at the cut point
+    sanitized = buf.toString('utf8').replace(/\uFFFD$/, '')
+    changes.push(`Truncated to ${maxBytes} bytes (was ${byteLen})`)
+  }
+
+  // Enforce token estimate limit
+  const tokens = estimateTokens(sanitized)
   if (tokens > maxTokenEstimate) {
-    const targetLength = maxTokenEstimate * 4;
-    sanitized = sanitized.slice(0, targetLength);
-    changes.push(`Truncated to ~${maxTokenEstimate} tokens (${sanitized.length} chars)`);
+    sanitized = sanitized.slice(0, maxTokenEstimate * 4)
+    changes.push(`Truncated to ~${maxTokenEstimate} tokens`)
   }
 
-  // 4. Enforce byte limit
-  let byteSize = Buffer.byteLength(sanitized, 'utf8');
-  if (byteSize > maxBytes) {
-    // Truncate until under byte limit while remaining valid UTF-8
-    let buf = Buffer.from(sanitized, 'utf8').subarray(0, maxBytes);
-    sanitized = buf.toString('utf8');
-    // toString might leave a partial character at the end, so we clean it up
-    // by checking if the last char is valid or a replacement char
-    if (sanitized.endsWith('\uFFFD')) {
-      sanitized = sanitized.slice(0, -1);
-    }
-    changes.push(`Truncated to ${maxBytes} bytes`);
-    byteSize = Buffer.byteLength(sanitized, 'utf8');
-  }
+  const sanitizedSize = Buffer.byteLength(sanitized, 'utf8')
+  return { sanitized, changes, originalSize, sanitizedSize }
+}
 
-  return {
-    sanitized,
-    changes,
-    originalSize,
-    sanitizedSize: byteSize
-  };
+/**
+ * Compute word-level Jaccard similarity between two strings (0–1).
+ * Used to detect near-duplicate prompts that could indicate a loop.
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function computeWordSimilarity(a, b) {
+  const wordsA = new Set(a.toLowerCase().split(/\s+/).filter(Boolean))
+  const wordsB = new Set(b.toLowerCase().split(/\s+/).filter(Boolean))
+  const intersection = [...wordsA].filter(w => wordsB.has(w)).length
+  const union = new Set([...wordsA, ...wordsB]).size
+  return union === 0 ? 0 : intersection / union
 }
 
 /**
  * Validate a spawn_next request before it executes.
- * @param {object} params - { prompt: string, state_summary?: string, task_for_next?: string }
- * @param {object} context - { generation: number, maxGenerations?: number, previousPrompt?: string }
+ * All validation is synchronous for use in the spawn hot path.
+ *
+ * The params object may optionally include previousPrompt for loop detection.
+ *
+ * @param {object} params - { prompt: string, state_summary?: string, task_for_next?: string, previousPrompt?: string }
+ * @param {object} context - { generation: number, maxGenerations?: number }
  * @returns {{ valid: boolean, errors: string[], warnings: string[], sanitizedPrompt?: string }}
  */
 export function validateSpawnNext(params, context) {
-  const errors = [];
-  const warnings = [];
-  const { prompt, state_summary, task_for_next } = params;
-  const { generation, maxGenerations = DEFAULT_LIMITS.maxGenerations, previousPrompt } = context;
+  const { prompt, state_summary, task_for_next, previousPrompt } = params
+  const { generation, maxGenerations = DEFAULT_LIMITS.maxGenerations } = context
 
-  // 1. Prompt must be a non-empty string
+  const errors = []
+  const warnings = []
+
+  // ── Rule 1: prompt must be a non-empty string ────────────────────────────
   if (!prompt || typeof prompt !== 'string') {
-    errors.push('Prompt must be a non-empty string');
-  } else {
-    // 2. Prompt must be between minPromptTokens and maxPromptTokens
-    const tokens = estimateTokens(prompt);
-    if (tokens < DEFAULT_LIMITS.minPromptTokens) {
-      errors.push(`Prompt is too short (${tokens} tokens). Minimum is ${DEFAULT_LIMITS.minPromptTokens}.`);
-    }
-    if (tokens > DEFAULT_LIMITS.maxPromptTokens) {
-      errors.push(`Prompt is too long (~${tokens} tokens). Maximum is ${DEFAULT_LIMITS.maxPromptTokens}.`);
-    }
+    errors.push('prompt must be a non-empty string')
+    // Can't continue validating without a prompt
+    return { valid: false, errors, warnings }
+  }
 
-    // 3. Prompt must not contain null bytes
-    if (prompt.includes('\0')) {
-      errors.push('Prompt contains null bytes');
-    }
+  // ── Rule 2: prompt length (min/max tokens) ───────────────────────────────
+  const promptTokens = estimateTokens(prompt)
+  if (promptTokens < DEFAULT_LIMITS.minPromptTokens) {
+    errors.push(
+      `prompt too short: ~${promptTokens} tokens (min ${DEFAULT_LIMITS.minPromptTokens})`
+    )
+  }
+  if (promptTokens > DEFAULT_LIMITS.maxPromptTokens) {
+    errors.push(
+      `prompt too long: ~${promptTokens} tokens (max ${DEFAULT_LIMITS.maxPromptTokens})`
+    )
+  }
 
-    // 4. Prompt must not be identical to previous generation's prompt
-    if (previousPrompt && prompt.trim() === previousPrompt.trim()) {
-      errors.push('Prompt is identical to previous generation (possible infinite loop)');
+  // ── Rule 3: no null bytes or invalid encoding ────────────────────────────
+  if (prompt.includes('\0')) {
+    errors.push('prompt contains null bytes')
+  }
+  // Check round-trip encoding to detect invalid UTF-8 sequences
+  try {
+    const roundTripped = Buffer.from(prompt, 'utf8').toString('utf8')
+    // If the original lacked the replacement char but the round-trip has it,
+    // there was invalid UTF-8 that got replaced
+    if (!prompt.includes('\uFFFD') && roundTripped.includes('\uFFFD')) {
+      errors.push('prompt contains invalid UTF-8 sequences')
+    }
+  } catch {
+    errors.push('prompt encoding validation failed')
+  }
+
+  // ── Rule 4: loop detection ───────────────────────────────────────────────
+  if (previousPrompt && typeof previousPrompt === 'string' && previousPrompt.length > 0) {
+    if (prompt.trim() === previousPrompt.trim()) {
+      errors.push('prompt is identical to previous generation prompt (loop detected)')
+    } else if (prompt.length > 200) {
+      const similarity = computeWordSimilarity(prompt, previousPrompt)
+      if (similarity > 0.95) {
+        warnings.push(
+          `prompt is nearly identical to previous generation (${Math.round(similarity * 100)}% word similarity)`
+        )
+      }
     }
   }
 
-  // 5. Generation must be positive integer, less than maxGenerations
-  if (typeof generation !== 'number' || generation <= 0 || !Number.isInteger(generation)) {
-    errors.push(`Invalid generation number: ${generation}`);
+  // ── Rule 5: generation bounds ────────────────────────────────────────────
+  if (!Number.isInteger(generation) || generation < 1) {
+    errors.push(`generation must be a positive integer, got: ${JSON.stringify(generation)}`)
   } else if (generation >= maxGenerations) {
-    errors.push(`Maximum generation reached: ${generation} >= ${maxGenerations}`);
+    errors.push(`generation ${generation} has reached the maximum limit of ${maxGenerations}`)
+  } else if (generation >= Math.floor(maxGenerations * 0.8)) {
+    warnings.push(
+      `approaching max generations (${generation}/${maxGenerations})`
+    )
   }
 
-  // 6. State summary length check
-  if (state_summary) {
-    const summaryTokens = estimateTokens(state_summary);
-    if (summaryTokens > DEFAULT_LIMITS.maxStateSummaryTokens) {
-      errors.push(`State summary is too long (~${summaryTokens} tokens). Maximum is ${DEFAULT_LIMITS.maxStateSummaryTokens}.`);
+  // ── Rule 6: state_summary size limit (5000 tokens) ──────────────────────
+  if (state_summary != null) {
+    const summaryTokens = estimateTokens(String(state_summary))
+    if (summaryTokens > 5000) {
+      errors.push(`state_summary too long: ~${summaryTokens} tokens (max 5000)`)
     }
   }
 
-  // 7. Task for next length check
-  if (task_for_next) {
-    const taskTokens = estimateTokens(task_for_next);
-    if (taskTokens > DEFAULT_LIMITS.maxTaskForNextTokens) {
-      errors.push(`Task for next is too long (~${taskTokens} tokens). Maximum is ${DEFAULT_LIMITS.maxTaskForNextTokens}.`);
+  // ── Rule 7: task_for_next size limit (2000 tokens) ──────────────────────
+  if (task_for_next != null) {
+    const taskTokens = estimateTokens(String(task_for_next))
+    if (taskTokens > 2000) {
+      errors.push(`task_for_next too long: ~${taskTokens} tokens (max 2000)`)
     }
   }
 
-  let sanitizedPrompt = prompt;
-  if (errors.length === 0 && prompt) {
-    const result = sanitizePrompt(prompt);
-    sanitizedPrompt = result.sanitized;
-    if (result.changes.length > 0) {
-      warnings.push(...result.changes);
-    }
+  const valid = errors.length === 0
+
+  if (valid) {
+    log.info('spawn_next validated', { generation, promptTokens, warnings: warnings.length })
+  } else {
+    log.warn('spawn_next validation failed', { generation, errors: errors.length, firstError: errors[0] })
   }
 
-  return {
-    valid: errors.length === 0,
-    errors,
-    warnings,
-    sanitizedPrompt
-  };
+  const result = { valid, errors, warnings }
+  if (valid) {
+    // Return sanitized version so callers don't need to sanitize separately
+    result.sanitizedPrompt = sanitizePrompt(prompt).sanitized
+  }
+  return result
 }
 
 /**
- * Check if context is approaching overflow given current usage.
+ * Check if context is approaching overflow given current token usage.
  * @param {object} usage - { systemPromptTokens: number, conversationTokens: number, maxContext: number }
  * @returns {{ safe: boolean, usagePercent: number, remainingTokens: number, recommendation: string }}
  */
 export function checkContextHealth(usage) {
-  const { systemPromptTokens = 0, conversationTokens = 0, maxContext } = usage;
-  if (!maxContext) {
-    return { safe: true, usagePercent: 0, remainingTokens: 0, recommendation: 'No maxContext provided for check' };
+  const {
+    systemPromptTokens = 0,
+    conversationTokens = 0,
+    maxContext
+  } = usage
+
+  if (!maxContext || maxContext <= 0) {
+    return {
+      safe: true,
+      usagePercent: 0,
+      remainingTokens: Infinity,
+      recommendation: 'maxContext not provided — cannot assess context health.'
+    }
   }
 
-  const totalUsed = systemPromptTokens + conversationTokens;
-  const usagePercent = totalUsed / maxContext;
-  const remainingTokens = maxContext - totalUsed;
-  const safe = usagePercent < DEFAULT_LIMITS.contextCriticalThreshold;
+  const totalUsed = systemPromptTokens + conversationTokens
+  const usagePercent = totalUsed / maxContext
+  const remainingTokens = Math.max(0, maxContext - totalUsed)
 
-  let recommendation = 'Context usage is within safe limits.';
+  let safe = true
+  let recommendation
+
   if (usagePercent >= DEFAULT_LIMITS.contextCriticalThreshold) {
-    recommendation = 'CRITICAL: Context near limit. Immediate truncation or handoff required.';
+    safe = false
+    recommendation = `CRITICAL: Context at ${Math.round(usagePercent * 100)}% (${remainingTokens} tokens remaining). Handoff to next generation immediately.`
+    log.warn('Context at critical level', {
+      usagePercent: Math.round(usagePercent * 100),
+      remainingTokens
+    })
   } else if (usagePercent >= DEFAULT_LIMITS.contextWarningThreshold) {
-    recommendation = 'WARNING: Context usage high. Consider summarizing or ending session soon.';
+    recommendation = `WARNING: Context at ${Math.round(usagePercent * 100)}% (${remainingTokens} tokens remaining). Consider handoff soon.`
+    log.info('Context approaching limit', {
+      usagePercent: Math.round(usagePercent * 100),
+      remainingTokens
+    })
+  } else {
+    recommendation = `Context usage is healthy: ${Math.round(usagePercent * 100)}% used (${remainingTokens} tokens remaining).`
   }
 
-  return {
-    safe,
-    usagePercent,
-    remainingTokens,
-    recommendation
-  };
+  return { safe, usagePercent, remainingTokens, recommendation }
 }
 
 /**
- * Circuit breaker — should we halt the generation chain?
- * Considers: generation count, time elapsed, error rate, resource usage.
- * @param {object} chainState - { generation: number, startTime: Date, errors: number, totalSpawns: number }
- * @param {object} limits - { maxGenerations?: number, maxDurationMinutes?: number, maxErrorRate?: number }
+ * Circuit breaker — decide whether to halt the generation chain.
+ * Considers generation count, elapsed time, and error rate.
+ * @param {object} chainState - { generation: number, startTime: Date|string, errors: number, totalSpawns: number }
+ * @param {object} limits - { maxGenerations?, maxDurationMinutes?, maxErrorRate? }
  * @returns {{ halt: boolean, reason?: string }}
  */
 export function shouldHaltChain(chainState, limits = {}) {
-  const { generation, startTime, errors = 0, totalSpawns = 0 } = chainState;
   const {
     maxGenerations = DEFAULT_LIMITS.maxGenerations,
     maxDurationMinutes = DEFAULT_LIMITS.maxDurationMinutes,
     maxErrorRate = DEFAULT_LIMITS.maxErrorRate
-  } = limits;
+  } = limits
 
-  // 1. Max generations check
+  const { generation, startTime, errors = 0, totalSpawns = 0 } = chainState
+
+  // ── Check: max generations hard cap ─────────────────────────────────────
   if (generation >= maxGenerations) {
-    return { halt: true, reason: `Reached maximum generation limit (${maxGenerations})` };
+    const reason = `Max generations reached: ${generation}/${maxGenerations}`
+    log.warn('Circuit breaker triggered: max generations', { generation, maxGenerations })
+    return { halt: true, reason }
   }
 
-  // 2. Duration check
+  // ── Check: max chain duration ────────────────────────────────────────────
   if (startTime) {
-    const elapsedMinutes = (Date.now() - new Date(startTime).getTime()) / (1000 * 60);
-    if (elapsedMinutes > maxDurationMinutes) {
-      return { halt: true, reason: `Chain duration exceeds limit (${elapsedMinutes.toFixed(1)}m > ${maxDurationMinutes}m)` };
+    const startMs = startTime instanceof Date
+      ? startTime.getTime()
+      : new Date(startTime).getTime()
+
+    if (!isNaN(startMs)) {
+      const elapsedMinutes = (Date.now() - startMs) / 60000
+      if (elapsedMinutes >= maxDurationMinutes) {
+        const reason = `Max duration exceeded: ${Math.round(elapsedMinutes)}min (limit ${maxDurationMinutes}min)`
+        log.warn('Circuit breaker triggered: max duration', {
+          elapsedMinutes: Math.round(elapsedMinutes),
+          maxDurationMinutes
+        })
+        return { halt: true, reason }
+      }
     }
   }
 
-  // 3. Error rate check
-  if (totalSpawns > 2) { // Only check after a few spawns to avoid early noise
-    const errorRate = errors / totalSpawns;
-    if (errorRate > maxErrorRate) {
-      return { halt: true, reason: `Error rate too high (${(errorRate * 100).toFixed(1)}% > ${(maxErrorRate * 100).toFixed(1)}%)` };
+  // ── Check: error rate ────────────────────────────────────────────────────
+  if (totalSpawns > 0) {
+    const errorRate = errors / totalSpawns
+    if (errorRate >= maxErrorRate) {
+      const reason = `Error rate too high: ${Math.round(errorRate * 100)}% (limit ${Math.round(maxErrorRate * 100)}%)`
+      log.warn('Circuit breaker triggered: error rate', {
+        errors,
+        totalSpawns,
+        errorRate: Math.round(errorRate * 100)
+      })
+      return { halt: true, reason }
     }
   }
 
-  return { halt: false };
-}
-
-// Simple self-test if run directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  console.log('[singularity-safety] Running self-test...');
-  
-  const p1 = "This is a valid prompt that is long enough to pass the minimum token check and has some substance. It needs to be at least 200 characters long to reach 50 tokens based on our simple heuristic of 4 characters per token. So I am adding more text to this prompt to ensure it is sufficiently substantial for the singularity process. This should now definitely pass the validation check.";
-  const v1 = validateSpawnNext({ prompt: p1 }, { generation: 1 });
-  console.log('Valid test:', v1.valid ? 'PASS' : 'FAIL', v1.errors);
-
-  const v2 = validateSpawnNext({ prompt: "" }, { generation: 1 });
-  console.log('Empty prompt test:', !v2.valid ? 'PASS' : 'FAIL', v2.errors);
-
-  const v3 = validateSpawnNext({ prompt: p1 }, { generation: 101 });
-  console.log('Max gen test:', !v3.valid ? 'PASS' : 'FAIL', v3.errors);
-
-  const s1 = sanitizePrompt("Hello\0World\x01!", { stripControlChars: true });
-  console.log('Sanitize test:', s1.sanitized === "HelloWorld!" ? 'PASS' : 'FAIL', `"${s1.sanitized}"`);
-  
-  const h1 = checkContextHealth({ systemPromptTokens: 1000, conversationTokens: 31000, maxContext: 32000 });
-  console.log('Health critical test:', !h1.safe ? 'PASS' : 'FAIL', h1.recommendation);
+  return { halt: false }
 }

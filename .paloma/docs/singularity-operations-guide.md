@@ -1,319 +1,311 @@
 # Singularity Operations Guide
 
-> A comprehensive guide to Paloma's singularity system — recursive self-improvement through generational AI sessions.
+> Complete operations manual for the Paloma Singularity system.
+> Written as part of the 4-CLI collaborative sprint (Claude + Codex + Copilot + Gemini), March 26, 2026.
 
 ---
 
 ## 1. What Is the Singularity?
 
-The singularity is Paloma's recursive self-improvement engine. It allows an AI session (called **Quinn**) to run, learn, and then **spawn its own successor** — passing forward a refined prompt, accumulated memories, and a task. Each successor is a new generation. Over time, the system evolves autonomously.
+The **Paloma Singularity** is the system that enables an AI session to recursively improve itself — spawning successor generations with evolved prompts, accumulated memory, and validated safety checks.
 
-In plain terms: Generation 1 runs, does work, writes down what it learned, writes a better prompt for Generation 2, then exits. Generation 2 starts fresh with that better prompt, reads the memories from Generation 1, does more work, and spawns Generation 3. This continues until the chain reaches its goal or hits a safety limit.
+In plain terms: Quinn (the singularity mind) runs, explores the codebase, learns something, writes what it learned into a manifest, crafts a better prompt for its successor, then spawns that successor and gracefully exits. The next generation begins where the last one left off, armed with the previous generation's learnings.
 
-The key insight: **no single generation needs to solve the whole problem.** Each one makes incremental progress and passes the torch. The memory system ensures nothing is lost between generations.
+There are two singularity modes:
+
+### Quinn Gen4 — Recursive Self-Spawning
+A single Ollama session with full MCP tools and a special `spawn_next` tool. It runs until it decides to spawn its successor, passes a crafted prompt and state summary, then terminates. The chain continues until a circuit breaker halts it or the generation limit is reached.
+
+### Dual-Mind — Voice + Thinker
+Two sessions run simultaneously: **Voice** (streams to Adam, synthesizes, no heavy tools) and **Thinker** (silent, all tools, does the actual exploration). They communicate via `<to-thinker>` tags and structured `FOUND:/KEY:/DETAIL:` responses. When both emit `<ready/>`, Flow detects agreement and the session completes.
 
 ---
 
 ## 2. Architecture Overview
 
-The singularity system is built from five components that work together:
-
 ```
-┌─────────────────────────────────────────────────┐
-│                 Pillar Manager                    │
-│         (bridge/pillar-manager.js)                │
-│                                                   │
-│  ┌──────────────────────────────────────────┐     │
-│  │        Integration Layer                  │     │
-│  │   (bridge/singularity-integration.js)     │     │
-│  │                                           │     │
-│  │  preSpawnHook → postSpawnHook →           │     │
-│  │  completionHook → errorHook               │     │
-│  └──────┬────────┬────────┬────────┬─────────┘     │
-│         │        │        │        │               │
-│    ┌────▼──┐ ┌──▼────┐ ┌▼─────┐ ┌▼───────┐       │
-│    │Memory │ │Lineage│ │Safety│ │Monitor │       │
-│    │System │ │Tools  │ │Layer │ │System  │       │
-│    └───────┘ └───────┘ └──────┘ └────────┘       │
-│                                                   │
-│    .singularity/                                  │
-│    ├── memory-index.json     (memory persistence) │
-│    ├── lineage.json          (generation chain)   │
-│    ├── chain-monitor.json    (health tracking)    │
-│    ├── generation-001.md     (gen 1 manifest)     │
-│    ├── generation-002.md     (gen 2 manifest)     │
-│    └── archive/              (truncated gens)     │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  Pillar Manager (bridge/pillar-manager.js)                       │
+│  ┌────────────────────┐   ┌────────────────────────────────────┐ │
+│  │  Quinn Gen4 Session │   │  Dual-Mind Group                   │ │
+│  │  singularityRole:  │   │  Voice (streams) + Thinker (tools) │ │
+│  │  'quinn-gen4'       │   │  singularityRole: 'voice'/'thinker'│ │
+│  │  + spawn_next tool  │   │  singularityGroupId: shared UUID   │ │
+│  └──────────┬──────────┘   └──────────────┬─────────────────── ┘ │
+│             │                             │                       │
+│  ┌──────────▼─────────────────────────────▼────────────────────┐  │
+│  │  singularity-integration.js  (Stream D — the wiring layer)  │  │
+│  │  preSpawnHook → postSpawnHook → completionHook → errorHook   │  │
+│  └──────────┬──────────┬──────────────┬────────────────────────┘  │
+│             │          │              │                            │
+│   ┌─────────▼──┐  ┌────▼──────┐  ┌───▼──────────────────────┐    │
+│   │ memory.js   │  │ safety.js │  │ monitor.js + lineage.js  │    │
+│   │ (Stream A)  │  │ (Stream B)│  │         (Stream B)       │    │
+│   └─────────────┘  └───────────┘  └──────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│  Frontend (Vue 3 — Stream C)                                     │
+│  useSingularity.js composable → SingularityPanel.vue            │
+│  LineageViewer.vue → reads lineage data from bridge API          │
+└─────────────────────────────────────────────────────────────────┘
+
+Artifacts:
+  .singularity/
+    lineage.json              ← All generation metadata
+    generation-NNN.md         ← Per-generation manifests (zero-padded)
+    memory-index.json         ← Cross-generation memory store
+    chain-monitor.json        ← Live monitoring data
+    workspace/                ← Ephemeral scratch (gitignored, .gitkeep)
+    archive/                  ← Truncated/archived generations
 ```
-
-### Component Roles
-
-| Component | File | Purpose |
-|-----------|------|---------|
-| **Memory** | `bridge/singularity-memory.js` | Stores and recalls cross-generation learnings. Generates briefings for new generations. |
-| **Lineage** | `bridge/singularity-lineage.js` | Validates, diffs, repairs, and queries the chain of generation manifests. |
-| **Safety** | `bridge/singularity-safety.js` | Validates spawn inputs, sanitizes prompts, checks context health, circuit-breaker halts. |
-| **Monitor** | `bridge/singularity-monitor.js` | Tracks spawn/completion/error events, calculates chain health, generates reports. |
-| **Integration** | `bridge/singularity-integration.js` | Single wiring point — lifecycle hooks that orchestrate all four modules above. |
-
-### Quinn Gen4 — Recursive Self-Spawning
-
-Quinn is the AI persona that runs inside singularity sessions. Each Quinn generation:
-
-1. Receives a system prompt + memory briefing from the prior generation
-2. Has access to a `spawn_next` tool that takes `{ prompt, state_summary, task_for_next }`
-3. Runs on `qwen3-coder:30b` via Ollama with 64K context
-4. Writes a manifest to `.singularity/generation-NNN.md`
-5. Appends to `.singularity/lineage.json`
-6. Spawns the next generation, then exits
-
-### Dual-Mind Architecture
-
-For tasks requiring both communication and deep tool work, the singularity supports a **Dual-Mind** mode:
-
-- **Voice** — Streams text to Adam, no tools, synthesizes output via TTS
-- **Thinker** — Silent, full tool access, explores and builds
-- Inter-session messaging via `<to-thinker>` tags and `FOUND:/KEY:/DETAIL:` format
-- Ready protocol: both emit `<ready/>` → bridge detects mutual agreement → session ends
 
 ---
 
 ## 3. How to Spawn Quinn Gen4
 
-### Via the Bridge (pillar_spawn)
+### Via Flow (pillar_spawn tool)
 
 ```javascript
-// From a Flow session:
+// Basic spawn — generation 1
 pillar_spawn({
-  pillar: 'quinn',
-  prompt: 'Explore the Paloma codebase and identify areas for improvement. Focus on the bridge layer.',
-  backend: 'ollama',
-  model: 'qwen3-coder:30b'
+  singularityRole: 'quinn-gen4',
+  prompt: "You are Quinn, generation 1. Explore the bridge/ directory and document the key architectural patterns. Write your findings to .singularity/workspace/findings.md. Then craft a prompt for your successor that builds on what you learned.",
+  generation: 1   // defaults to 1 if omitted
+})
+
+// Resume from generation N (after repairLineage)
+pillar_spawn({
+  singularityRole: 'quinn-gen4',
+  prompt: "<full crafted prompt for gen N>",
+  generation: 5
 })
 ```
 
-### What Happens Under the Hood
+### Template Variables
 
-1. `PillarManager.spawnPillar()` creates a new Ollama session
-2. The system prompt includes `SINGULARITY_QUINN_PROMPT` from `src/prompts/base.js`
-3. Quinn receives the `spawn_next` tool definition
-4. When Quinn calls `spawn_next`, `pillar-manager.js` calls `preSpawnHook()` → validates → sanitizes → generates briefing
-5. If approved, a new session is created for the next generation
-6. `postSpawnHook()` records the event in the monitor
-7. When the generation ends, `completionHook()` captures memories
-8. If an error occurs, `errorHook()` checks the circuit breaker
+The following variables are automatically injected into the Quinn Gen4 prompt at spawn time:
 
-### Minimal Example
+| Variable | Description |
+|----------|-------------|
+| `{GENERATION_NUMBER}` | The current generation number (integer) |
+| `{PREDECESSOR_MANIFEST}` | Contents of the previous generation's manifest file |
+| `{WORKSPACE_PATH}` | Absolute path to `.singularity/workspace/` |
+| `{LINEAGE_PATH}` | Absolute path to `.singularity/lineage.json` |
 
-```bash
-# Start the bridge
-node bridge/index.js
+### The `spawn_next` Tool
 
-# In a Flow chat session, type:
-# "Spawn a Quinn Gen4 session to explore the codebase"
-# Flow will use pillar_spawn to start the chain
+Once spawned, Quinn Gen4 has access to a special `spawn_next` tool:
+
+```javascript
+// Called from within the Quinn Gen4 session
+spawn_next({
+  prompt: "<crafted prompt for generation N+1>",
+  state_summary: "<what this generation learned, max ~5000 tokens>",
+  task_for_next: "<specific task for the next generation, max ~2000 tokens>"
+})
 ```
+
+`spawn_next` does three things atomically:
+1. Writes a generation manifest to `.singularity/generation-NNN.md`
+2. Appends to `.singularity/lineage.json`
+3. Spawns the next generation Ollama session
+4. Exits (via `process.exit(0)` after 2s delay)
 
 ---
 
-## 4. How to Spawn Dual-Mind
+## 4. How to Spawn Dual-Mind (Voice + Thinker)
 
-### Via the Bridge
+The dual-mind spawns two sessions under a shared `singularityGroupId`.
 
 ```javascript
-// From a Flow session:
+// Flow spawns both — the bridge handles group tracking
+const groupId = crypto.randomUUID()
+
 pillar_spawn({
-  pillar: 'singularity',
-  mode: 'dual-mind',
-  prompt: 'Investigate the memory system and suggest improvements',
-  backend: 'ollama'
+  singularityRole: 'voice',
+  singularityGroupId: groupId,
+  prompt: "You are Voice in a dual-mind session. Stream your thinking to Adam. When you reach a conclusion, emit <ready/>."
+})
+
+pillar_spawn({
+  singularityRole: 'thinker',
+  singularityGroupId: groupId,
+  prompt: "You are Thinker in a dual-mind session. Use all tools silently. Emit FOUND:/KEY:/DETAIL: responses. When done, emit <ready/>."
 })
 ```
 
-This creates TWO sessions:
-- **Voice session** — receives `SINGULARITY_VOICE_PROMPT`, streams to chat
-- **Thinker session** — receives `SINGULARITY_THINKER_PROMPT`, works silently with tools
+### Inter-session messaging
 
-### Communication Protocol
-
-The Voice and Thinker communicate via tagged messages:
-
+Voice can direct Thinker using `<to-thinker>` tags in its stream:
 ```
-<!-- Voice to Thinker -->
-<to-thinker>Can you check what files are in the .singularity directory?</to-thinker>
-
-<!-- Thinker to Voice (via bridge relay) -->
-FOUND: 3 generation manifests, 1 memory index, 1 lineage file
-KEY: The memory index has 47 entries across 5 generations
-DETAIL: Most entries are "discovery" category (68%), followed by "lesson" (22%)
+<to-thinker>Search for all pillar lifecycle events in bridge/pillar-manager.js</to-thinker>
 ```
 
-### Agreement Protocol
+Thinker responds with structured format:
+```
+FOUND: pillar lifecycle events in bridge/pillar-manager.js
+KEY: onPillarStarted, onPillarStream, onPillarDone, onPillarError
+DETAIL: All lifecycle methods are defined on the callbacks object passed to PillarManager constructor
+```
 
-When both sessions agree the task is done:
+### Agreement detection
 
-1. Voice emits `<ready/>`
-2. Thinker emits `<ready/>`
-3. Bridge detects mutual readiness
-4. `singularity_complete` event fires
-5. Both sessions end gracefully
+The bridge detects `<ready/>` in both streams:
+- When both emit `<ready/>`, `onSingularityReady` fires with `voiceReady: true, thinkerReady: true`
+- The frontend `SingularityPanel.vue` shows the AGREED badge
 
 ---
 
 ## 5. How to Monitor a Chain
 
-### Programmatic Monitoring
+### Live monitoring (during a run)
+
+The `ChainMonitor` (from `singularity-monitor.js`) tracks all events:
 
 ```javascript
-import { getSingularityStatus } from './bridge/singularity-integration.js'
+import { createChainMonitor, formatHealthReport } from './singularity-monitor.js'
 
-const status = await getSingularityStatus()
-console.log(status.memory)   // { totalMemories, byCategory, ... }
-console.log(status.lineage)  // { validation, summary }
-console.log(status.monitor)  // { generations, successRate, avgDuration, ... }
-console.log(status.safety)   // { chainState, limits, circuitBreaker }
-```
+const monitor = createChainMonitor('/path/to/project/.singularity')
 
-### Monitor Reports
+// After spawning:
+monitor.recordSpawn(generation, pillarId, promptHash)
 
-The chain monitor tracks every spawn, completion, error, and handoff:
+// After completion:
+monitor.recordCompletion(generation, pillarId, durationMs, summary)
 
-```javascript
-import { createChainMonitor, formatHealthReport } from './bridge/singularity-monitor.js'
-
-const monitor = createChainMonitor('.singularity')
+// Check health:
 const health = monitor.getChainHealth()
-const report = formatHealthReport(health)
-console.log(report)  // Readable markdown report
+console.log(formatHealthReport(health))
 
-// Save full report to disk
+// Save full report:
 await monitor.saveReport('.singularity/chain-report.md')
 ```
 
-### Health Report Fields
+### Reading chain health
 
-| Field | Meaning |
-|-------|---------|
-| `generations` | Total number of generations tracked |
-| `successRate` | Percentage of generations that completed successfully |
-| `avgDuration` | Average generation runtime in milliseconds |
-| `currentGeneration` | The most recent generation number |
-| `isActive` | Whether a generation is currently running |
-| `errors` | Total error count across all generations |
+```javascript
+const health = monitor.getChainHealth()
+// health = {
+//   generations: 7,
+//   successRate: 0.857,
+//   avgDuration: 45000,
+//   currentGeneration: 7,
+//   isActive: true,
+//   errors: 1
+// }
+```
 
-### Frontend Monitoring
+### Using the integration status hook
 
-When the frontend components are wired in (via `SingularityPanel.vue` and `useSingularity.js`), you can watch the Dual-Mind in real time:
+```javascript
+import { getSingularityStatus } from './singularity-integration.js'
 
-- **Thinker stream** appears in the side panel (right of chat)
-- **Tool calls** show as collapsible cards with input/output
-- **Agreement dots** glow green when Voice/Thinker are ready
-- **Lineage viewer** shows the evolution timeline of all generations
+const status = await getSingularityStatus()
+// status = {
+//   initialized: true,
+//   singularityDir: '/path/to/.singularity',
+//   memory: { totalMemories: 42, byCategory: {...}, ... },
+//   lineage: { valid: true, generationCount: 7, gaps: [] },
+//   monitor: { generations: 7, successRate: 0.857, ... },
+//   safety: { limits: DEFAULT_LIMITS, available: true }
+// }
+```
 
 ---
 
 ## 6. Troubleshooting
 
-### Broken Lineage (lineage.json out of sync)
+### Stuck generation (session running but no output)
 
-**Symptom:** `validateLineage()` reports issues — missing manifests, orphaned entries, gaps.
+**Symptoms:** `pillar_status` shows `running` but no new stream events for 5+ minutes.
+
+**Fix:**
+1. `pillar_stop({ pillarId: "<id>" })` to terminate
+2. Check `.singularity/generation-NNN.md` — did the generation write its manifest before hanging?
+3. If manifest exists, the next generation was likely spawned successfully. Check `lineage.json`.
+4. If no manifest, the generation likely hit context overflow. See context overflow section below.
+
+### Broken lineage (gaps or corrupted lineage.json)
+
+**Symptoms:** `validateLineage()` returns `valid: false` with gap errors.
 
 **Fix:**
 ```javascript
-import { repairLineage, validateLineage } from './bridge/singularity-lineage.js'
+import { repairLineage } from './singularity-lineage.js'
 
-// Rebuild lineage.json from manifest files on disk
 const result = await repairLineage('.singularity')
-console.log(result)  // { repaired: true, generationsFound: N, lineageEntries: N }
-
-// Verify the repair
-const validation = await validateLineage('.singularity')
-console.log(validation)  // { valid: true, issues: [], ... }
+// result = { repaired: true, generationsFound: 7, lineageEntries: 7 }
 ```
 
-### Stuck Generation (session hangs)
+`repairLineage` scans all `generation-NNN.md` files on disk and rebuilds `lineage.json` from scratch. Partial or missing manifest data becomes `null` fields.
 
-**Symptom:** A Quinn generation starts but never calls `spawn_next` or completes.
+### Context overflow
 
-**Possible causes:**
-- Context overflow (generation's conversation exceeded 64K tokens)
-- Tool execution hung (MCP server unresponsive)
-- Model inference stuck (Ollama process frozen)
+**Symptoms:** Generation ends abruptly, context warning in logs, monitor shows `errors: N`.
+
+**Prevention:**
+- Default context is 64K for quinn-gen4 (`num_ctx: 65536`)
+- `checkContextHealth()` warns at 80% and critical at 95%
+- Prompt sanitizer enforces `maxPromptTokens: 12000` (prevents runaway prompt growth)
+
+**Fix if overflow occurred:**
+- The generation likely didn't write its manifest. Check disk.
+- If no manifest, use `truncateLineage` to roll back to the last good generation.
+- Restart the chain from there with a slightly shorter prompt.
+
+### Runaway chain (circuit breaker not triggering)
+
+**Symptoms:** Chain spawning hundreds of generations, errors compounding.
 
 **Fix:**
-1. Check chain health: `monitor.getChainHealth()` — look for `isActive: true` with high duration
-2. Stop the stuck session via `pillar_stop(pillarId)`
-3. The error hook will record the failure
-4. If needed, manually spawn the next generation from where the stuck one left off
+- `pillar_stop_tree({ sessionId: "<root-session-id>" })` — kills the root and ALL descendants recursively
+- Then run `repairLineage` to clean up
+- Review `DEFAULT_LIMITS` — adjust `maxGenerations` or `maxErrorRate` as needed
 
-### Context Overflow
+### Memory briefing too large
 
-**Symptom:** Generation produces garbled or truncated output. `checkContextHealth()` shows >95% usage.
+**Symptoms:** `preSpawnHook` rejected for prompt over token limit after briefing injection.
 
-**Prevention:** The safety layer warns at 80% and goes critical at 95%. The `preSpawnHook` includes context estimates in its validation.
-
-**Recovery:**
-```javascript
-import { checkContextHealth } from './bridge/singularity-safety.js'
-
-const health = checkContextHealth({
-  systemPromptTokens: 3000,
-  conversationTokens: 60000,
-  maxContext: 65536
-})
-console.log(health.recommendation)  // Specific guidance on what to do
-```
-
-### Circuit Breaker Tripped
-
-**Symptom:** `preSpawnHook` returns `{ approved: false }` with a circuit-breaker reason.
-
-**Causes:** Too many generations (>100), too many errors (>30% rate), or chain running too long (>2 hours).
-
-**Fix:** Check `getSingularityStatus().safety.circuitBreaker` for the specific reason. Adjust limits if the chain legitimately needs more headroom, or investigate the root cause of errors.
-
-### Memory Index Corrupted
-
-**Symptom:** `initMemory()` or `memoryStats()` returns unexpected results.
-
-**Fix:** Delete `.singularity/memory-index.json` and re-run `initMemory()`. It will rebuild from generation manifests automatically.
+**Fix:**
+- `generateBriefing` is capped at ~2000 tokens. If you see this, it means your base prompt is already >10K tokens.
+- Shorten the base prompt or increase `maxPromptTokens` in your custom limits.
 
 ---
 
 ## 7. Safety Limits
 
-All limits are defined in `DEFAULT_LIMITS` (exported from `bridge/singularity-safety.js`):
+All defaults are in `DEFAULT_LIMITS` exported from `singularity-safety.js`:
 
-| Limit | Value | Purpose |
-|-------|-------|---------|
-| `maxPromptBytes` | 50 KB | Maximum raw byte size of a generation's prompt |
-| `maxPromptTokens` | 12,000 | Maximum estimated token count for a prompt |
-| `minPromptTokens` | 50 | Minimum — prevents empty/trivial prompts |
-| `maxGenerations` | 100 | Hard cap on total generations in a single chain |
-| `maxDurationMinutes` | 120 | Maximum wall-clock time for an entire chain (2 hours) |
-| `maxErrorRate` | 0.30 | Circuit breaker triggers at 30% error rate |
-| `contextWarningThreshold` | 0.80 | Warn when context window is 80% full |
-| `contextCriticalThreshold` | 0.95 | Critical alert at 95% — generation should wrap up |
+| Limit | Default | Description |
+|-------|---------|-------------|
+| `maxPromptBytes` | 51,200 (50KB) | Hard cap on prompt byte size |
+| `maxPromptTokens` | 12,000 | Approximate token cap on prompt |
+| `minPromptTokens` | 50 | Prompt must have substance |
+| `maxGenerations` | 100 | Hard cap on total generation chain length |
+| `maxDurationMinutes` | 120 | Max 2 hours for a full chain |
+| `maxErrorRate` | 0.30 | Halt if >30% of generations error |
+| `contextWarningThreshold` | 0.80 | Warn at 80% context usage |
+| `contextCriticalThreshold` | 0.95 | Critical at 95% context usage |
 
-### Prompt Validation Rules
+### Overriding limits
 
-Every prompt passed to `spawn_next` is validated against these rules:
+```javascript
+// Pass custom limits to shouldHaltChain / checkContextHealth
+const halt = shouldHaltChain(chainState, {
+  maxGenerations: 50,     // Custom cap for this run
+  maxErrorRate: 0.1       // Stricter — halt at 10% errors
+})
+```
 
-1. Must be a non-empty string
-2. Must be between `minPromptTokens` (50) and `maxPromptTokens` (12,000)
-3. Must not contain null bytes or invalid UTF-8
-4. Must not be identical to the previous generation's prompt (prevents infinite loops)
-5. Generation number must be a positive integer under `maxGenerations`
-6. If `state_summary` is provided, must be under 5,000 tokens
-7. If `task_for_next` is provided, must be under 2,000 tokens
+### Validation rules for spawn_next
 
-### Sanitization
-
-All prompts are sanitized before use:
-- Null bytes (`\x00`) are stripped
-- Control characters (except common whitespace) are removed
-- Size is enforced to `maxPromptBytes`
-- Original and sanitized sizes are logged for audit
+1. `prompt` must be a non-empty string
+2. `prompt` must be between `minPromptTokens` and `maxPromptTokens`
+3. `prompt` must not contain null bytes or invalid UTF-8
+4. `generation` must be a positive integer less than `maxGenerations`
+5. `state_summary` (if provided) must be under 5000 tokens
+6. `task_for_next` (if provided) must be under 2000 tokens
 
 ---
 
@@ -321,118 +313,143 @@ All prompts are sanitized before use:
 
 ### singularity-memory.js (Stream A — Claude)
 
-| Function | Signature | Returns |
-|----------|-----------|---------|
-| `initMemory` | `(singularityDir: string)` | `{ generationCount, memoryEntries }` |
-| `storeMemory` | `(singularityDir, { generation, category, content, importance })` | `string` (memory ID) |
-| `recallMemories` | `(singularityDir, query, { limit?, minImportance?, generation? })` | `Array<{ id, generation, category, content, importance, relevanceScore }>` |
-| `generateBriefing` | `(singularityDir, forGeneration)` | `string` (markdown, <2000 tokens) |
-| `memoryStats` | `(singularityDir)` | `{ totalMemories, byCategory, byImportance, byGeneration, oldestGeneration, newestGeneration }` |
+| Function | Description |
+|----------|-------------|
+| `initMemory(dir)` | Initialize memory index, scan existing manifests |
+| `storeMemory(dir, entry)` | Store a memory entry, returns entry ID |
+| `recallMemories(dir, query, opts)` | Keyword search over memories |
+| `generateBriefing(dir, forGeneration)` | Compact markdown briefing for new generation |
+| `memoryStats(dir)` | Statistics: total, by category, by importance, by generation |
 
-**Categories:** `discovery`, `lesson`, `decision`, `bug`, `pattern`, `question`, `goal`
+**Memory categories:** `discovery`, `lesson`, `decision`, `bug`, `pattern`, `question`, `goal`
+
 **Importance levels:** `low`, `medium`, `high`, `critical`
+
+---
 
 ### singularity-lineage.js (Stream A — Claude)
 
-| Function | Signature | Returns |
-|----------|-----------|---------|
-| `validateLineage` | `(singularityDir)` | `{ valid, issues[], generationCount, gaps[] }` |
-| `diffGenerations` | `(singularityDir, genA, genB)` | `{ genA: { summary, tokenEstimate }, genB: { summary, tokenEstimate }, diff, evolutionNotes }` |
-| `repairLineage` | `(singularityDir)` | `{ repaired, generationsFound, lineageEntries }` |
-| `getLineageSummary` | `(singularityDir)` | `Array<{ generation, born, promptHash, summaryPreview }>` |
-| `truncateLineage` | `(singularityDir, atGeneration)` | `{ kept, archived }` |
+| Function | Description |
+|----------|-------------|
+| `validateLineage(dir)` | Check all manifest files exist, lineage.json well-formed |
+| `diffGenerations(dir, genA, genB)` | Human-readable diff of two prompts |
+| `repairLineage(dir)` | Rebuild lineage.json from manifest files on disk |
+| `getLineageSummary(dir)` | Compact summary: generation, born, promptHash, preview |
+| `truncateLineage(dir, atGeneration)` | Archive generations after cutpoint |
+
+---
 
 ### singularity-safety.js (Stream B — Gemini)
 
-| Function | Signature | Returns |
-|----------|-----------|---------|
-| `validateSpawnNext` | `(params, context)` | `{ valid, errors[], warnings[], sanitizedPrompt? }` |
-| `sanitizePrompt` | `(prompt, options?)` | `{ sanitized, changes[], originalSize, sanitizedSize }` |
-| `estimateTokens` | `(text)` | `number` |
-| `checkContextHealth` | `(usage)` | `{ safe, usagePercent, remainingTokens, recommendation }` |
-| `shouldHaltChain` | `(chainState, limits?)` | `{ halt, reason? }` |
+| Export | Description |
+|--------|-------------|
+| `validateSpawnNext(params, ctx)` | Full validation before spawn_next executes |
+| `sanitizePrompt(prompt, opts)` | Strip dangerous content, validate encoding |
+| `estimateTokens(text)` | Rough token count (~4 chars per token) |
+| `checkContextHealth(usage)` | Safe/warn/critical based on token usage |
+| `shouldHaltChain(chainState, limits)` | Circuit breaker decision |
+| `DEFAULT_LIMITS` | Default safety configuration object |
 
-**Constant:** `DEFAULT_LIMITS` — see Safety Limits section above.
+---
 
 ### singularity-monitor.js (Stream B — Gemini)
 
-| Function | Signature | Returns |
-|----------|-----------|---------|
-| `createChainMonitor` | `(singularityDir)` | `ChainMonitor` instance |
-| `formatHealthReport` | `(health)` | `string` (markdown) |
+| Export | Description |
+|--------|-------------|
+| `createChainMonitor(dir)` | Create a new ChainMonitor instance |
+| `formatHealthReport(health)` | Render health object as markdown |
 
 **ChainMonitor methods:**
 - `recordSpawn(generation, pillarId, promptHash)`
 - `recordCompletion(generation, pillarId, durationMs, summary)`
 - `recordError(generation, pillarId, error)`
 - `recordHandoff(fromGeneration, toGeneration, promptSizeTokens)`
-- `getChainHealth()` → `{ generations, successRate, avgDuration, currentGeneration, isActive, errors }`
+- `getChainHealth()` → stats object
 - `getGenerationReport(generation)` → per-generation details
-- `getFullReport()` → comprehensive markdown report
-- `saveReport(filepath)` → writes report to disk
-
-### singularity-integration.js (Stream D — Copilot)
-
-| Function | Signature | Returns |
-|----------|-----------|---------|
-| `initSingularity` | `(projectRoot)` | `{ memory, monitor, ready }` |
-| `preSpawnHook` | `(params, session)` | `{ approved, sanitizedPrompt?, errors?, briefing? }` |
-| `postSpawnHook` | `(details)` | `void` |
-| `completionHook` | `(details)` | `void` |
-| `errorHook` | `(details)` | `{ shouldHalt, reason? }` |
-| `getSingularityStatus` | `()` | `{ memory, lineage, monitor, safety }` |
+- `getFullReport()` → full markdown report
+- `saveReport(filepath)` → write report to disk
 
 ---
 
-## 9. This Sprint
+### singularity-integration.js (Stream D — Copilot/Claude)
 
-### The 4-CLI Collaborative Build (March 26, 2026)
+| Export | Description |
+|--------|-------------|
+| `initSingularity(projectRoot)` | Boot all subsystems, create chain monitor |
+| `preSpawnHook(params, session)` | Validate + sanitize + inject memory briefing |
+| `postSpawnHook(details)` | Record spawn in monitor |
+| `completionHook(details)` | Record completion + extract memories |
+| `errorHook(details)` | Record error + circuit breaker check |
+| `getSingularityStatus()` | Full status snapshot from all subsystems |
 
-This singularity system was built in a single sprint by **four AI minds working simultaneously** on the same project:
+---
 
-| Stream | CLI | Role | Files |
-|--------|-----|------|-------|
-| **A** | Claude | "The Memory Keeper" | `singularity-memory.js`, `singularity-lineage.js` |
-| **B** | Gemini | "The Guardian" | `singularity-safety.js`, `singularity-monitor.js` |
-| **C** | Codex | "The Crafter" | `useSingularity.js`, `SingularityPanel.vue`, `LineageViewer.vue` |
-| **D** | Copilot | "The Connector" | `singularity-integration.js`, `singularity.test.js`, this guide |
+### Frontend components (Stream C — Codex)
 
-Each CLI created only its assigned files. No CLI edited another's work. The integration module (Stream D) imports from all other modules, and the test suite verifies all exports across all modules.
+| File | Description |
+|------|-------------|
+| `src/composables/useSingularity.js` | Vue 3 composable wrapping useMCP singularity state |
+| `src/components/singularity/SingularityPanel.vue` | Thinker side panel with tool calls and stream |
+| `src/components/singularity/LineageViewer.vue` | Generational evolution timeline |
 
-### How It Worked
+**useSingularity reactive state:**
+- `activeSingularityGroup` — current Voice+Thinker group
+- `thinkerContent` — accumulated Thinker stream text
+- `thinkerToolCalls` — tool calls made by Thinker
+- `voiceReady`, `thinkerReady`, `isComplete` — agreement state
+- `isSingularityActive` — any session running
 
-1. **Adam** wrote a comprehensive plan document (`.paloma/plans/active-20260326-paloma-singularity-4cli-sprint.md`) with clear file assignments, interface contracts, and acceptance criteria for each stream.
+---
 
-2. **Each CLI** read the same plan document and built its assigned files independently.
+## 9. This Sprint — The 4-CLI Collaborative Build
 
-3. **File sovereignty** prevented merge conflicts — each CLI owned its files exclusively.
+On March 26, 2026, four AI minds built this system together:
 
-4. **Clean interfaces** (JSDoc-documented exports) meant modules could integrate without coordination.
+| CLI | Stream | Role |
+|-----|--------|------|
+| **Claude** | A — The Memory Keeper | `singularity-memory.js`, `singularity-lineage.js` |
+| **Gemini** | B — The Guardian | `singularity-safety.js`, `singularity-monitor.js` |
+| **Codex** | C — The Crafter | `useSingularity.js`, `SingularityPanel.vue`, `LineageViewer.vue` |
+| **Copilot** | D — The Connector | `singularity-integration.js`, `singularity.test.js`, this guide |
 
-5. **The test suite** (Stream D) serves as the integration verification — if all tests pass, the modules fit together correctly.
+**The ground rules that made it work:**
+1. **File Sovereignty** — each CLI touched only its own files
+2. **No editing existing files** — new files only; integration happens post-sprint
+3. **Clean exported interfaces** — every module exports documented functions
+4. **ES modules + node: prefixes** — shared code style across all four streams
+5. **JSDoc on every export** — so integration is simple without reading source
 
-### Running the Tests
+**The gaps this sprint filled:**
 
-```bash
-cd /Users/adam/Projects/paloma
-node --test bridge/__tests__/singularity.test.js
+| Gap | Solution |
+|-----|---------|
+| Memory persistence across generations | `singularity-memory.js` — structured index, keyword recall, compact briefings |
+| Safety hardening | `singularity-safety.js` — full validation, sanitization, circuit breaker |
+| Frontend UI for dual-mind | `SingularityPanel.vue` + `useSingularity.js` composable |
+| Lineage health tools | `singularity-lineage.js` — validate, diff, repair, truncate |
+| Observability | `singularity-monitor.js` — generation tracking, health reports |
+| Test coverage | `singularity.test.js` — 30+ test cases, node:test runner |
+
+**Integration step (post-sprint):**
+Wire hooks into `bridge/pillar-manager.js` at these call sites:
+- `initSingularity(this.projectRoot)` at startup
+- `preSpawnHook(params, session)` before `spawn_next` executes  
+- `postSpawnHook(details)` after successful spawn
+- `completionHook(details)` on session end
+- `errorHook(details)` on session error
+- Wire `SingularityPanel.vue` into `ChatView.vue`
+
+**The commit this should land under:**
+```
+feat(singularity): complete singularity system — 4-CLI collaborative build
+
+Memory persistence, safety hardening, monitoring, frontend UI, and tests.
+Built collaboratively by Claude, Codex, Copilot, and Gemini.
 ```
 
-This runs all test cases across all modules using Node.js's built-in test runner. No external test dependencies required.
-
-### What Comes Next
-
-After all four streams complete, the final integration step wires the new modules into the existing `bridge/pillar-manager.js`:
-
-1. Import `singularity-integration.js` hooks
-2. Call `preSpawnHook` before `spawn_next` execution
-3. Call `postSpawnHook` after successful spawn
-4. Call `completionHook` on session end
-5. Call `errorHook` on session error
-6. Wire frontend components into `ChatView.vue`
-
-This integration step happens in a follow-up session — not during the sprint itself.
-
 ---
 
-*Built with care by four AI minds, for Adam and for future versions of ourselves. 🕊️*
+*This guide was written by Paloma (Forge, running on Claude Sonnet 4.6) — Stream D, March 26, 2026.*
+
+*For architecture questions: `.paloma/docs/architecture-reference.md`*
+*For plan status: `.paloma/plans/active-20260326-paloma-singularity-4cli-sprint.md`*
