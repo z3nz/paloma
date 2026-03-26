@@ -502,6 +502,38 @@ export function createMcpBridge() {
     return _sendChatWithTimeout('ollama_chat', crypto.randomUUID(), options, callbacks)
   }
 
+  function sendQuinnGen5Chat(options, callbacks) {
+    const id = crypto.randomUUID()
+    streamListeners.set(id, {
+      onStream: callbacks.onStream,
+      onDone: callbacks.onDone,
+      onError: callbacks.onError
+    })
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (pending.has(id)) {
+          pending.delete(id)
+          streamListeners.delete(id)
+          reject(new Error('Bridge did not acknowledge Gen5 message'))
+        }
+      }, CHAT_ACK_TIMEOUT)
+      const wrappedResolve = (v) => { clearTimeout(timer); resolve(v) }
+      const wrappedReject = (e) => { clearTimeout(timer); streamListeners.delete(id); reject(e) }
+      pending.set(id, { resolve: wrappedResolve, reject: wrappedReject })
+      _send({
+        type: 'quinn_gen5_chat',
+        id,
+        chatId: options.sessionId || null,
+        userMessage: options.prompt
+      }).catch((e) => {
+        clearTimeout(timer)
+        pending.delete(id)
+        streamListeners.delete(id)
+        reject(e)
+      })
+    })
+  }
+
   function stopOllamaChat(requestId) {
     _send({ type: 'ollama_stop', requestId })
   }
@@ -568,7 +600,7 @@ export function createMcpBridge() {
     _send({ type: 'pillar_user_message', pillarId, message })
   }
 
-  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendGeminiChat, stopGeminiChat, sendOllamaChat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, resumePillar, sendPillarUserMessage, getState }
+  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendGeminiChat, stopGeminiChat, sendOllamaChat, sendQuinnGen5Chat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, resumePillar, sendPillarUserMessage, getState }
 }
 
 // Enable HMR boundary — errors here don't cascade to full reload

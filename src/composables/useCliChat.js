@@ -1,4 +1,4 @@
-import { isDirectCliModel, isCodexModel, isCopilotModel, isGeminiModel, isOllamaModel, getCliModelName, getCodexModelName, getCopilotModelName, getGeminiModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamCopilotChat, streamGeminiChat, streamOllamaChat } from '../services/claudeStream.js'
+import { isDirectCliModel, isCodexModel, isCopilotModel, isGeminiModel, isOllamaModel, isQuinnGen5Model, getCliModelName, getCodexModelName, getCopilotModelName, getGeminiModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamCopilotChat, streamGeminiChat, streamOllamaChat } from '../services/claudeStream.js'
 import { useMCP } from './useMCP.js'
 import { useProject } from './useProject.js'
 import { useToolExecution } from './useToolExecution.js'
@@ -18,13 +18,14 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     sessionState = activeState()
   }
 
-  const { sendClaudeChat, sendCodexChat, sendCopilotChat, sendGeminiChat, sendOllamaChat } = useMCP()
+  const { sendClaudeChat, sendCodexChat, sendCopilotChat, sendGeminiChat, sendOllamaChat, sendQuinnGen5Chat } = useMCP()
   const { addActivity, markActivityDone, toolActivity } = useToolExecution(sessionState)
 
   const useCodex = isCodexModel(model)
   const useCopilot = isCopilotModel(model)
   const useGemini = isGeminiModel(model)
   const useOllama = isOllamaModel(model)
+  const isGen5 = isQuinnGen5Model(model)
   const session = await db.sessions.get(sessionId)
 
   // If backend changed from previous session, start fresh
@@ -67,14 +68,14 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     prompt,
     model: resolvedModel,
     sessionId: existingCliSession,
-    systemPrompt: existingCliSession || isDirectCliModel(model)
+    systemPrompt: (existingCliSession || isDirectCliModel(model) || isGen5)
       ? undefined
       : useOllama
         ? buildOllamaSystemPrompt(phase, projectInstructions)
         : buildSystemPrompt(phase, projectInstructions, activePlans, [], roots),
     cwd: useProject().projectRoot.value || undefined,
     enableTools: useOllama ? true : undefined,
-    freshContext: useOllama ? true : undefined
+    freshContext: (useOllama && !isGen5) ? true : undefined
   }
 
   let accumulatedContent = ''
@@ -82,7 +83,9 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   const toolUseToActivity = new Map()  // toolUseId → activityId
   const toolUseMeta = new Map()        // toolUseId → { name, args }
 
-  const sendFn = useOllama
+  const sendFn = isGen5
+    ? (opts, cbs) => sendQuinnGen5Chat(opts, cbs)
+    : useOllama
     ? (opts, cbs) => sendOllamaChat(opts, cbs)
     : useGemini
       ? (opts, cbs) => sendGeminiChat(opts, cbs)

@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
-import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT, SINGULARITY_QUINN_PROMPT, SINGULARITY_WORKER_PROMPT, SINGULARITY_FRESH_PROMPT } from '../src/prompts/base.js'
+import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT, SINGULARITY_QUINN_PROMPT, SINGULARITY_QUINN_GEN3_PROMPT, SINGULARITY_WORKER_PROMPT, SINGULARITY_FRESH_PROMPT, SINGULARITY_GEN5_PROMPT } from '../src/prompts/base.js'
 import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
 import { Persistence } from './persistence.js'
 import { createLogger } from './logger.js'
@@ -306,10 +306,10 @@ export class PillarManager {
       _fallbackAttempted: false,    // prevents infinite retry loops
       // Singularity dual-mind fields
       singularityGroupId: null,     // UUID linking Voice ↔ Thinker
-      singularityRole: singularityRole || null,  // 'voice' | 'thinker' | 'quinn' | 'quinn-gen4' | 'quinn-fresh' | 'worker' | null
-      generation: generation || (singularityRole === 'quinn-gen4' ? 1 : null),  // Gen4 generation number
+      singularityRole: singularityRole || null,  // 'voice' | 'thinker' | 'quinn' | 'quinn-gen4' | 'quinn-legacy' | 'quinn-fresh' | 'worker' | null
+      generation: generation || (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' ? 1 : null),  // Gen4 generation number
       workerSpawnCount: 0,
-      numCtx: (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-fresh' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536 : (singularityRole === 'worker' ? 32768 : null),
+      numCtx: (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'quinn-fresh' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536 : (singularityRole === 'quinn-gen5' ? 40960 : (singularityRole === 'worker' ? 32768 : null)),
       _voiceStreamBuffer: '',       // Voice only: buffer for <to-thinker> tag detection
       _receivedThinkerMessages: 0   // Voice only: count of [THINKER] messages received
     }
@@ -859,9 +859,9 @@ export class PillarManager {
    * Build Ollama-format tool list from MCP servers + pillar tools.
    */
   _buildOllamaTools(session) {
-    // Quinn (Gen3) gets ONLY spawn_worker — that's the entire game
-    if (session.singularityRole === 'quinn') {
-      console.log(`[pillar] Built 1 Ollama tool for Quinn session (spawn_worker only)`)
+    // Quinn (Legacy / Gen3) gets ONLY spawn_worker — that's the entire game
+    if (session.singularityRole === 'quinn-legacy') {
+      console.log(`[pillar] Built 1 Ollama tool for Quinn Legacy session (spawn_worker only)`)
       return [{
         type: 'function',
         function: {
@@ -899,8 +899,8 @@ export class PillarManager {
       }
     }
 
-    // Quinn-Gen4 gets ALL MCP tools PLUS spawn_next — the recursive singularity
-    if (session.singularityRole === 'quinn-gen4') {
+    // Quinn (Gen4) gets ALL MCP tools PLUS spawn_next — the recursive singularity
+    if (session.singularityRole === 'quinn' || session.singularityRole === 'quinn-gen4') {
       tools.push({
         type: 'function',
         function: {
@@ -917,7 +917,7 @@ export class PillarManager {
           }
         }
       })
-      console.log(`[pillar] Built ${tools.length} Ollama tools for quinn-gen4 session (all MCP + spawn_next)`)
+      console.log(`[pillar] Built ${tools.length} Ollama tools for ${session.singularityRole} session (all MCP + spawn_next)`)
       return tools
     }
 
@@ -2690,8 +2690,8 @@ This is informational — Adam is communicating directly with the pillar. Decide
 
   _defaultModel(pillar, backend = 'gemini', { recursive, depth, singularityRole } = {}) {
     if (backend === 'ollama') {
-      // Quinn (Gen3 or Gen4): the conscious mind — uses the best available model (30B)
-      if (singularityRole === 'quinn' || singularityRole === 'quinn-gen4') return this._pickBestOllamaModel(false)
+      // Quinn (Legacy or Gen4): the conscious mind — uses the best available model (30B)
+      if (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy') return this._pickBestOllamaModel(false)
       // Worker: Quinn's hands — uses the small fast model (7B)
       if (singularityRole === 'worker') return this._pickBestOllamaModel(true)
       // Singularity: both Voice and Thinker use the best available model
@@ -2746,7 +2746,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
     // Singularity sessions (Voice/Thinker/Quinn/Worker) get a drastically stripped system prompt:
     // OLLAMA_INSTRUCTIONS + project instructions + role prompt ONLY.
     // No plans, no roots, no phase instructions — saves ~25K tokens of context budget.
-    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'worker' || singularityRole === 'quinn-fresh'
+    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'worker' || singularityRole === 'quinn-fresh' || singularityRole === 'quinn-gen5'
 
     // Claude CLI reads CLAUDE.md automatically, which includes instructions.md and roots
     // via @ references. Including them again here would duplicate ~43KB of content and
@@ -2805,23 +2805,25 @@ This is informational — Adam is communicating directly with the pillar. Decide
     }
 
     // Inject singularity prompts based on role
-    if (singularityRole === 'quinn-gen4') {
+    if (singularityRole === 'quinn' || singularityRole === 'quinn-gen4') {
       // Gen4: inject the recursive prompt with template variables replaced
       const gen = generation || 1
       const genPadded = String(gen - 1).padStart(3, '0')
       const predecessorManifest = gen > 1
         ? `.singularity/generation-${genPadded}.md`
         : 'none \u2014 you are the first'
-      let gen4Prompt = SINGULARITY_GEN4_PROMPT
+      let gen4Prompt = SINGULARITY_QUINN_PROMPT
         .replace(/\{GENERATION_NUMBER\}/g, String(gen))
         .replace(/\{PREDECESSOR_MANIFEST\}/g, predecessorManifest)
         .replace(/\{WORKSPACE_PATH\}/g, '.singularity/workspace/')
         .replace(/\{LINEAGE_PATH\}/g, '.singularity/lineage.json')
       prompt += '\n\n' + gen4Prompt
-    } else if (singularityRole === 'quinn') {
-      prompt += '\n\n' + SINGULARITY_QUINN_PROMPT
+    } else if (singularityRole === 'quinn-legacy') {
+      prompt += '\n\n' + SINGULARITY_QUINN_GEN3_PROMPT
     } else if (singularityRole === 'quinn-fresh') {
       prompt += '\n\n' + SINGULARITY_FRESH_PROMPT
+    } else if (singularityRole === 'quinn-gen5') {
+      prompt += '\n\n' + SINGULARITY_GEN5_PROMPT
     } else if (singularityRole === 'worker') {
       prompt += '\n\n' + SINGULARITY_WORKER_PROMPT
     } else if (singularityRole === 'voice') {

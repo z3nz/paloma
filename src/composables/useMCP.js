@@ -873,6 +873,11 @@ export function useMCP() {
     return bridge.sendOllamaChat(options, callbacks)
   }
 
+  function sendQuinnGen5Chat(options, callbacks) {
+    if (!bridge || !connected.value) throw new Error('Bridge not connected')
+    return bridge.sendQuinnGen5Chat(options, callbacks)
+  }
+
   function stopOllamaChat(requestId) {
     if (bridge) bridge.stopOllamaChat(requestId)
   }
@@ -1118,6 +1123,7 @@ export function useMCP() {
     sendGeminiChat,
     stopGeminiChat,
     sendOllamaChat,
+    sendQuinnGen5Chat,
     stopOllamaChat,
     respondToAskUser,
     approveCliTool,

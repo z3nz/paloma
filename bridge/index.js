@@ -84,6 +84,8 @@ import { GeminiCliManager } from './gemini-cli.js'
 import { OllamaManager } from './ollama-manager.js'
 import { McpProxyServer } from './mcp-proxy-server.js'
 import { PillarManager, OLLAMA_ALLOWED_SERVERS } from './pillar-manager.js'
+import { Gen5ChatManager } from './gen5-chat-manager.js'
+import { SINGULARITY_GEN5_PROMPT } from '../src/prompts/base.js'
 import { BackendHealth } from './backend-health.js'
 import { UsageTracker } from './usage-tracker.js'
 import { EmailWatcher } from './email-watcher.js'
@@ -99,6 +101,7 @@ const codexManager = new CodexCliManager()
 const copilotManager = new CopilotCliManager()
 const geminiManager = new GeminiCliManager()
 const ollamaManager = new OllamaManager()
+const gen5ChatManager = new Gen5ChatManager(process.cwd())
 let mcpProxy = null
 let pillarManager = null
 let emailWatcher = null
@@ -1294,6 +1297,144 @@ async function main() {
           )
           cliRequestToWs.set(requestId, ws)
           ws.send(JSON.stringify({ type: 'ollama_ack', id: msg.id, requestId, sessionId }))
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
+        }
+      } else if (msg.type === 'quinn_gen5_chat') {
+        // Quinn Gen5: fresh instance per message, chat document continuity
+        try {
+          const chatId = msg.chatId || gen5ChatManager.createChatId()
+          const chatDoc = await gen5ChatManager.loadChatDoc(chatId)
+          const injectedPrompt = gen5ChatManager.buildInjectedMessage(chatDoc, msg.userMessage || msg.prompt || '')
+
+          // Build system prompt via pillarManager
+          const systemPrompt = pillarManager
+            ? await pillarManager._buildSystemPrompt('flow', { singularityRole: 'quinn-gen5', backend: 'ollama' })
+            : SINGULARITY_GEN5_PROMPT
+
+          // Build tools (same as ollama_chat)
+          const ollamaTools = []
+          const toolRouteMap = new Map()
+          const mcpServers = manager.getTools()
+          for (const [serverName, serverInfo] of Object.entries(mcpServers)) {
+            if (serverInfo.status !== 'connected') continue
+            if (!OLLAMA_ALLOWED_SERVERS.has(serverName)) continue
+            for (const tool of serverInfo.tools) {
+              const ollamaName = `${serverName}__${tool.name}`
+              ollamaTools.push({
+                type: 'function',
+                function: {
+                  name: ollamaName,
+                  description: tool.description || '',
+                  parameters: tool.inputSchema || { type: 'object', properties: {} }
+                }
+              })
+              toolRouteMap.set(ollamaName, { server: serverName, tool: tool.name })
+            }
+          }
+
+          let toolRounds = 0
+          const MAX_TOOL_ROUNDS = 20
+          let fullResponseText = ''
+
+          const handleGen5Event = async (event) => {
+            if (ws.readyState !== 1) return
+            const safeSend = (data) => {
+              try { if (ws.readyState === 1) ws.send(JSON.stringify(data)) } catch (_) {}
+            }
+
+            if (event.type === 'ollama_tool_call') {
+              toolRounds++
+              if (toolRounds > MAX_TOOL_ROUNDS) {
+                log.warn(`[gen5] Hit max tool rounds (${MAX_TOOL_ROUNDS}), stopping`)
+                safeSend({ type: 'ollama_done', id: msg.id, requestId: event.requestId, sessionId: chatId, exitCode: 0 })
+                cliRequestToWs.delete(event.requestId)
+                return
+              }
+
+              const results = []
+              for (const tc of event.toolCalls) {
+                const toolId = randomUUID()
+                const toolName = tc.function?.name || ''
+                let toolArgs = tc.function?.arguments || {}
+                if (typeof toolArgs === 'string') {
+                  try { toolArgs = JSON.parse(toolArgs) } catch (e) { toolArgs = {} }
+                }
+                const route = toolRouteMap.get(toolName)
+
+                safeSend({
+                  type: 'ollama_stream', id: msg.id,
+                  event: { type: 'tool_use', tool_use: { id: toolId, name: toolName, input: toolArgs } }
+                })
+
+                if (!route) {
+                  const errContent = `Error: Unknown tool "${toolName}"`
+                  results.push({ content: errContent })
+                  safeSend({ type: 'ollama_stream', id: msg.id, event: { type: 'tool_result', toolUseId: toolId, content: errContent } })
+                  continue
+                }
+
+                try {
+                  log.debug(`[gen5] Executing tool ${route.server}/${route.tool}`)
+                  const result = await manager.callTool(route.server, route.tool, toolArgs)
+                  const content = result.content?.map(c => c.text || JSON.stringify(c)).join('\n') || ''
+                  results.push({ content })
+                  safeSend({ type: 'ollama_stream', id: msg.id, event: { type: 'tool_result', toolUseId: toolId, content } })
+                } catch (e) {
+                  log.error(`[gen5] Tool error (${toolName}): ${e.message}`)
+                  const errContent = `Error executing ${toolName}: ${e.message}`
+                  results.push({ content: errContent })
+                  safeSend({ type: 'ollama_stream', id: msg.id, event: { type: 'tool_result', toolUseId: toolId, content: errContent } })
+                }
+              }
+
+              try {
+                ollamaManager.continueWithToolResults(
+                  event.requestId, event.sessionId,
+                  event.assistantMessage, results,
+                  handleGen5Event
+                )
+              } catch (e) {
+                log.error(`[gen5] Failed to continue tool loop: ${e.message}`)
+                safeSend({ type: 'ollama_error', id: msg.id, error: e.message })
+              }
+              return
+            }
+
+            // Accumulate response text from stream events
+            if (event.type === 'ollama_stream' && event.event?.delta?.text) {
+              fullResponseText += event.event.delta.text
+            }
+
+            // Override sessionId with chatId in all events sent to frontend
+            const outEvent = { ...event, id: msg.id }
+            if (event.type === 'ollama_done' || event.type === 'ollama_error') {
+              outEvent.sessionId = chatId
+              cliRequestToWs.delete(event.requestId)
+              // Update chat document asynchronously on completion
+              if (event.type === 'ollama_done' && fullResponseText) {
+                gen5ChatManager.updateChatDoc(chatId, msg.userMessage || msg.prompt || '', fullResponseText)
+                  .catch(err => log.error(`[gen5] Chat doc update failed: ${err.message}`))
+              }
+            }
+            try { ws.send(JSON.stringify(outEvent)) } catch (_) {}
+          }
+
+          const { requestId, sessionId } = ollamaManager.chat(
+            {
+              prompt: injectedPrompt,
+              model: 'qwen3:32b',
+              sessionId: null,  // always fresh — no session reuse
+              systemPrompt,
+              cwd: process.cwd(),
+              tools: ollamaTools,
+              numCtx: 40960
+            },
+            handleGen5Event
+          )
+          cliRequestToWs.set(requestId, ws)
+          ws.send(JSON.stringify({ type: 'ollama_ack', id: msg.id, requestId, sessionId: chatId }))
+          log.info(`[gen5] Chat ${chatId.slice(0, 8)} — new instance spawned (request: ${requestId.slice(0, 8)})`)
         } catch (e) {
           ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
         }
