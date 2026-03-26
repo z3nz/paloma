@@ -21,6 +21,7 @@
       v-if="hasUsageData"
       @click="showUsageModal = true"
       class="flex items-center gap-3 text-xs text-text-secondary hover:text-text-primary px-2 py-1 rounded hover:bg-bg-hover transition-colors"
+      aria-label="View usage and token details"
     >
       <span>{{ formatCost(sessionCost) }}</span>
       <span class="text-text-muted">|</span>
@@ -64,6 +65,8 @@
         <button
           @click="toggleProjectDropdown"
           class="flex items-center gap-1.5 text-text-secondary hover:text-text-primary text-sm px-2 py-1 rounded hover:bg-bg-hover transition-colors"
+          aria-label="Switch project"
+          :aria-expanded="showProjectDropdown"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
@@ -100,6 +103,7 @@
             <button
               @click="handleOpenProject"
               class="w-full px-3 py-2 text-sm text-text-secondary hover:bg-bg-hover hover:text-text-primary text-left transition-colors"
+              aria-label="Open project from filesystem"
             >
               Open from filesystem...
             </button>
@@ -107,6 +111,7 @@
               v-if="currentProjectName"
               @click="handleDetachProject"
               class="w-full px-3 py-2 text-sm text-text-muted hover:bg-bg-hover hover:text-danger text-left transition-colors"
+              aria-label="Detach current project"
             >
               Detach project
             </button>

@@ -79,6 +79,7 @@
       <button 
         @click="$emit('switch-view', 'chat')"
         class="mt-4 text-xs font-medium text-accent hover:underline"
+        aria-label="Back to chat list"
       >
         Back to Chats
       </button>
