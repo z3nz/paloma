@@ -191,6 +191,11 @@ export class OllamaManager {
       let fullAssistantText = ''
       let collectedToolCalls = []
 
+      // Buffer state for suppressing tool calls in the stream
+      let streamBuffer = ''
+      let isStreamingSuppressed = false
+      const MAX_SUPPRESSION_BUFFER = 2000 // Buffer up to 2KB before giving up on suppression
+
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -213,6 +218,32 @@ export class OllamaManager {
               text = text.replace(/<\|im_start\|>|<\|im_end\|>|<\|endoftext\|>/g, '')
               if (!text) continue // skip empty after stripping
               fullAssistantText += text
+
+              // --- Suppression Logic ---
+              // If we are at the very start of the response and it looks like a tool call
+              // or thinking block (starts with {, <, or <think>), buffer it instead of streaming it immediately.
+              if (fullAssistantText.length < MAX_SUPPRESSION_BUFFER && !isStreamingSuppressed) {
+                const trimmedFull = fullAssistantText.trim()
+                if (trimmedFull.startsWith('{') || trimmedFull.startsWith('<')) {
+                  streamBuffer += text
+                  continue // Hold back from streaming
+                }
+              }
+
+              // If we reach here, we've decided this isn't a tool call (or we passed the buffer limit)
+              // Flush any buffered text first
+              if (streamBuffer) {
+                onEvent({
+                  type: 'ollama_stream',
+                  requestId,
+                  event: {
+                    type: 'content_block_delta',
+                    delta: { type: 'text_delta', text: streamBuffer }
+                  }
+                })
+                streamBuffer = ''
+                isStreamingSuppressed = true // Stop buffering for the rest of this turn
+              }
 
               onEvent({
                 type: 'ollama_stream',
@@ -252,14 +283,28 @@ export class OllamaManager {
             let text = chunk.message.content.replace(/<\|im_start\|>|<\|im_end\|>|<\|endoftext\|>/g, '')
             if (text) {
               fullAssistantText += text
-              onEvent({
-                type: 'ollama_stream',
-                requestId,
-                event: {
-                  type: 'content_block_delta',
-                  delta: { type: 'text_delta', text }
+              
+              // Only stream if not currently suppressed (waiting for end-of-turn tool detection)
+              const trimmedFull = fullAssistantText.trim()
+              const isPotentialToolOrThink = trimmedFull.startsWith('{') || trimmedFull.startsWith('<')
+              
+              if (!isPotentialToolOrThink || fullAssistantText.length >= MAX_SUPPRESSION_BUFFER || isStreamingSuppressed) {
+                if (streamBuffer) {
+                  text = streamBuffer + text
+                  streamBuffer = ''
+                  isStreamingSuppressed = true
                 }
-              })
+                onEvent({
+                  type: 'ollama_stream',
+                  requestId,
+                  event: {
+                    type: 'content_block_delta',
+                    delta: { type: 'text_delta', text }
+                  }
+                })
+              } else {
+                streamBuffer += text
+              }
             }
           }
           if (chunk.message?.tool_calls?.length > 0) {
@@ -274,6 +319,26 @@ export class OllamaManager {
         } catch {
           // skip
         }
+      }
+
+      // Final decision on the stream buffer:
+      // If we finished the turn and detected tool calls (native or text-parsed),
+      // we NEVER flush the streamBuffer. This effectively "ghosts" the JSON/XML call from the UI.
+      // We also ghost <think> blocks if they are at the start of the response.
+      // If no tool calls were detected, we must flush it so Adam sees the text.
+      const nativeToolsFound = collectedToolCalls.length > 0
+      const textToolsFound = !nativeToolsFound && session.tools?.length > 0 && this._parseToolCallsFromText(fullAssistantText, session.tools).length > 0
+      const isThinkBlock = fullAssistantText.trim().startsWith('<think>')
+
+      if (!nativeToolsFound && !textToolsFound && !isThinkBlock && streamBuffer) {
+        onEvent({
+          type: 'ollama_stream',
+          requestId,
+          event: {
+            type: 'content_block_delta',
+            delta: { type: 'text_delta', text: streamBuffer }
+          }
+        })
       }
 
       // If tool calls were returned via native API, emit them for bridge to execute

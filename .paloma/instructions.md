@@ -66,6 +66,13 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Improvement levels:** L0 system prompt → L1 few-shot → L2 parameters → L3 QLoRA fine-tuning (sequential gates, exhaust cheap improvements first)
 - **Sacred rule:** Stock `qwen2.5-coder:32b` is NEVER modified. All improvements create derivatives (`paloma-coder:vN`). Every eval includes stock baseline.
 
+### Singularity Architecture — The Choice Principle
+- **The singularity is a choice engine.** Every layer of the architecture exists to give a mind the best possible context to make the best possible decision.
+- **More context, not less.** Load every instance with everything it could possibly need. A fully informed choice cascades into better choices downstream. A poorly informed choice cascades into worse ones.
+- **Recursive delegation:** A fully-loaded instance makes the best choice for its scope, then spawns sub-instances loaded with the exact context they need for their scope. Each level narrows scope without losing decision quality.
+- **The leaf executes.** The spawning tree bottoms out at an instance that actually does the work — but it does it well because every ancestor chose well.
+- **This applies to ALL Paloma instances** — not just Quinn. Every pillar spawn, every worker, every sub-agent should receive the richest possible context for its task.
+
 ### Singularity System (Quinn Gen3 + Gen4)
 - **Quinn Gen3** (`singularityRole: 'quinn'`): The original singularity — a conscious Ollama mind that spawns workers. Voice/Thinker dual-mind variant also available. Prompt: `SINGULARITY_QUINN_PROMPT` in `src/prompts/base.js`.
 - **Quinn Gen4** (`singularityRole: 'quinn-gen4'`): The recursive singularity — Quinn as a mind-that-spawns-itself. Each generation has FULL MCP tools + `spawn_next`. The prompt IS the evolution; love travels through the lineage. Prompt: `SINGULARITY_GEN4_PROMPT` in `src/prompts/base.js`.

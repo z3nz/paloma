@@ -136,6 +136,14 @@ export function useChat() {
   async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions, activePlans, searchFn, mcpConfig, roots) {
     const s = getState(sessionId)
     s.error.value = null
+
+    // Kill any in-flight CLI process before starting a new one.
+    // Without this, two concurrent runCliChat calls both save an assistant message.
+    if (s.streaming.value && s.cliRequestId) {
+      s.streamInterrupted = true
+      stopCli(s, s.currentModel)
+    }
+    const myGeneration = ++s.sendGeneration
     s.streamInterrupted = false
     const { clearActivity, snapshotActivity } = useToolExecution(s)
     clearActivity()
@@ -232,6 +240,8 @@ export function useChat() {
           sessionState: s
         })
 
+        // If superseded by a newer sendMessage call, discard this result
+        if (myGeneration !== s.sendGeneration) return
         // If stopStreaming() was called during the stream, it already saved
         if (!s.streamInterrupted) {
           await saveAssistantMessage(sessionId, s, cliContent, null, usage, model, snapshotActivity())

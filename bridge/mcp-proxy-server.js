@@ -174,7 +174,7 @@ export class McpProxyServer {
             recursive: { type: 'boolean', description: 'Enable recursive mode — sub-instance MUST delegate to further sub-instances. Default: false.' },
             depth: { type: 'number', description: 'Current recursion depth (set automatically by parent). Default: 0.' },
             parentPillarId: { type: 'string', description: 'Parent pillar ID (set automatically for recursive spawns).' },
-            singularityRole: { type: 'string', enum: ['quinn', 'quinn-gen4', 'worker', 'voice', 'thinker'], description: 'Singularity role for the session. Use quinn-gen4 for recursive self-prompting Quinn.' },
+            singularityRole: { type: 'string', enum: ['quinn', 'quinn-gen4', 'quinn-legacy', 'worker', 'voice', 'thinker'], description: 'Singularity role for the session. Use quinn (Gen4) or quinn-gen4 for recursive self-prompting Quinn. Use quinn-legacy for Gen3 (spawn_worker only).' },
             generation: { type: 'number', description: 'Generation number for quinn-gen4 sessions. Default: 1.' }
           },
           required: ['pillar', 'prompt']

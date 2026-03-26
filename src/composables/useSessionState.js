@@ -24,7 +24,8 @@ function createSessionState() {
     pendingChanges: ref([]),
     cliRequestId: null,
     currentModel: null,
-    streamInterrupted: false
+    streamInterrupted: false,
+    sendGeneration: 0
   }
 }
 
