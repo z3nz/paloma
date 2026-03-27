@@ -110,6 +110,8 @@ const { projectRoot, refreshActivePlans } = useProject()
 
 const SELF_IMPROVE_PROMPT = `I want you to enter SELF-IMPROVE mode. Analyze Paloma's codebase, identify improvements worth making, and execute them autonomously. Spawn pillars as needed — Scout to find opportunities, Chart to plan them, Forge to build them. Keep going until you run out of context. Prioritize: code quality, UX polish, performance, and developer experience. Be bold. Be thorough. Make Paloma better.`
 
+const HOLY_TRINITY_PROMPT = `I want you to use the Holy Trinity (Gen6 singularity). Spawn it with: pillar_spawn({ pillar: 'forge', singularityRole: 'holy-trinity', prompt: '<task>', backend: 'ollama' }). Two 7B Arms will independently plan the task while a 32B Mind loads, then the Mind reads both plans, synthesizes the best approach, and executes with full tools. Ask me what task to give the Trinity.`
+
 const PLAN_STATUS = {
   active:    { icon: '●', color: 'text-green-400' },
   paused:    { icon: '⏸', color: 'text-yellow-400' },
@@ -144,6 +146,8 @@ const staticCommands = [
   // Power
   { id: 'power:self-improve', category: 'power', label: 'Self-Improve', description: 'Autonomous codebase improvement', icon: '⚡', badgeColor: 'text-yellow-400', execute: () => { emit('inject-message', SELF_IMPROVE_PROMPT); emit('close') } },
   { id: 'power:refresh-plans', category: 'power', label: 'Refresh Plans', description: 'Reload active plans from disk', icon: '↻', execute: async () => { await refreshActivePlans(callMcpTool); await loadPlans(); } },
+  // Singularity
+  { id: 'singularity:holy-trinity', category: 'singularity', label: 'Holy Trinity (Gen6)', description: 'Mind + 2 Arms — parallel planning, synthesized execution', icon: '☊', badgeColor: 'text-rose-400', execute: () => { emit('inject-message', HOLY_TRINITY_PROMPT); emit('close') } },
 ]
 
 // --- Plan parsing ---
@@ -299,22 +303,23 @@ const sessionItems = computed(() => {
 
 // Category filter visibility
 const CATEGORY_VISIBILITY = {
-  all:      { navigation: true, plans: true, pillars: true, power: true, sessions: true, 'plan-actions': true },
-  commands: { navigation: true, plans: false, pillars: true, power: true, sessions: false, 'plan-actions': false },
-  plans:    { navigation: false, plans: true, pillars: false, power: false, sessions: false, 'plan-actions': false },
-  pillars:  { navigation: false, plans: false, pillars: true, power: false, sessions: false, 'plan-actions': false },
+  all:      { navigation: true, plans: true, pillars: true, singularity: true, power: true, sessions: true, 'plan-actions': true },
+  commands: { navigation: true, plans: false, pillars: true, singularity: true, power: true, sessions: false, 'plan-actions': false },
+  plans:    { navigation: false, plans: true, pillars: false, singularity: false, power: false, sessions: false, 'plan-actions': false },
+  pillars:  { navigation: false, plans: false, pillars: true, singularity: true, power: false, sessions: false, 'plan-actions': false },
 }
 
 const CATEGORY_LABELS = {
   navigation: 'Navigation',
   plans: 'Plans',
   pillars: 'Pillars',
+  singularity: 'Singularity',
   power: 'Power',
   sessions: 'Sessions',
   'plan-actions': 'Actions',
 }
 
-const CATEGORY_ORDER = ['navigation', 'plans', 'pillars', 'power', 'sessions', 'plan-actions']
+const CATEGORY_ORDER = ['navigation', 'plans', 'pillars', 'singularity', 'power', 'sessions', 'plan-actions']
 
 const visibleCategories = computed(() => {
   const { filter, text } = parsedQuery.value
@@ -333,6 +338,7 @@ const visibleCategories = computed(() => {
     navigation: staticCommands.filter(c => c.category === 'navigation'),
     plans: planItems.value,
     pillars: staticCommands.filter(c => c.category === 'pillars'),
+    singularity: staticCommands.filter(c => c.category === 'singularity'),
     power: staticCommands.filter(c => c.category === 'power'),
     sessions: sessionItems.value,
   }
