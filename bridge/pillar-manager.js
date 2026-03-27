@@ -113,7 +113,8 @@ export class PillarManager {
           const { timeoutTimer, _pendingChildCompletions, ...serializable } = session
           return [id, serializable]
         }),
-        flowChatBuffers: this.flowChatBuffers ? Array.from(this.flowChatBuffers.entries()) : []
+        flowChatBuffers: this.flowChatBuffers ? Array.from(this.flowChatBuffers.entries()) : [],
+        pendingNotifications: this._pendingNotifications || []
       }
       await this.persistence.save(data)
     } catch (err) {
@@ -168,6 +169,12 @@ export class PillarManager {
         for (const [id, buf] of data.flowChatBuffers) {
           this.flowChatBuffers.set(id, buf)
         }
+      }
+
+      // Restore pending notifications (callbacks that weren't delivered before restart)
+      if (Array.isArray(data.pendingNotifications) && data.pendingNotifications.length > 0) {
+        this._pendingNotifications = data.pendingNotifications.slice(-50) // respect MAX_NOTIFICATION_QUEUE
+        log.info(`Restored ${this._pendingNotifications.length} pending notifications from bridge-state.json`)
       }
     } catch (err) {
       log.error('Failed to load bridge state:', err)
