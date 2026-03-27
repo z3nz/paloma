@@ -13,9 +13,9 @@
 |-------|--------|-------|
 | Scout | ✅ done | Research in `.paloma/docs/scout-gen6-holy-trinity-research-20260326.md` |
 | Chart | ✅ done | This document |
-| Forge | ⬜ ready | WU-1 and WU-2 parallelizable |
-| Polish | ⬜ waiting | |
-| Ship | ⬜ waiting | |
+| Forge | ✅ done | All 9 bridge changes + frontend + TrinityStatus component |
+| Polish | ✅ done | Build passes, 31/31 tests pass, module loads verified |
+| Ship | ✅ done | Committed and pushed to main |
 
 ---
 
