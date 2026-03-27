@@ -18,13 +18,16 @@ let _instance = null
 export function useSingularity() {
   if (_instance) return _instance
 
-  const { singularityGroups, singularityThinkerContent, trinityGroups } = useMCP()
+  const { singularityGroups, singularityThinkerContent, trinityGroups, arkGroups } = useMCP()
 
   // The group ID of the most recently activated singularity session
   const activeGroupId = ref(null)
 
   // The group ID of the most recently activated Holy Trinity session
   const activeTrinityGroupId = ref(null)
+
+  // The group ID of the most recently activated Gen7 Ark session
+  const activeArkGroupId = ref(null)
 
   // Thinker tool calls for the active group — populated via handleSingularityEvent
   const thinkerToolCalls = ref([])
@@ -61,6 +64,14 @@ export function useSingularity() {
   /** True when a trinity session is active. */
   const isTrinityActive = computed(() => !!activeTrinityGroupId.value && trinityGroups.has(activeTrinityGroupId.value))
 
+  /** The current Gen7 Ark group, or null if none active. */
+  const activeArkGroup = computed(() =>
+    activeArkGroupId.value ? arkGroups.get(activeArkGroupId.value) ?? null : null
+  )
+
+  /** True when an Ark session is active. */
+  const isArkActive = computed(() => !!activeArkGroupId.value && arkGroups.has(activeArkGroupId.value))
+
   // ── Event handler ───────────────────────────────────────────────────────────
 
   /**
@@ -89,6 +100,11 @@ export function useSingularity() {
       case 'trinity_created':
         // Holy Trinity group started — tracked in trinityGroups (useMCP handles storage)
         activeTrinityGroupId.value = event.groupId
+        break
+
+      case 'ark_created':
+        // Gen7 Ark group started — tracked in arkGroups (useMCP handles storage)
+        activeArkGroupId.value = event.groupId
         break
 
       case 'pillar_tool_call':
@@ -192,6 +208,11 @@ export function useSingularity() {
     activeTrinityGroupId,
     isTrinityActive,
     trinityGroups,
+    // Gen7 Ark state
+    activeArkGroup,
+    activeArkGroupId,
+    isArkActive,
+    arkGroups,
     // Internal (exposed for components that need the raw ID)
     activeGroupId,
     // Methods

@@ -1,4 +1,4 @@
-import { isDirectCliModel, isCodexModel, isCopilotModel, isGeminiModel, isOllamaModel, isQuinnGen5Model, isHolyTrinityModel, getCliModelName, getCodexModelName, getCopilotModelName, getGeminiModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamCopilotChat, streamGeminiChat, streamOllamaChat } from '../services/claudeStream.js'
+import { isDirectCliModel, isCodexModel, isCopilotModel, isGeminiModel, isOllamaModel, isQuinnGen5Model, isHolyTrinityModel, isArkModel, getCliModelName, getCodexModelName, getCopilotModelName, getGeminiModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamCopilotChat, streamGeminiChat, streamOllamaChat } from '../services/claudeStream.js'
 import { useMCP } from './useMCP.js'
 import { useProject } from './useProject.js'
 import { useToolExecution } from './useToolExecution.js'
@@ -18,7 +18,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     sessionState = activeState()
   }
 
-  const { sendClaudeChat, sendCodexChat, sendCopilotChat, sendGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat } = useMCP()
+  const { sendClaudeChat, sendCodexChat, sendCopilotChat, sendGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat } = useMCP()
   const { addActivity, markActivityDone, toolActivity } = useToolExecution(sessionState)
 
   const useCodex = isCodexModel(model)
@@ -27,6 +27,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   const useOllama = isOllamaModel(model)
   const isGen5 = isQuinnGen5Model(model)
   const isGen6 = isHolyTrinityModel(model)
+  const isGen7 = isArkModel(model)
   const session = await db.sessions.get(sessionId)
 
   // If backend changed from previous session, start fresh
@@ -69,15 +70,15 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     prompt,
     model: resolvedModel,
     sessionId: existingCliSession,
-    chatDbSessionId: isGen6 ? sessionId : undefined,
-    systemPrompt: (existingCliSession || isDirectCliModel(model) || isGen5 || isGen6)
+    chatDbSessionId: (isGen6 || isGen7) ? sessionId : undefined,
+    systemPrompt: (existingCliSession || isDirectCliModel(model) || isGen5 || isGen6 || isGen7)
       ? undefined
       : useOllama
         ? buildOllamaSystemPrompt(phase, projectInstructions)
         : buildSystemPrompt(phase, projectInstructions, activePlans, [], roots),
     cwd: useProject().projectRoot.value || undefined,
     enableTools: useOllama ? true : undefined,
-    freshContext: (useOllama && !isGen5 && !isGen6) ? true : undefined
+    freshContext: (useOllama && !isGen5 && !isGen6 && !isGen7) ? true : undefined
   }
 
   let accumulatedContent = ''
@@ -85,7 +86,9 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   const toolUseToActivity = new Map()  // toolUseId → activityId
   const toolUseMeta = new Map()        // toolUseId → { name, args }
 
-  const sendFn = isGen6
+  const sendFn = isGen7
+    ? (opts, cbs) => sendArkChat(opts, cbs)
+    : isGen6
     ? (opts, cbs) => sendHolyTrinityChat(opts, cbs)
     : isGen5
     ? (opts, cbs) => sendQuinnGen5Chat(opts, cbs)

@@ -63,6 +63,9 @@ const singularityThinkerContent = reactive(new Map()) // groupId → accumulated
 // Holy Trinity state
 const trinityGroups = reactive(new Map()) // groupId → { trinityId, mindPillarId, arm1PillarId, arm2PillarId }
 
+// Gen7 Ark state
+const arkGroups = reactive(new Map()) // groupId → { arkId, head1PillarId, head2PillarId, head3PillarId, chatDbSessionId }
+
 const connected = ref(false)
 const connectionState = ref('disconnected') // 'disconnected' | 'connecting' | 'connected'
 const servers = ref({})
@@ -444,6 +447,16 @@ export function useMCP() {
           mindPillarId: msg.mindPillarId,
           arm1PillarId: msg.arm1PillarId,
           arm2PillarId: msg.arm2PillarId,
+          chatDbSessionId: msg.chatDbSessionId || null
+        })
+      },
+      onArkCreated(msg) {
+        arkGroups.set(msg.groupId, {
+          groupId: msg.groupId,
+          arkId: msg.arkId,
+          head1PillarId: msg.head1PillarId,
+          head2PillarId: msg.head2PillarId,
+          head3PillarId: msg.head3PillarId,
           chatDbSessionId: msg.chatDbSessionId || null
         })
       },
@@ -896,6 +909,11 @@ export function useMCP() {
     return bridge.sendHolyTrinityChat(options, callbacks)
   }
 
+  function sendArkChat(options, callbacks) {
+    if (!bridge || !connected.value) throw new Error('Bridge not connected')
+    return bridge.sendArkChat(options, callbacks)
+  }
+
   function stopOllamaChat(requestId) {
     if (bridge) bridge.stopOllamaChat(requestId)
   }
@@ -1144,6 +1162,7 @@ export function useMCP() {
     sendOllamaChat,
     sendQuinnGen5Chat,
     sendHolyTrinityChat,
+    sendArkChat,
     stopOllamaChat,
     respondToAskUser,
     approveCliTool,
@@ -1165,7 +1184,8 @@ export function useMCP() {
     pendingAutoResume,
     singularityGroups,
     singularityThinkerContent,
-    trinityGroups
+    trinityGroups,
+    arkGroups
   }
 }
 
