@@ -255,6 +255,7 @@ function closeOpenFences(text) {
 // --- Throttled streaming HTML ---
 const streamingHtmlThrottled = ref('<span class="streaming-cursor"></span>')
 let throttleTimer = null
+let pendingRender = false
 
 function renderAndScroll() {
   const safeContent = closeOpenFences(props.streamingContent)
@@ -264,18 +265,36 @@ function renderAndScroll() {
   }
 }
 
+function scheduleStreamingRender() {
+  if (!throttleTimer) {
+    renderAndScroll()
+    throttleTimer = setTimeout(() => {
+      throttleTimer = null
+      if (pendingRender) {
+        pendingRender = false
+        scheduleStreamingRender()
+      }
+    }, 120)
+    return
+  }
+
+  pendingRender = true
+}
+
 watch(
   () => props.streamingContent,
   (content) => {
     if (!content) {
+      pendingRender = false
+      if (throttleTimer) {
+        clearTimeout(throttleTimer)
+        throttleTimer = null
+      }
       streamingHtmlThrottled.value = '<span class="streaming-cursor"></span>'
       return
     }
-    // Render immediately on first chunk, then throttle subsequent updates
-    if (!throttleTimer) {
-      renderAndScroll()
-      throttleTimer = setTimeout(() => { throttleTimer = null }, 120)
-    }
+
+    scheduleStreamingRender()
   }
 )
 
@@ -294,6 +313,7 @@ watch(
         clearTimeout(throttleTimer)
         throttleTimer = null
       }
+      pendingRender = false
       renderAndScroll()
     }
   }

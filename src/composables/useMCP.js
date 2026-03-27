@@ -443,7 +443,8 @@ export function useMCP() {
           trinityId: msg.trinityId,
           mindPillarId: msg.mindPillarId,
           arm1PillarId: msg.arm1PillarId,
-          arm2PillarId: msg.arm2PillarId
+          arm2PillarId: msg.arm2PillarId,
+          chatDbSessionId: msg.chatDbSessionId || null
         })
       },
       async onPillarFallback(msg) {
@@ -474,17 +475,17 @@ export function useMCP() {
         const status = msg.status || 'idle'
         pillarStatuses.set(msg.pillarId, status)
         const { updateSession } = useSessions()
-        // Clear cliSessionId so we don't try to reattach completed sessions
-        await updateSession(dbSessionId, { cliSessionId: null, pillarStatus: status })
 
-        // Only clean up session mapping for truly terminal states.
-        // 'idle' pillars can still receive follow-up messages via pillar_message,
-        // so we must keep their routing entry alive.
+        // Only clear cliSessionId for terminal states — idle pillars can still
+        // receive follow-up messages and need their session ID for resume
         const isTerminal = status === 'stopped' || status === 'error'
+        const sessionUpdates = { pillarStatus: status }
         if (isTerminal) {
+          sessionUpdates.cliSessionId = null
           pillarSessionMap.delete(msg.pillarId)
           pillarStreamBuffer.delete(msg.pillarId)
         }
+        await updateSession(dbSessionId, sessionUpdates)
 
         // Clean up any lingering tool tracking for this pillar
         const pillarPrefix = `${msg.pillarId}:`
@@ -915,8 +916,9 @@ export function useMCP() {
 
   function sendPillarUserMessage(pillarId, message) {
     if (bridge && connected.value) {
-      bridge.sendPillarUserMessage(pillarId, message)
+      return bridge.sendPillarUserMessage(pillarId, message)
     }
+    return Promise.reject(new Error('Bridge not connected'))
   }
 
   function respondToAskUser(answer) {

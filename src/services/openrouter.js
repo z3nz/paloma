@@ -1,5 +1,64 @@
 const BASE_URL = 'https://openrouter.ai/api/v1'
 
+function parseStreamEvent(rawLine, toolCallAccumulator) {
+  const trimmed = rawLine.trim()
+  if (!trimmed.startsWith('data:') || trimmed === 'data: [DONE]') {
+    return []
+  }
+
+  try {
+    const data = JSON.parse(trimmed.replace(/^data:\s*/, ''))
+    const events = []
+
+    if (data.usage) {
+      events.push({
+        type: 'usage',
+        usage: {
+          promptTokens: data.usage.prompt_tokens,
+          completionTokens: data.usage.completion_tokens,
+          totalTokens: data.usage.total_tokens
+        }
+      })
+    }
+
+    const choice = data.choices?.[0]
+    if (!choice) return events
+
+    const content = choice.delta?.content
+    if (content) {
+      events.push({ type: 'content', text: content })
+    }
+
+    const deltaToolCalls = choice.delta?.tool_calls
+    if (deltaToolCalls) {
+      for (const tc of deltaToolCalls) {
+        const idx = tc.index
+        if (!toolCallAccumulator[idx]) {
+          toolCallAccumulator[idx] = {
+            id: tc.id,
+            type: 'function',
+            function: { name: tc.function?.name || '', arguments: '' }
+          }
+        } else {
+          if (tc.id) toolCallAccumulator[idx].id = tc.id
+          if (tc.function?.name) toolCallAccumulator[idx].function.name = tc.function.name
+        }
+        if (tc.function?.arguments) {
+          toolCallAccumulator[idx].function.arguments += tc.function.arguments
+        }
+      }
+    }
+
+    if (choice.finish_reason === 'tool_calls') {
+      events.push({ type: 'tool_calls', calls: Object.values(toolCallAccumulator) })
+    }
+
+    return events
+  } catch {
+    return []
+  }
+}
+
 export async function validateApiKey(apiKey) {
   try {
     const response = await fetch(`${BASE_URL}/auth/key`, {
@@ -67,56 +126,16 @@ export async function* streamChat(apiKey, model, messages, options = {}) {
     buffer = lines.pop()
 
     for (const line of lines) {
-      const trimmed = line.trim()
-      if (trimmed.startsWith('data: ') && trimmed !== 'data: [DONE]') {
-        try {
-          const data = JSON.parse(trimmed.slice(6))
-
-          if (data.usage) {
-            yield {
-              type: 'usage',
-              usage: {
-                promptTokens: data.usage.prompt_tokens,
-                completionTokens: data.usage.completion_tokens,
-                totalTokens: data.usage.total_tokens
-              }
-            }
-          }
-
-          const choice = data.choices?.[0]
-          if (!choice) continue
-
-          const content = choice.delta?.content
-          if (content) yield { type: 'content', text: content }
-
-          // Accumulate tool call chunks
-          const deltaToolCalls = choice.delta?.tool_calls
-          if (deltaToolCalls) {
-            for (const tc of deltaToolCalls) {
-              const idx = tc.index
-              if (!toolCallAccumulator[idx]) {
-                toolCallAccumulator[idx] = {
-                  id: tc.id,
-                  type: 'function',
-                  function: { name: tc.function?.name || '', arguments: '' }
-                }
-              } else {
-                if (tc.id) toolCallAccumulator[idx].id = tc.id
-                if (tc.function?.name) toolCallAccumulator[idx].function.name = tc.function.name
-              }
-              if (tc.function?.arguments) {
-                toolCallAccumulator[idx].function.arguments += tc.function.arguments
-              }
-            }
-          }
-
-          if (choice.finish_reason === 'tool_calls') {
-            yield { type: 'tool_calls', calls: Object.values(toolCallAccumulator) }
-          }
-        } catch {
-          // skip malformed JSON chunks
-        }
+      for (const event of parseStreamEvent(line, toolCallAccumulator)) {
+        yield event
       }
+    }
+  }
+
+  buffer += decoder.decode()
+  if (buffer.trim()) {
+    for (const event of parseStreamEvent(buffer, toolCallAccumulator)) {
+      yield event
     }
   }
 }

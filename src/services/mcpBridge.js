@@ -302,6 +302,12 @@ export function createMcpBridge() {
           pending.delete(msg.id)
           p.resolve(msg.result)
         }
+      } else if (msg.type === 'pillar_user_message_result' && msg.id) {
+        const p = pending.get(msg.id)
+        if (p) {
+          pending.delete(msg.id)
+          p.resolve({ status: msg.status, message: msg.message, pillarId: msg.pillarId })
+        }
       } else if (msg.type === 'pillar_queued') {
         // Spawn queue: pillar is waiting for a slot. Log for now — future: show in sidebar.
         console.log(`[pillar] ${msg.pillar} queued (position ${msg.queuePosition})`)
@@ -559,6 +565,7 @@ export function createMcpBridge() {
       _send({
         type: 'holy_trinity_chat',
         id,
+        chatDbSessionId: options.chatDbSessionId || null,
         userMessage: options.prompt
       }).catch((e) => {
         clearTimeout(timer)
@@ -632,7 +639,13 @@ export function createMcpBridge() {
   }
 
   function sendPillarUserMessage(pillarId, message) {
-    _send({ type: 'pillar_user_message', pillarId, message })
+    const id = crypto.randomUUID()
+    const promise = _pendingPromise(id, 10000)
+    _send({ type: 'pillar_user_message', id, pillarId, message }).catch((e) => {
+      const p = pending.get(id)
+      if (p) { pending.delete(id); p.reject(e) }
+    })
+    return promise
   }
 
   return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendGeminiChat, stopGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, resumePillar, sendPillarUserMessage, getState }

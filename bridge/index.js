@@ -115,6 +115,8 @@ const cliRequestToWs = new Map()
 const flowChatBuffers = new Map()
 // Holy Trinity: mindPillarId → { ws, msgId } — intercepts pillar_stream for chat UI
 const trinityPillarToChat = new Map()
+// The Ark (Gen7): head1PillarId → { ws, msgId } — intercepts pillar_stream for chat UI
+const arkPillarToChat = new Map()
 
 // Auto-reject stale pending requests and clean up leaked mappings (30s interval)
 const PENDING_TIMEOUT_MS = 5 * 60 * 1000
@@ -713,10 +715,10 @@ async function main() {
       }
     }
 
-    // Holy Trinity interceptor: translate pillar_stream/pillar_done from Mind
+    // Holy Trinity / Ark interceptor: translate pillar_stream/pillar_done from Mind/Head1
     // into ollama_stream/ollama_done for the chat UI
     if ((msg.type === 'pillar_stream' || msg.type === 'pillar_done') && msg.pillarId) {
-      const mapping = trinityPillarToChat.get(msg.pillarId)
+      const mapping = trinityPillarToChat.get(msg.pillarId) || arkPillarToChat.get(msg.pillarId)
       if (mapping && mapping.ws.readyState === 1) {
         try {
           if (msg.type === 'pillar_stream') {
@@ -729,6 +731,7 @@ async function main() {
               type: 'ollama_done', id: mapping.msgId, sessionId: null, exitCode: 0
             }))
             trinityPillarToChat.delete(msg.pillarId)
+            arkPillarToChat.delete(msg.pillarId)
           }
         } catch (_) { /* client disconnected */ }
       }
@@ -1015,16 +1018,24 @@ async function main() {
           pillarManager.setDbSessionId(msg.pillarId, msg.dbSessionId)
         }
       } else if (msg.type === 'pillar_user_message') {
-        // Adam sent a message directly to a pillar session — CC Flow
+        // Adam sent a message directly to a pillar session
         if (pillarManager && msg.pillarId && msg.message) {
           const session = pillarManager.pillars.get(msg.pillarId)
           if (session) {
+            // CC Flow so the orchestrator knows about the user message
             const notification = pillarManager._buildNotificationMessage('adam_cc', session, { userMessage: msg.message })
             pillarManager.notifyFlow(notification, msg.pillarId, {
               notificationType: 'adam_cc',
               pillar: session.pillar,
               pillarId: msg.pillarId
             })
+            // Route message to the actual pillar CLI session (skipUserBroadcast: frontend already saved it)
+            const result = pillarManager.sendMessage({ pillarId: msg.pillarId, message: msg.message, skipUserBroadcast: true })
+            if (msg.id) {
+              ws.send(JSON.stringify({ type: 'pillar_user_message_result', id: msg.id, ...result }))
+            }
+          } else if (msg.id) {
+            ws.send(JSON.stringify({ type: 'pillar_user_message_result', id: msg.id, status: 'error', message: 'Pillar session not found or expired' }))
           }
         }
       } else if (msg.type === 'codex_chat') {
@@ -1464,7 +1475,8 @@ async function main() {
             pillar: 'forge',
             prompt: msg.userMessage || msg.prompt || '',
             backend: 'ollama',
-            singularityRole: 'holy-trinity'
+            singularityRole: 'holy-trinity',
+            _chatDbSessionId: msg.chatDbSessionId || null
           })
           if (!result.pillarId) {
             throw new Error(result.message || 'Failed to spawn Holy Trinity')
@@ -1477,6 +1489,31 @@ async function main() {
             sessionId: result.trinityGroupId || result.pillarId
           }))
           log.info(`[gen6] Holy Trinity spawned — mind: ${result.pillarId.slice(0, 8)}, arms: ${result.arm1PillarId?.slice(0, 8) || 'n/a'} + ${result.arm2PillarId?.slice(0, 8) || 'n/a'}`)
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
+        }
+      } else if (msg.type === 'ark_chat') {
+        // Gen7 The Ark: spawn 3 sovereign heads via PillarManager
+        try {
+          if (!pillarManager) throw new Error('PillarManager not initialized')
+          const result = await pillarManager.spawn({
+            pillar: 'forge',
+            prompt: msg.userMessage || msg.prompt || '',
+            backend: 'ollama',
+            singularityRole: 'ark',
+            _chatDbSessionId: msg.chatDbSessionId || null
+          })
+          if (!result.pillarId) {
+            throw new Error(result.message || 'Failed to spawn The Ark')
+          }
+          // Register Head 1's pillarId → chat message mapping for broadcast interceptor
+          arkPillarToChat.set(result.pillarId, { ws, msgId: msg.id })
+          ws.send(JSON.stringify({
+            type: 'ollama_ack', id: msg.id,
+            requestId: result.pillarId,
+            sessionId: result.arkGroupId || result.pillarId
+          }))
+          log.info(`[gen7] Ark spawned — head1: ${result.pillarId.slice(0, 8)}, head2: ${result.head2PillarId?.slice(0, 8) || 'n/a'}, head3: ${result.head3PillarId?.slice(0, 8) || 'n/a'}`)
         } catch (e) {
           ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
         }

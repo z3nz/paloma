@@ -183,11 +183,35 @@ export function useChat() {
     safeUserMsg.id = userMsgId
     s.messages.value.push(safeUserMsg)
 
-    // CC Flow when Adam messages a pillar session directly
+    // Pillar sessions: route through the bridge, not a new CLI session
     const session = await db.sessions.get(sessionId)
     if (session?.pillarId) {
       const { sendPillarUserMessage } = useMCP()
-      sendPillarUserMessage(session.pillarId, content)
+      try {
+        const result = await sendPillarUserMessage(session.pillarId, content)
+        if (result.status === 'error') {
+          const errorMsg = sanitizeForDB({
+            sessionId, role: 'assistant',
+            content: `Unable to deliver message: ${result.message}`,
+            files: [], timestamp: Date.now()
+          })
+          errorMsg.id = await db.messages.add(errorMsg)
+          s.messages.value.push(errorMsg)
+        } else {
+          // Bridge will stream response via pillar_stream events
+          s.streaming.value = true
+          s.streamingContent.value = ''
+        }
+      } catch (e) {
+        const errorMsg = sanitizeForDB({
+          sessionId, role: 'assistant',
+          content: `Failed to reach pillar: ${e.message}`,
+          files: [], timestamp: Date.now()
+        })
+        errorMsg.id = await db.messages.add(errorMsg)
+        s.messages.value.push(errorMsg)
+      }
+      return null
     }
 
     // Resolve MCP tools

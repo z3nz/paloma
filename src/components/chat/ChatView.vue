@@ -15,7 +15,7 @@
     <div v-if="contextWarning" class="px-4 py-2 bg-warning/10 border-t border-warning/30 text-sm text-warning text-center">
       {{ contextWarning }}
     </div>
-    <TrinityStatus :trinity-groups="trinityGroups" />
+    <TrinityStatus :trinity-groups="sessionTrinityGroups" />
     <PromptBuilder
       :session="session"
       :streaming="streaming"
@@ -97,6 +97,17 @@ const { apiKey } = useSettings()
 const { dirHandle, projectRoot, projectInstructions, activePlans, roots, mcpConfig, refreshActivePlans } = useProject()
 const { search: searchFiles } = useFileIndex()
 const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool, pendingAutoResume, singularityGroups, trinityGroups } = useMCP()
+
+// Filter trinity groups to only those belonging to the current chat session
+const sessionTrinityGroups = computed(() => {
+  const filtered = new Map()
+  for (const [groupId, group] of trinityGroups) {
+    if (group.chatDbSessionId === props.session?.id) {
+      filtered.set(groupId, group)
+    }
+  }
+  return filtered
+})
 
 // Find the active singularity group (v1: show the most recent one)
 const activeSingularityGroupId = computed(() => {

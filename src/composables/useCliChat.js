@@ -69,6 +69,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     prompt,
     model: resolvedModel,
     sessionId: existingCliSession,
+    chatDbSessionId: isGen6 ? sessionId : undefined,
     systemPrompt: (existingCliSession || isDirectCliModel(model) || isGen5 || isGen6)
       ? undefined
       : useOllama
