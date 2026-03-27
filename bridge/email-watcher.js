@@ -470,7 +470,14 @@ export class EmailWatcher {
       `Use email_reply(threadId, body) to respond in the same thread.`,
       `If the email asks a question or needs action, handle it.`,
       `If you need to wait for a follow-up reply, use email_wait(threadId).`,
-      `Set the chat title to something descriptive about this email conversation.`
+      `Set the chat title to something descriptive about this email conversation.`,
+      ``,
+      `COMPLETION RULE (NON-NEGOTIABLE): You MUST send a final email reply when all work is done.`,
+      `- If you spawn sub-pillars (Forge, Scout, Chart, etc.) to handle this task, DO NOT exit until they finish.`,
+      `- Use pillar_status or pillar_read_output to poll spawned pillars until they complete.`,
+      `- Once all spawned pillars are done, send a final email_reply summarizing what was accomplished.`,
+      `- If a pillar fails, report that in your reply — success or failure, the sender must hear back.`,
+      `- A "launching Forge, will follow up" email is an OPENING — it is NOT a completion. Always close the loop.`
     ].join('\n')
 
     const triagePrompt = [
