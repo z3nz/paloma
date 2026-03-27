@@ -69,7 +69,8 @@
             :class="cliId === modelValue ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
           >
             {{ CLI_MODELS.find(m => m.id === cliId)?.name || cliId.replace('ollama:', '') }}
-            <span class="text-xs text-text-muted ml-1">Local</span>
+            <span v-if="CLI_MODELS.find(m => m.id === cliId)?.holyTrinity" class="text-xs text-purple-400 ml-1">Singularity</span>
+            <span v-else class="text-xs text-text-muted ml-1">Local</span>
           </div>
         </template>
         <!-- Codex CLI models -->

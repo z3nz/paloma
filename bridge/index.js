@@ -108,15 +108,15 @@ let emailWatcher = null
 
 // Pending ask_user requests: id → { resolve, createdAt }
 const pendingAskUser = new Map()
-// Pending tool confirmation requests: id → { resolve, createdAt }
-const pendingToolConfirm = new Map()
 // CLI requestId → originating WebSocket (for targeted sends)
 const cliRequestToWs = new Map()
 // Buffer direct Flow chat output for reconnect resilience
 // sessionId → { output: string, requestId, msgId, streaming: boolean }
 const flowChatBuffers = new Map()
+// Holy Trinity: mindPillarId → { ws, msgId } — intercepts pillar_stream for chat UI
+const trinityPillarToChat = new Map()
 
-// Auto-reject stale pending requests (5 min timeout)
+// Auto-reject stale pending requests and clean up leaked mappings (30s interval)
 const PENDING_TIMEOUT_MS = 5 * 60 * 1000
 let staleRequestInterval = null
 staleRequestInterval = setInterval(() => {
@@ -126,13 +126,6 @@ staleRequestInterval = setInterval(() => {
       log.warn(`Timing out stale ask_user request: ${id}`)
       try { entry.resolve('Timed out — no response from user') } catch { /* best-effort */ }
       pendingAskUser.delete(id)
-    }
-  }
-  for (const [id, entry] of pendingToolConfirm) {
-    if (now - entry.createdAt > PENDING_TIMEOUT_MS) {
-      log.warn(`Timing out stale tool confirmation: ${id}`)
-      try { entry.resolve({ approved: false, reason: 'Timed out — no response from user' }) } catch { /* best-effort */ }
-      pendingToolConfirm.delete(id)
     }
   }
   // Clean up leaked flowChatBuffers and cliRequestToWs entries
@@ -719,6 +712,27 @@ async function main() {
         try { client.send(data) } catch (_) { /* client disconnected mid-send */ }
       }
     }
+
+    // Holy Trinity interceptor: translate pillar_stream/pillar_done from Mind
+    // into ollama_stream/ollama_done for the chat UI
+    if ((msg.type === 'pillar_stream' || msg.type === 'pillar_done') && msg.pillarId) {
+      const mapping = trinityPillarToChat.get(msg.pillarId)
+      if (mapping && mapping.ws.readyState === 1) {
+        try {
+          if (msg.type === 'pillar_stream') {
+            mapping.ws.send(JSON.stringify({
+              type: 'ollama_stream', id: mapping.msgId,
+              event: msg.event
+            }))
+          } else if (msg.type === 'pillar_done') {
+            mapping.ws.send(JSON.stringify({
+              type: 'ollama_done', id: mapping.msgId, sessionId: null, exitCode: 0
+            }))
+            trinityPillarToChat.delete(msg.pillarId)
+          }
+        } catch (_) { /* client disconnected */ }
+      }
+    }
   }
 
   // Send to the originating tab if known, otherwise broadcast to all
@@ -737,11 +751,9 @@ async function main() {
   mcpProxy = new McpProxyServer(manager, {
     port: proxyPort,
     onToolConfirmation(toolName, args, cliRequestId) {
-      const id = randomUUID()
-      sendToOrigin(cliRequestId, { type: 'cli_tool_confirmation', id, toolName, args })
-      return new Promise(resolve => {
-        pendingToolConfirm.set(id, { resolve, createdAt: Date.now() })
-      })
+      // Server-side auto-execute is now the default (Hog Wild always ON).
+      // This callback is kept for backwards compatibility but immediately approves.
+      return Promise.resolve({ approved: true })
     },
     onToolActivity(toolName, args, status, cliRequestId) {
       sendToOrigin(cliRequestId, { type: 'cli_tool_activity', toolName, args, status })
@@ -755,6 +767,12 @@ async function main() {
     },
     onSetTitle(title, cliRequestId) {
       sendToOrigin(cliRequestId, { type: 'set_chat_title', title })
+    },
+    hasConnectedBrowser() {
+      for (const client of wss.clients) {
+        if (client.readyState === 1) return true
+      }
+      return false
     }
   })
   await mcpProxy.start()
@@ -1438,6 +1456,30 @@ async function main() {
         } catch (e) {
           ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
         }
+      } else if (msg.type === 'holy_trinity_chat') {
+        // Gen6 Holy Trinity: spawn Mind + 2 Arms via PillarManager
+        try {
+          if (!pillarManager) throw new Error('PillarManager not initialized')
+          const result = await pillarManager.spawn({
+            pillar: 'forge',
+            prompt: msg.userMessage || msg.prompt || '',
+            backend: 'ollama',
+            singularityRole: 'holy-trinity'
+          })
+          if (!result.pillarId) {
+            throw new Error(result.message || 'Failed to spawn Holy Trinity')
+          }
+          // Register Mind's pillarId → chat message mapping for broadcast interceptor
+          trinityPillarToChat.set(result.pillarId, { ws, msgId: msg.id })
+          ws.send(JSON.stringify({
+            type: 'ollama_ack', id: msg.id,
+            requestId: result.pillarId,
+            sessionId: result.trinityGroupId || result.pillarId
+          }))
+          log.info(`[gen6] Holy Trinity spawned — mind: ${result.pillarId.slice(0, 8)}, arms: ${result.arm1PillarId?.slice(0, 8) || 'n/a'} + ${result.arm2PillarId?.slice(0, 8) || 'n/a'}`)
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
+        }
       } else if (msg.type === 'claude_stop') {
         cliRequestToWs.delete(msg.requestId)
         cliManager.stop(msg.requestId)
@@ -1460,15 +1502,10 @@ async function main() {
           pending.resolve(msg.answer)
         }
       } else if (msg.type === 'tool_confirmation_response') {
-        const pending = pendingToolConfirm.get(msg.id)
-        if (pending) {
-          pendingToolConfirm.delete(msg.id)
-          pending.resolve({
-            approved: msg.approved,
-            reason: msg.reason,
-            result: msg.result
-          })
-        }
+        // Tool confirmations are now auto-executed server-side (Hog Wild always ON).
+        // This handler is kept for backwards compat — browser may still send responses
+        // for the activity UI, but they're no-ops since no Promise is pending.
+        log.debug('Received tool_confirmation_response (no-op, server-side auto-execute active)')
       } else {
         ws.send(JSON.stringify({ type: 'error', id: msg.id, message: `Unknown message type: ${msg.type}` }))
       }

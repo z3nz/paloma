@@ -33,7 +33,8 @@ export const CLI_MODELS = [
   { id: 'gemini-cli:gemini-exp', name: 'Gemini Experimental', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
   { id: 'ollama:qwen2.5-coder:32b', name: 'Qwen 2.5 Coder 32B', context_length: 32768, ollama: true, pricing: FREE_PRICING },
   { id: 'ollama:qwen2.5-coder:7b', name: 'Qwen 2.5 Coder 7B', context_length: 32768, ollama: true, pricing: FREE_PRICING },
-  { id: 'ollama:quinn-gen5', name: 'Quinn Gen5', context_length: 40960, ollama: true, gen5: true, pricing: FREE_PRICING }
+  { id: 'ollama:quinn-gen5', name: 'Quinn Gen5', context_length: 40960, ollama: true, gen5: true, pricing: FREE_PRICING },
+  { id: 'ollama:holy-trinity', name: 'Holy Trinity (Gen6)', context_length: 65536, ollama: true, holyTrinity: true, pricing: FREE_PRICING }
 ]
 
 export function isCliModel(modelId) {
@@ -64,9 +65,14 @@ export function isQuinnGen5Model(modelId) {
   return modelId === 'ollama:quinn-gen5'
 }
 
+export function isHolyTrinityModel(modelId) {
+  return modelId === 'ollama:holy-trinity'
+}
+
 export function getOllamaModelName(modelId) {
   // 'ollama:qwen2.5-coder:32b' → 'qwen2.5-coder:32b'
   if (modelId === 'ollama:quinn-gen5') return 'qwen3:32b'
+  if (modelId === 'ollama:holy-trinity') return 'holy-trinity'
   return modelId?.replace(/^ollama:/, '') || 'qwen2.5-coder:7b'
 }
 
