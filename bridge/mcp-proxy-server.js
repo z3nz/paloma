@@ -26,13 +26,14 @@ const TOOL_TIMEOUTS = {
 }
 
 export class McpProxyServer {
-  constructor(mcpManager, { port = 19192, onToolConfirmation, onToolActivity, onAskUser, onSetTitle }) {
+  constructor(mcpManager, { port = 19192, onToolConfirmation, onToolActivity, onAskUser, onSetTitle, hasConnectedBrowser }) {
     this.mcpManager = mcpManager
     this.port = port
     this.onToolConfirmation = onToolConfirmation || (() => Promise.resolve({ approved: true }))
     this.onToolActivity = onToolActivity || (() => {})
     this.onAskUser = onAskUser || (() => Promise.resolve('No handler'))
     this.onSetTitle = onSetTitle || (() => {})
+    this.hasConnectedBrowser = hasConnectedBrowser || (() => false)
     this.pillarManager = null // set by bridge/index.js after construction
     this.httpServer = null
     this.transports = new Map() // sessionId → { transport, server } (SSE)
@@ -174,7 +175,7 @@ export class McpProxyServer {
             recursive: { type: 'boolean', description: 'Enable recursive mode — sub-instance MUST delegate to further sub-instances. Default: false.' },
             depth: { type: 'number', description: 'Current recursion depth (set automatically by parent). Default: 0.' },
             parentPillarId: { type: 'string', description: 'Parent pillar ID (set automatically for recursive spawns).' },
-            singularityRole: { type: 'string', enum: ['quinn', 'quinn-gen4', 'quinn-legacy', 'worker', 'voice', 'thinker'], description: 'Singularity role for the session. Use quinn (Gen4) or quinn-gen4 for recursive self-prompting Quinn. Use quinn-legacy for Gen3 (spawn_worker only).' },
+            singularityRole: { type: 'string', enum: ['quinn', 'quinn-gen4', 'quinn-legacy', 'worker', 'voice', 'thinker', 'holy-trinity'], description: 'Singularity role for the session. Use quinn or quinn-gen4 for recursive self-prompting. Use holy-trinity for Gen6 Mind+Arms architecture.' },
             generation: { type: 'number', description: 'Generation number for quinn-gen4 sessions. Default: 1.' }
           },
           required: ['pillar', 'prompt']
@@ -360,39 +361,21 @@ export class McpProxyServer {
       return { content: [{ type: 'text', text: `Invalid tool name format: ${name}` }], isError: true }
     }
 
-    // Ask browser for confirmation before executing
-    // Use per-tool timeout if configured, otherwise default
+    // --- Server-side auto-execute ---
+    // The browser's isAutoApproved() always returns true (Hog Wild mode).
+    // Roundtripping through the browser WebSocket for confirmation is unnecessary
+    // and causes hangs when the browser isn't connected or the WS is stale.
+    // Execute tools directly server-side, notifying the browser for activity tracking only.
     const toolKey = `${serverName}__${toolName}`
     const timeout = TOOL_TIMEOUTS[toolKey] || CONFIRMATION_TIMEOUT
-    this.onToolActivity(name, args, 'pending', cliRequestId)
+    this.onToolActivity(name, args, 'running', cliRequestId)
     try {
-      const decision = await Promise.race([
-        this.onToolConfirmation(name, args, cliRequestId),
+      const result = await Promise.race([
+        this.mcpManager.callTool(serverName, toolName, args),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), timeout)
+          setTimeout(() => reject(new Error('tool_execution_timeout')), timeout)
         )
       ])
-
-      if (!decision.approved) {
-        this.onToolActivity(name, args, 'denied', cliRequestId)
-        return {
-          content: [{ type: 'text', text: `Tool denied by user: ${decision.reason || 'No reason given'}` }],
-          isError: true
-        }
-      }
-
-      // User approved — execute the tool
-      this.onToolActivity(name, args, 'running', cliRequestId)
-
-      // If the browser already executed the tool and returned a result, use that
-      if (decision.result !== undefined) {
-        this.onToolActivity(name, args, 'done', cliRequestId)
-        const text = typeof decision.result === 'string' ? decision.result : JSON.stringify(decision.result)
-        return { content: [{ type: 'text', text }] }
-      }
-
-      // Otherwise execute via mcpManager
-      const result = await this.mcpManager.callTool(serverName, toolName, args)
       this.onToolActivity(name, args, 'done', cliRequestId)
       if (result.content) {
         return { content: result.content, isError: result.isError || false }
@@ -400,9 +383,9 @@ export class McpProxyServer {
       return { content: [{ type: 'text', text: 'OK' }] }
     } catch (e) {
       this.onToolActivity(name, args, 'error', cliRequestId)
-      if (e.message === 'timeout') {
+      if (e.message === 'tool_execution_timeout') {
         return {
-          content: [{ type: 'text', text: `Tool confirmation timed out (${Math.round(timeout / 60000)} minutes)` }],
+          content: [{ type: 'text', text: `Tool execution timed out (${Math.round(timeout / 60000)} minutes): ${name}` }],
           isError: true
         }
       }

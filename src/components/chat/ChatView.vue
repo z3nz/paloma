@@ -15,6 +15,7 @@
     <div v-if="contextWarning" class="px-4 py-2 bg-warning/10 border-t border-warning/30 text-sm text-warning text-center">
       {{ contextWarning }}
     </div>
+    <TrinityStatus :trinity-groups="trinityGroups" />
     <PromptBuilder
       :session="session"
       :streaming="streaming"
@@ -65,6 +66,7 @@ import DiffPreview from './DiffPreview.vue'
 import ToolConfirmation from './ToolConfirmation.vue'
 import AskUserDialog from './AskUserDialog.vue'
 import ThinkingPanel from './ThinkingPanel.vue'
+import TrinityStatus from './TrinityStatus.vue'
 import { useChat } from '../../composables/useChat.js'
 import { useChanges } from '../../composables/useChanges.js'
 import { useVoiceInput } from '../../composables/useVoiceInput.js'
@@ -94,7 +96,7 @@ const { voiceMode, isListening, startListening } = useVoiceInput()
 const { apiKey } = useSettings()
 const { dirHandle, projectRoot, projectInstructions, activePlans, roots, mcpConfig, refreshActivePlans } = useProject()
 const { search: searchFiles } = useFileIndex()
-const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool, pendingAutoResume, singularityGroups } = useMCP()
+const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool, pendingAutoResume, singularityGroups, trinityGroups } = useMCP()
 
 // Find the active singularity group (v1: show the most recent one)
 const activeSingularityGroupId = computed(() => {

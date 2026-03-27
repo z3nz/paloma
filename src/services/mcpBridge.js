@@ -36,6 +36,7 @@ export function createMcpBridge() {
   let onSingularityCreated = null
   let onSingularityReady = null
   let onSingularityComplete = null
+  let onTrinityCreated = null
   let pingTimer = null
   let lastPongTime = 0
 
@@ -71,6 +72,7 @@ export function createMcpBridge() {
     onSingularityCreated = callbacks.onSingularityCreated || null
     onSingularityReady = callbacks.onSingularityReady || null
     onSingularityComplete = callbacks.onSingularityComplete || null
+    onTrinityCreated = callbacks.onTrinityCreated || null
     url = bridgeUrl
     intentionalClose = false
     _connect()
@@ -315,6 +317,8 @@ export function createMcpBridge() {
         onPillarDone?.(msg)
       } else if (msg.type === 'singularity_created') {
         onSingularityCreated?.(msg)
+      } else if (msg.type === 'trinity_created') {
+        onTrinityCreated?.(msg)
       } else if (msg.type === 'singularity_ready') {
         onSingularityReady?.(msg)
       } else if (msg.type === 'singularity_complete') {

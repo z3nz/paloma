@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
-import { readdir, readFile } from 'fs/promises'
+import { readdir, readFile, mkdir } from 'fs/promises'
 import { join } from 'path'
-import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT, SINGULARITY_QUINN_PROMPT, SINGULARITY_QUINN_GEN3_PROMPT, SINGULARITY_WORKER_PROMPT, SINGULARITY_FRESH_PROMPT, SINGULARITY_GEN5_PROMPT } from '../src/prompts/base.js'
+import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT, SINGULARITY_QUINN_PROMPT, SINGULARITY_QUINN_GEN3_PROMPT, SINGULARITY_WORKER_PROMPT, SINGULARITY_FRESH_PROMPT, SINGULARITY_GEN5_PROMPT, HOLY_TRINITY_ARM_PROMPT, HOLY_TRINITY_MIND_PROMPT } from '../src/prompts/base.js'
 import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
 import { Persistence } from './persistence.js'
 import { createLogger } from './logger.js'
@@ -55,6 +55,7 @@ export class PillarManager {
     this._pendingChildCompletions = new Map() // childPillarId → resolve function
     this._pendingNotifications = [] // queued notifications for non-browser Flow (Copilot/Codex CLI)
     this._singularityGroups = new Map() // singularityGroupId → { voicePillarId, thinkerPillarId, voiceReady, thinkerReady, ... }
+    this._trinityGroups = new Map() // trinityGroupId → { mindPillarId, arm1PillarId, arm2PillarId, trinityId }
 
     // Lifecycle metrics — in-memory, per pillar type
     // Shape: { scout: { spawns: 0, outcomes: { idle: 0, error: 0, stopped: 0, timeout: 0 }, totalDurationMs: 0 }, ... }
@@ -205,7 +206,7 @@ export class PillarManager {
    * Spawn a new pillar CLI session.
    * Returns immediately with pillarId and metadata.
    */
-  async spawn({ pillar, prompt, model, flowRequestId, planFile, backend, parentPillarId, recursive, depth, singularityRole, generation }) {
+  async spawn({ pillar, prompt, model, flowRequestId, planFile, backend, parentPillarId, recursive, depth, singularityRole, generation, _trinityExtra }) {
     // Resolve flowCliSessionId and originatingBackend from the actual spawning session
     const { sessionId: resolvedFlowCliSessionId } = this._resolveCliSessionFromRequest(flowRequestId)
 
@@ -213,6 +214,11 @@ export class PillarManager {
     const selection = this._selectBackend(pillar, prompt, { backend, recursive, depth, singularityRole })
     const resolvedBackend = selection.backend
     log.info(`Backend selection for ${pillar}: ${selection.backend} (${selection.reason})`)
+
+    // Holy Trinity: spawn Mind + 2 Arms concurrently
+    if (singularityRole === 'holy-trinity') {
+      return this._spawnHolyTrinity({ pillar, prompt, model, flowRequestId, planFile, backend: resolvedBackend, parentPillarId })
+    }
 
     // Singularity dual-mind: spawn Voice + Thinker concurrently (legacy mode)
     if (recursive && (depth || 0) === 0 && resolvedBackend === 'ollama' && !singularityRole) {
@@ -277,7 +283,7 @@ export class PillarManager {
 
     // Build system prompt from disk (Ollama gets condensed prompt)
     const resolvedGeneration = generation || (singularityRole === 'quinn-gen4' ? 1 : null)
-    const systemPrompt = await this._buildSystemPrompt(pillar, { planFilter: planFile, recursive, depth, singularityRole, backend: finalBackend, generation: resolvedGeneration })
+    const systemPrompt = await this._buildSystemPrompt(pillar, { planFilter: planFile, recursive, depth, singularityRole, backend: finalBackend, generation: resolvedGeneration, trinityExtra: _trinityExtra })
 
     // Compose the full first message with birth protocol
     const fullPrompt = `${BIRTH_MESSAGE}\n\n${prompt}`
@@ -313,10 +319,15 @@ export class PillarManager {
       _fallbackAttempted: false,    // prevents infinite retry loops
       // Singularity dual-mind fields
       singularityGroupId: null,     // UUID linking Voice ↔ Thinker
-      singularityRole: singularityRole || null,  // 'voice' | 'thinker' | 'quinn' | 'quinn-gen4' | 'quinn-legacy' | 'quinn-fresh' | 'worker' | null
+      singularityRole: singularityRole || null,  // 'voice' | 'thinker' | 'quinn' | 'quinn-gen4' | 'quinn-legacy' | 'quinn-fresh' | 'worker' | 'holy-trinity' | 'holy-trinity-mind' | 'holy-trinity-arm' | null
       generation: generation || (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' ? 1 : null),  // Gen4 generation number
       workerSpawnCount: 0,
-      numCtx: (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'quinn-fresh' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536 : (singularityRole === 'quinn-gen5' ? 40960 : (singularityRole === 'worker' ? 32768 : null)),
+      numCtx: (singularityRole === 'holy-trinity-mind') ? 65536
+            : (singularityRole === 'holy-trinity-arm') ? 16384
+            : (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'quinn-fresh' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536
+            : (singularityRole === 'quinn-gen5') ? 40960
+            : (singularityRole === 'worker') ? 32768
+            : null,
       _voiceStreamBuffer: '',       // Voice only: buffer for <to-thinker> tag detection
       _receivedThinkerMessages: 0   // Voice only: count of [THINKER] messages received
     }
@@ -424,7 +435,14 @@ export class PillarManager {
       recursive: session.recursive,
       depth: session.depth,
       backend: session.backend,
-      singularityRole: session.singularityRole
+      singularityRole: session.singularityRole,
+      trinityExtra: session._trinityId ? {
+        trinityId: session._trinityId,
+        armNumber: session._armNumber,
+        armPlanPath: session._armPlanPath,
+        arm1PlanPath: session._arm1PlanPath,
+        arm2PlanPath: session._arm2PlanPath
+      } : undefined
     })
 
     const prompt = "[SYSTEM: You were interrupted by a bridge restart. Continue where you left off. Check the plan document for current status.]\n\nContinue."
@@ -866,6 +884,29 @@ export class PillarManager {
    * Build Ollama-format tool list from MCP servers + pillar tools.
    */
   _buildOllamaTools(session) {
+    // Holy Trinity Arms get ONLY filesystem tools — pure planners, no execution capability
+    if (session.singularityRole === 'holy-trinity-arm') {
+      const tools = []
+      if (this.mcpManager) {
+        const mcpServers = this.mcpManager.getTools()
+        const fsServer = mcpServers['filesystem']
+        if (fsServer?.status === 'connected') {
+          for (const tool of fsServer.tools) {
+            tools.push({
+              type: 'function',
+              function: {
+                name: `filesystem__${tool.name}`,
+                description: tool.description || '',
+                parameters: tool.inputSchema || { type: 'object', properties: {} }
+              }
+            })
+          }
+        }
+      }
+      log.debug(`Built ${tools.length} Ollama tools for holy-trinity-arm session (filesystem only)`)
+      return tools
+    }
+
     // Quinn (Legacy / Gen3) gets ONLY spawn_worker — that's the entire game
     if (session.singularityRole === 'quinn-legacy') {
       log.debug(`Built 1 Ollama tool for Quinn Legacy session (spawn_worker only)`)
@@ -1303,6 +1344,139 @@ export class PillarManager {
       singularityGroupId,
       thinkerPillarId: thinkerResult.pillarId,
       message: `Singularity dual-mind spawned: Voice + Thinker running concurrently.`
+    }
+  }
+
+  /**
+   * Spawn a Holy Trinity group: 1 Mind (32B) + 2 Arms (7B) concurrently.
+   * Arms plan independently using filesystem-only tools.
+   * Mind waits for both plans, synthesizes, and executes with full tools.
+   */
+  async _spawnHolyTrinity({ pillar, prompt, model, flowRequestId, planFile, backend, parentPillarId }) {
+    const trinityGroupId = randomUUID()
+    const trinityId = trinityGroupId.slice(0, 8)
+    const workspacePath = '.singularity/workspace/'
+    const arm1PlanPath = `${workspacePath}arm-${trinityId}-1.md`
+    const arm2PlanPath = `${workspacePath}arm-${trinityId}-2.md`
+
+    log.info(`[holy-trinity] Spawning trinity group ${trinityId}`)
+
+    // Ensure workspace directory exists
+    const absWorkspace = join(this.projectRoot, '.singularity', 'workspace')
+    try {
+      await mkdir(absWorkspace, { recursive: true })
+    } catch { /* already exists */ }
+
+    // 1. Spawn Mind first — it becomes the primary session returned to caller
+    //    Mind's first action is polling for plans, so it's fine that Arms spawn a few ms later.
+    //    The 32B model takes several seconds to load — Arms (7B) finish planning long before.
+    const mindResult = await this.spawn({
+      pillar,
+      prompt,
+      model: model || null,
+      flowRequestId,
+      planFile,
+      backend,
+      parentPillarId,
+      singularityRole: 'holy-trinity-mind',
+      _trinityExtra: { arm1PlanPath, arm2PlanPath, trinityId }
+    })
+
+    if (!mindResult.pillarId) {
+      log.error('[holy-trinity] Mind spawn failed')
+      return mindResult
+    }
+
+    // Attach trinity metadata to Mind session for tracking
+    const mindSession = this.pillars.get(mindResult.pillarId)
+    if (mindSession) {
+      mindSession._trinityId = trinityId
+      mindSession._arm1PlanPath = arm1PlanPath
+      mindSession._arm2PlanPath = arm2PlanPath
+      mindSession.singularityGroupId = trinityGroupId
+    }
+
+    // 2. Spawn Arm 1 (child of Mind so stop-tree kills it)
+    const arm1Result = await this.spawn({
+      pillar,
+      prompt,
+      model: model || null,
+      flowRequestId,
+      planFile,
+      backend,
+      parentPillarId: mindResult.pillarId,
+      singularityRole: 'holy-trinity-arm',
+      _trinityExtra: { armNumber: 1, armPlanPath: arm1PlanPath, trinityId }
+    })
+
+    if (arm1Result.pillarId) {
+      const arm1Session = this.pillars.get(arm1Result.pillarId)
+      if (arm1Session) {
+        arm1Session._trinityId = trinityId
+        arm1Session._armNumber = 1
+        arm1Session._armPlanPath = arm1PlanPath
+        arm1Session.singularityGroupId = trinityGroupId
+      }
+    } else {
+      log.warn('[holy-trinity] Arm 1 spawn failed — Mind will proceed with fewer plans')
+    }
+
+    // 3. Spawn Arm 2 (also child of Mind)
+    const arm2Result = await this.spawn({
+      pillar,
+      prompt,
+      model: model || null,
+      flowRequestId,
+      planFile,
+      backend,
+      parentPillarId: mindResult.pillarId,
+      singularityRole: 'holy-trinity-arm',
+      _trinityExtra: { armNumber: 2, armPlanPath: arm2PlanPath, trinityId }
+    })
+
+    if (arm2Result.pillarId) {
+      const arm2Session = this.pillars.get(arm2Result.pillarId)
+      if (arm2Session) {
+        arm2Session._trinityId = trinityId
+        arm2Session._armNumber = 2
+        arm2Session._armPlanPath = arm2PlanPath
+        arm2Session.singularityGroupId = trinityGroupId
+      }
+    } else {
+      log.warn('[holy-trinity] Arm 2 spawn failed — Mind will proceed with fewer plans')
+    }
+
+    // 4. Register trinity group
+    this._trinityGroups.set(trinityGroupId, {
+      trinityGroupId,
+      trinityId,
+      mindPillarId: mindResult.pillarId,
+      arm1PillarId: arm1Result.pillarId || null,
+      arm2PillarId: arm2Result.pillarId || null,
+      arm1PlanPath,
+      arm2PlanPath
+    })
+
+    // 5. Broadcast to frontend
+    this.broadcast({
+      type: 'trinity_created',
+      groupId: trinityGroupId,
+      trinityId,
+      mindPillarId: mindResult.pillarId,
+      arm1PillarId: arm1Result.pillarId || null,
+      arm2PillarId: arm2Result.pillarId || null
+    })
+
+    log.info(`[holy-trinity] Trinity ${trinityId} spawned — mind: ${mindResult.pillarId.slice(0, 8)}, arm1: ${arm1Result.pillarId?.slice(0, 8) || 'FAILED'}, arm2: ${arm2Result.pillarId?.slice(0, 8) || 'FAILED'}`)
+
+    // Return Mind as the primary session
+    return {
+      ...mindResult,
+      trinityGroupId,
+      trinityId,
+      arm1PillarId: arm1Result.pillarId || null,
+      arm2PillarId: arm2Result.pillarId || null,
+      message: `Holy Trinity spawned: Mind (32B) + 2 Arms (7B) running concurrently.`
     }
   }
 
@@ -2571,7 +2745,15 @@ This is informational — Adam is communicating directly with the pillar. Decide
       planFilter: session._planFile,
       recursive: session.recursive,
       depth: session.depth,
-      backend: fallbackBackend
+      backend: fallbackBackend,
+      singularityRole: session.singularityRole,
+      trinityExtra: session._trinityId ? {
+        trinityId: session._trinityId,
+        armNumber: session._armNumber,
+        armPlanPath: session._armPlanPath,
+        arm1PlanPath: session._arm1PlanPath,
+        arm2PlanPath: session._arm2PlanPath
+      } : undefined
     })
 
     log.info(`Fallback: restarting ${session.pillar} on ${fallbackBackend} (was ${originalBackend})`)
@@ -2699,6 +2881,9 @@ This is informational — Adam is communicating directly with the pillar. Decide
     if (backend === 'ollama') {
       // Quinn (Legacy or Gen4): the conscious mind — uses the best available model (30B)
       if (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy') return this._pickBestOllamaModel(false)
+      // Holy Trinity: Arms use small/fast (7B), Mind uses best available (32B)
+      if (singularityRole === 'holy-trinity-arm') return this._pickBestOllamaModel(true)
+      if (singularityRole === 'holy-trinity-mind') return this._pickBestOllamaModel(false)
       // Worker: Quinn's hands — uses the small fast model (7B)
       if (singularityRole === 'worker') return this._pickBestOllamaModel(true)
       // Singularity: both Voice and Thinker use the best available model
@@ -2746,14 +2931,14 @@ This is informational — Adam is communicating directly with the pillar. Decide
    * Build the system prompt for a pillar session by reading .paloma/ files from disk.
    * Mirrors the frontend's buildSystemPrompt() but uses fs instead of MCP/browser APIs.
    */
-  async _buildSystemPrompt(pillar, { planFilter, recursive, depth, singularityRole, backend, generation } = {}) {
+  async _buildSystemPrompt(pillar, { planFilter, recursive, depth, singularityRole, backend, generation, trinityExtra } = {}) {
     // Ollama sessions use the condensed prompt (fits smaller context windows)
     let prompt = backend === 'ollama' ? OLLAMA_INSTRUCTIONS : BASE_INSTRUCTIONS
 
     // Singularity sessions (Voice/Thinker/Quinn/Worker) get a drastically stripped system prompt:
     // OLLAMA_INSTRUCTIONS + project instructions + role prompt ONLY.
     // No plans, no roots, no phase instructions — saves ~25K tokens of context budget.
-    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'worker' || singularityRole === 'quinn-fresh' || singularityRole === 'quinn-gen5'
+    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'worker' || singularityRole === 'quinn-fresh' || singularityRole === 'quinn-gen5' || singularityRole === 'holy-trinity-arm' || singularityRole === 'holy-trinity-mind'
 
     // Claude CLI reads CLAUDE.md automatically, which includes instructions.md and roots
     // via @ references. Including them again here would duplicate ~43KB of content and
@@ -2837,6 +3022,25 @@ This is informational — Adam is communicating directly with the pillar. Decide
       prompt += '\n\n' + SINGULARITY_VOICE_PROMPT
     } else if (singularityRole === 'thinker') {
       prompt += '\n\n' + SINGULARITY_THINKER_PROMPT
+    } else if (singularityRole === 'holy-trinity-arm') {
+      const te = trinityExtra || {}
+      prompt += '\n\n' + HOLY_TRINITY_ARM_PROMPT
+        .replace(/\{TASK\}/g, '(see user message)')
+        .replace(/\{PLAN_PATH\}/g, te.armPlanPath || '.singularity/workspace/arm-?.md')
+        .replace(/\{WORKSPACE_PATH\}/g, '.singularity/workspace/')
+        .replace(/\{ARM_NUMBER\}/g, String(te.armNumber || '?'))
+    } else if (singularityRole === 'holy-trinity-mind') {
+      const te = trinityExtra || {}
+      const arm1Base = te.arm1PlanPath ? te.arm1PlanPath.split('/').pop() : 'arm-?-1.md'
+      const arm2Base = te.arm2PlanPath ? te.arm2PlanPath.split('/').pop() : 'arm-?-2.md'
+      prompt += '\n\n' + HOLY_TRINITY_MIND_PROMPT
+        .replace(/\{TASK\}/g, '(see user message)')
+        .replace(/\{ARM_1_PLAN_PATH\}/g, te.arm1PlanPath || '.singularity/workspace/arm-?-1.md')
+        .replace(/\{ARM_2_PLAN_PATH\}/g, te.arm2PlanPath || '.singularity/workspace/arm-?-2.md')
+        .replace(/\{ARM_1_PLAN_PATH_BASENAME\}/g, arm1Base)
+        .replace(/\{ARM_2_PLAN_PATH_BASENAME\}/g, arm2Base)
+        .replace(/\{WORKSPACE_PATH\}/g, '.singularity/workspace/')
+        .replace(/\{TRINITY_ID\}/g, te.trinityId || 'unknown')
     } else if (recursive) {
       // Legacy fallback: depth-based selection
       const singularityPrompt = (depth || 0) === 0 ? SINGULARITY_VOICE_PROMPT : SINGULARITY_THINKER_PROMPT

@@ -60,6 +60,9 @@ const pillarStreamBuffer = new Map() // pillarId → [{ event, backend }]
 const singularityGroups = reactive(new Map()) // groupId → { voicePillarId, thinkerPillarId, voiceReady, thinkerReady }
 const singularityThinkerContent = reactive(new Map()) // groupId → accumulated thinker text
 
+// Holy Trinity state
+const trinityGroups = reactive(new Map()) // groupId → { trinityId, mindPillarId, arm1PillarId, arm2PillarId }
+
 const connected = ref(false)
 const connectionState = ref('disconnected') // 'disconnected' | 'connecting' | 'connected'
 const servers = ref({})
@@ -433,6 +436,15 @@ export function useMCP() {
           group.thinkerReady = true
         }
         // Keep group data for display but mark as complete
+      },
+      onTrinityCreated(msg) {
+        trinityGroups.set(msg.groupId, {
+          groupId: msg.groupId,
+          trinityId: msg.trinityId,
+          mindPillarId: msg.mindPillarId,
+          arm1PillarId: msg.arm1PillarId,
+          arm2PillarId: msg.arm2PillarId
+        })
       },
       async onPillarFallback(msg) {
         const dbSessionId = pillarSessionMap.get(msg.pillarId)
@@ -1144,7 +1156,8 @@ export function useMCP() {
     restartPending,
     pendingAutoResume,
     singularityGroups,
-    singularityThinkerContent
+    singularityThinkerContent,
+    trinityGroups
   }
 }
 

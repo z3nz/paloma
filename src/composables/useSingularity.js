@@ -18,10 +18,13 @@ let _instance = null
 export function useSingularity() {
   if (_instance) return _instance
 
-  const { singularityGroups, singularityThinkerContent } = useMCP()
+  const { singularityGroups, singularityThinkerContent, trinityGroups } = useMCP()
 
   // The group ID of the most recently activated singularity session
   const activeGroupId = ref(null)
+
+  // The group ID of the most recently activated Holy Trinity session
+  const activeTrinityGroupId = ref(null)
 
   // Thinker tool calls for the active group — populated via handleSingularityEvent
   const thinkerToolCalls = ref([])
@@ -50,6 +53,14 @@ export function useSingularity() {
   /** True when there is an active, running singularity session. */
   const isSingularityActive = computed(() => !!activeGroupId.value && singularityGroups.has(activeGroupId.value))
 
+  /** The current Holy Trinity group, or null if none active. */
+  const activeTrinityGroup = computed(() =>
+    activeTrinityGroupId.value ? trinityGroups.get(activeTrinityGroupId.value) ?? null : null
+  )
+
+  /** True when a trinity session is active. */
+  const isTrinityActive = computed(() => !!activeTrinityGroupId.value && trinityGroups.has(activeTrinityGroupId.value))
+
   // ── Event handler ───────────────────────────────────────────────────────────
 
   /**
@@ -73,6 +84,11 @@ export function useSingularity() {
         // New singularity group started — make it active and clear prior tool calls
         activeGroupId.value = event.groupId
         thinkerToolCalls.value = []
+        break
+
+      case 'trinity_created':
+        // Holy Trinity group started — tracked in trinityGroups (useMCP handles storage)
+        activeTrinityGroupId.value = event.groupId
         break
 
       case 'pillar_tool_call':
@@ -171,6 +187,11 @@ export function useSingularity() {
     thinkerReady,
     isComplete,
     isSingularityActive,
+    // Holy Trinity state
+    activeTrinityGroup,
+    activeTrinityGroupId,
+    isTrinityActive,
+    trinityGroups,
     // Internal (exposed for components that need the raw ID)
     activeGroupId,
     // Methods
