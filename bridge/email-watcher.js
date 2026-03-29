@@ -127,7 +127,7 @@ export class EmailWatcher {
       if (existsSync(SEEN_IDS_PATH)) {
         const data = JSON.parse(readFileSync(SEEN_IDS_PATH, 'utf8'))
         if (Array.isArray(data.ids)) {
-          this.seenIds = new Set(data.ids.slice(-500))
+          this.seenIds = new Set(data.ids.slice(-2000))
           log.info(`Loaded ${this.seenIds.size} persisted seenIds from disk`)
         }
       }
@@ -141,7 +141,7 @@ export class EmailWatcher {
    */
   _saveSeenIds() {
     try {
-      const ids = [...this.seenIds].slice(-500)
+      const ids = [...this.seenIds].slice(-2000)
       writeFileSync(SEEN_IDS_PATH, JSON.stringify({
         ids,
         updatedAt: new Date().toISOString()
@@ -239,6 +239,13 @@ export class EmailWatcher {
         let silentCount = 0
 
         for (const ref of messages) {
+          // FIX: Check seenIds FIRST — this prevents re-processing emails on restart.
+          // This was the root cause of the re-reading bug: trusted emails bypassed seenIds check.
+          if (this.seenIds.has(ref.id)) {
+            log.debug(`Initial sync: skipping already-seen message ${ref.id}`)
+            continue
+          }
+
           try {
             const msg = await this.gmail.users.messages.get({
               userId: 'me',
@@ -320,6 +327,7 @@ export class EmailWatcher {
 
             log.info(`Initial sync: spawning session for ${trusted ? 'TRUSTED' : 'unknown'} email from ${from}: ${subject}`)
             this._spawnEmailSession({ messageId: ref.id, threadId: ref.threadId, from, subject, body, trusted })
+            this._markAsRead(ref.id)
             this.broadcast({ type: 'email_received', messageId: ref.id, threadId: ref.threadId, from, subject, body })
           } catch (err) {
             log.error(`Initial sync: failed to process ${ref.id}: ${err.message}`)
@@ -408,6 +416,9 @@ export class EmailWatcher {
           trusted
         })
 
+        // Mark as read so it won't appear in is:unread queries on next restart
+        this._markAsRead(ref.id)
+
         // Broadcast to browser UI
         this.broadcast({
           type: 'email_received',
@@ -419,10 +430,10 @@ export class EmailWatcher {
         })
       }
 
-      // Prune seenIds if it gets too large
-      if (this.seenIds.size > 500) {
+      // Prune seenIds if it gets too large (keep 2000 to prevent re-processing on restart)
+      if (this.seenIds.size > 2000) {
         const arr = [...this.seenIds]
-        this.seenIds = new Set(arr.slice(-500))
+        this.seenIds = new Set(arr.slice(-2000))
       }
 
       // Persist seenIds to disk after each poll cycle
@@ -720,6 +731,32 @@ export class EmailWatcher {
    * Check if a sender address matches the trusted senders list.
    * Supports partial matches (e.g., 'kelsey' matches 'kelsey@anything.com').
    */
+  /**
+   * Mark an email as read in Gmail by removing the UNREAD label.
+   * Gracefully degrades if we lack gmail.modify scope — logs a warning once.
+   */
+  async _markAsRead(messageId) {
+    if (this._markAsReadDisabled) return
+    try {
+      await this.gmail.users.messages.modify({
+        userId: 'me',
+        id: messageId,
+        requestBody: { removeLabelIds: ['UNREAD'] }
+      })
+      log.debug(`Marked ${messageId} as read`)
+    } catch (err) {
+      if (err.code === 403 || err.message?.includes('Insufficient Permission')) {
+        if (!this._markAsReadWarned) {
+          log.warn('Cannot mark emails as read — gmail.modify scope not granted. Re-run: node mcp-servers/gmail.js auth')
+          this._markAsReadWarned = true
+        }
+        this._markAsReadDisabled = true
+      } else {
+        log.warn(`Failed to mark ${messageId} as read: ${err.message}`)
+      }
+    }
+  }
+
   _isTrustedSender(from) {
     const fromLower = from.toLowerCase()
     return TRUSTED_SENDERS.some(sender => fromLower.includes(sender.toLowerCase()))
