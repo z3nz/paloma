@@ -903,6 +903,29 @@ export class PillarManager {
    * Build Ollama-format tool list from MCP servers + pillar tools.
    */
   _buildOllamaTools(session) {
+    // Hydra planners + voters get ONLY filesystem tools — think and judge, don't execute
+    if (session.singularityRole === 'hydra-planner' || session.singularityRole === 'hydra-voter') {
+      const tools = []
+      if (this.mcpManager) {
+        const mcpServers = this.mcpManager.getTools()
+        const fsServer = mcpServers['filesystem']
+        if (fsServer?.status === 'connected') {
+          for (const tool of fsServer.tools) {
+            tools.push({
+              type: 'function',
+              function: {
+                name: `filesystem__${tool.name}`,
+                description: tool.description || '',
+                parameters: tool.inputSchema || { type: 'object', properties: {} }
+              }
+            })
+          }
+        }
+      }
+      log.debug(`Built ${tools.length} Ollama tools for ${session.singularityRole} session (filesystem only)`)
+      return tools
+    }
+
     // Holy Trinity Arms get ONLY filesystem tools — pure planners, no execution capability
     if (session.singularityRole === 'holy-trinity-arm') {
       const tools = []
@@ -1660,6 +1683,12 @@ export class PillarManager {
 
     try { await mkdir(absWorkspace, { recursive: true }) } catch { /* exists */ }
 
+    // Classify task: research/exploration → scout, planning/strategy → chart
+    const taskLower = (prompt || '').toLowerCase()
+    const scoutSignals = ['research', 'investigate', 'explore', 'find out', 'search for', 'look into', 'what is', 'how does', 'discover', 'analyze', 'audit', 'review', 'examine', 'scan', 'survey']
+    const plannerPillar = scoutSignals.some(s => taskLower.includes(s)) ? 'scout' : 'chart'
+    log.info(`[hydra] Task classified as '${plannerPillar}' pillar`)
+
     // Hydra state — the brain's memory
     const state = {
       hydraId,
@@ -1667,6 +1696,7 @@ export class PillarManager {
       workspacePath,
       absWorkspace,
       pillar,
+      plannerPillar,  // 'scout' or 'chart' — dynamically determined from task
       model,
       flowRequestId,
       planFile,
@@ -1725,9 +1755,18 @@ export class PillarManager {
       const planPath = join(state.absWorkspace, `hydra-${state.hydraId}-head-${completedHeadNum}-plan.md`)
       const completedPlan = await this._readFileSafe(planPath) || '(plan file empty)'
 
+      // Stop the presenting head — its plan is done, no need to keep streaming
+      const presenterHead = state.aliveHeads.get(completedHeadNum)
+      if (presenterHead?.pillarId) {
+        this.stop({ pillarId: presenterHead.pillarId })
+      }
+
       // Kill all OTHER planning heads, save their partial progress
       const otherHeadNums = [...state.aliveHeads.keys()].filter(n => n !== completedHeadNum && state.aliveHeads.get(n).status === 'planning')
       const partialPlans = await this._hydraKillAndSavePartials(state, otherHeadNums)
+
+      // Broadcast voting phase to frontend
+      this._broadcastHydraUpdate(state, 'voting')
 
       // Run voting round — spawn voter sessions for each surviving non-presenter
       const votes = await this._hydraRunVotingRound(state, completedHeadNum, completedPlan, otherHeadNums, partialPlans)
@@ -1828,7 +1867,7 @@ export class PillarManager {
       }
 
       const result = await this.spawn({
-        pillar: state.pillar,
+        pillar: state.plannerPillar,  // 'scout' or 'chart' based on task
         prompt: state.task,
         model: state.model || null,
         flowRequestId: state.flowRequestId,
@@ -1946,7 +1985,7 @@ export class PillarManager {
 
       // Spawn voter session
       const result = await this.spawn({
-        pillar: state.pillar,
+        pillar: state.plannerPillar,  // Voters match the planner pillar
         prompt: state.task,
         model: state.model || null,
         flowRequestId: state.flowRequestId,
@@ -2049,7 +2088,7 @@ export class PillarManager {
       const manifestPath = `${state.workspacePath}hydra-${state.hydraId}-manifest.md`
 
       const result = await this.spawn({
-        pillar: state.pillar,
+        pillar: 'forge',  // Workers are builders
         prompt: state.task,
         model: state.model || null,
         flowRequestId: state.flowRequestId,
