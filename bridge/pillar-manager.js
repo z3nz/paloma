@@ -1866,9 +1866,24 @@ export class PillarManager {
         continuationContext = `## Your Previous Progress\n\nYou were interrupted mid-planning for a voting round. Here is what you had:\n\n${partialPlan}\n\nContinue from where you left off. You may revise based on new information from the graveyard above.`
       }
 
+      // Wrap the user's task into a directive that 8B models can't miss.
+      // Raw conversational prompts get answered directly — this forces plan-file behavior.
+      const plannerDirective = `HYDRA PROTOCOL — You are Head ${headNum}. Follow your system prompt EXACTLY.
+
+YOUR TASK:
+${state.task}
+
+INSTRUCTIONS:
+1. Research the task by reading relevant project files
+2. Write your plan INCREMENTALLY to: ${planPath}
+3. When your plan is COMPLETE, write an empty file to: ${planCompletePath}
+
+Do NOT respond conversationally. Do NOT answer the task directly.
+Your ONLY output is the plan file. Start by reading relevant files, then write your plan.`
+
       const result = await this.spawn({
         pillar: state.plannerPillar,  // 'scout' or 'chart' based on task
-        prompt: state.task,
+        prompt: plannerDirective,
         model: state.model || null,
         flowRequestId: state.flowRequestId,
         planFile: state.planFile,
@@ -1983,10 +1998,28 @@ export class PillarManager {
       const partialPlan = partialPlans.get(headNum) || '(no plan started yet)'
       const votePath = `${state.workspacePath}hydra-${state.hydraId}-round-${state.round}-vote-head-${headNum}.md`
 
+      // Wrap into a voting directive so the 8B model knows exactly what to do
+      const voterDirective = `HYDRA VOTING ROUND — You are Head ${headNum}, judging Head ${presenterNum}'s plan.
+
+Read the presented plan in your system prompt. Compare it against your own research below.
+Then write your vote to: ${votePath}
+
+YOUR OWN RESEARCH (partial plan before you were interrupted):
+${partialPlan}
+
+INSTRUCTIONS:
+1. Read Head ${presenterNum}'s plan (in your system prompt)
+2. Write your vote file to: ${votePath}
+3. Start the file with EXACTLY: "# Vote: APPROVE" or "# Vote: VETO"
+4. Add "## Reasoning" section explaining why
+5. If VETO, add "## Key Concerns" section
+
+Do NOT respond conversationally. Your ONLY output is the vote file.`
+
       // Spawn voter session
       const result = await this.spawn({
         pillar: state.plannerPillar,  // Voters match the planner pillar
-        prompt: state.task,
+        prompt: voterDirective,
         model: state.model || null,
         flowRequestId: state.flowRequestId,
         backend: state.backend,
@@ -2087,9 +2120,24 @@ export class PillarManager {
       const donePath = `${state.workspacePath}hydra-${state.hydraId}-worker-${workerNum}-done.md`
       const manifestPath = `${state.workspacePath}hydra-${state.hydraId}-manifest.md`
 
+      // Wrap into a worker directive
+      const workerDirective = `HYDRA EXECUTION — You are Worker ${workerNum}. The arena is over. Time to BUILD.
+
+ORIGINAL TASK:
+${state.task}
+
+INSTRUCTIONS:
+1. Read the consensus plan in your system prompt
+2. Write your file claims to: ${claimsPath}
+3. Check other workers' claims (lowest number wins conflicts)
+4. Execute on your claimed files using all available tools
+5. Write completion report to: ${donePath}
+
+Do NOT respond conversationally. Execute the plan.`
+
       const result = await this.spawn({
         pillar: 'forge',  // Workers are builders
-        prompt: state.task,
+        prompt: workerDirective,
         model: state.model || null,
         flowRequestId: state.flowRequestId,
         planFile: state.planFile,
