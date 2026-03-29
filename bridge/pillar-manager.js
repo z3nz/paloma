@@ -2254,9 +2254,9 @@ This is informational — Adam is communicating directly with the pillar. Decide
   /**
    * Clean up all pillar sessions on shutdown.
    */
-  shutdown() {
+  async shutdown() {
     // Flush any pending debounced state to disk before tearing down
-    if (this.persistence) this.persistence.flush()
+    if (this.persistence) await this.persistence.flush()
 
     if (this._cleanupInterval) {
       clearInterval(this._cleanupInterval)
@@ -2384,6 +2384,41 @@ This is informational — Adam is communicating directly with the pillar. Decide
     const failed = units.filter(u => u.status === 'failed')
     const pending = units.filter(u => u.status === 'pending')
 
+    // Validate dependency references and detect cycles
+    const warnings = []
+    for (const unit of units) {
+      for (const dep of (unit.dependsOn || [])) {
+        if (!statusMap.has(dep)) {
+          warnings.push(`${unit.unitId} references non-existent dependency ${dep}`)
+        }
+      }
+    }
+
+    // Cycle detection via DFS
+    const visited = new Set()
+    const inStack = new Set()
+    const depsMap = new Map(units.map(u => [u.unitId, u.dependsOn || []]))
+    function hasCycle(nodeId, path) {
+      if (inStack.has(nodeId)) {
+        const cycleStart = path.indexOf(nodeId)
+        warnings.push(`Circular dependency: ${path.slice(cycleStart).join(' → ')} → ${nodeId}`)
+        return true
+      }
+      if (visited.has(nodeId)) return false
+      visited.add(nodeId)
+      inStack.add(nodeId)
+      path.push(nodeId)
+      for (const dep of (depsMap.get(nodeId) || [])) {
+        if (depsMap.has(dep)) hasCycle(dep, path)
+      }
+      path.pop()
+      inStack.delete(nodeId)
+      return false
+    }
+    for (const unit of units) {
+      if (!visited.has(unit.unitId)) hasCycle(unit.unitId, [])
+    }
+
     // Determine ready units (all dependencies completed)
     const ready = []
     const blocked = []
@@ -2397,6 +2432,9 @@ This is informational — Adam is communicating directly with the pillar. Decide
       }
     }
 
+    // Normalize file paths for disjointness analysis (strip ./ prefix, backticks)
+    const normalizeFilePath = (f) => f.replace(/^`|`$/g, '').replace(/^\.\//g, '')
+
     // Analyze file-disjointness for parallelism
     let parallelRecommendation = null
     if (ready.length >= 2) {
@@ -2404,8 +2442,8 @@ This is informational — Adam is communicating directly with the pillar. Decide
       const disjointPairs = []
       for (let i = 0; i < ready.length; i++) {
         for (let j = i + 1; j < ready.length; j++) {
-          const filesA = new Set(ready[i].files || [])
-          const filesB = new Set(ready[j].files || [])
+          const filesA = new Set((ready[i].files || []).map(normalizeFilePath))
+          const filesB = new Set((ready[j].files || []).map(normalizeFilePath))
           const overlap = [...filesA].filter(f => filesB.has(f))
           if (overlap.length === 0) {
             disjointPairs.push([ready[i].unitId, ready[j].unitId])
@@ -2435,6 +2473,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
 
     return {
       planFile,
+      warnings: warnings.length > 0 ? warnings : undefined,
       summary: {
         total: units.length,
         completed: completed.length,

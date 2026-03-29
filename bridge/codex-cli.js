@@ -104,8 +104,9 @@ export class CodexCliManager {
       onEvent({ type: 'codex_error', requestId, error: `Stream error: ${err.message}` })
     })
 
-    proc.stderr.on('data', () => {
-      // Codex writes progress info to stderr — ignore
+    proc.stderr.on('data', (data) => {
+      const text = data.toString().trim()
+      if (text) log.warn(`[${reqShort}] stderr: ${text}`)
     })
 
     proc.stderr.on('error', (err) => {

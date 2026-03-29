@@ -1,6 +1,7 @@
 import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
 import { writeFileSync, unlinkSync } from 'fs'
+import { readdir, unlink } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { attachStreamParser } from './cli-stream-parser.js'
@@ -12,6 +13,21 @@ export class ClaudeCliManager {
   constructor() {
     this.processes = new Map() // requestId → { process, sessionId, mcpConfigPath }
     this.mcpProxyPort = null
+    // Clean up orphaned MCP config files from previous crashes (async, non-blocking)
+    this._cleanupOrphanedConfigs()
+  }
+
+  async _cleanupOrphanedConfigs() {
+    try {
+      const tmp = tmpdir()
+      const entries = await readdir(tmp)
+      const configs = entries.filter(f => f.startsWith('paloma-mcp-') && f.endsWith('.json'))
+      if (configs.length === 0) return
+      await Promise.allSettled(
+        configs.map(f => unlink(join(tmp, f)))
+      )
+      log.info(`Cleaned up ${configs.length} orphaned MCP config(s)`)
+    } catch { /* best-effort */ }
   }
 
   chat({ prompt, model, sessionId, systemPrompt, cwd }, onEvent) {
@@ -82,8 +98,9 @@ export class ClaudeCliManager {
       onEvent({ type: 'claude_error', requestId, error: `Stream error: ${err.message}` })
     })
 
-    proc.stderr.on('data', () => {
-      // Claude CLI writes progress info to stderr — ignore
+    proc.stderr.on('data', (data) => {
+      const text = data.toString().trim()
+      if (text) log.warn(`[${reqShort}] stderr: ${text}`)
     })
 
     proc.stderr.on('error', (err) => {

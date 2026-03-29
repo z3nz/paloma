@@ -10,4 +10,9 @@ app.config.errorHandler = (err, instance, info) => {
   // Prevent the error from crashing the entire app
 }
 
+// Catch unhandled promise rejections from composables and async event handlers
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[Unhandled Rejection]:', event.reason)
+})
+
 app.mount('#app')

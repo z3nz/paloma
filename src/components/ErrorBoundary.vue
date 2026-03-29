@@ -9,7 +9,7 @@
           <line x1="12" y1="16" x2="12.01" y2="16"/>
         </svg>
       </div>
-      <p class="text-lg text-text-secondary mb-2">Something went wrong</p>
+      <p class="text-lg text-text-secondary mb-2">{{ label ? `${label}: Something went wrong` : 'Something went wrong' }}</p>
       <p class="text-sm text-text-muted mb-4">{{ errorMessage }}</p>
 
       <!-- Collapsible stack trace -->
@@ -40,6 +40,10 @@
 
 <script setup>
 import { ref, computed, onErrorCaptured } from 'vue'
+
+const props = defineProps({
+  label: { type: String, default: '' }
+})
 
 const error = ref(null)
 const errorInfo = ref(null)

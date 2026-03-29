@@ -1604,7 +1604,7 @@ async function main() {
     if (usageTracker) await usageTracker.shutdown()
     if (health) health.shutdown()
     if (emailWatcher) emailWatcher.shutdown()
-    if (pillarManager) pillarManager.shutdown()
+    if (pillarManager) await pillarManager.shutdown()
     cliManager.shutdown()
     codexManager.shutdown()
     copilotManager.shutdown()

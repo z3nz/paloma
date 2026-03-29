@@ -23,6 +23,7 @@
     @switch-view="activeView = $event"
   >
     <template v-if="activeView === 'chat'">
+      <ErrorBoundary label="Chat">
       <ChatView
         v-if="activeSession"
         :session="activeSession"
@@ -47,9 +48,10 @@
           </button>
         </div>
       </div>
+      </ErrorBoundary>
     </template>
-    <InboxView v-else-if="activeView === 'inbox'" />
-    <FilesView v-else-if="activeView === 'files'" />
+    <ErrorBoundary v-else-if="activeView === 'inbox'" label="Inbox"><InboxView /></ErrorBoundary>
+    <ErrorBoundary v-else-if="activeView === 'files'" label="Files"><FilesView /></ErrorBoundary>
 
     <template #right-sidebar>
       <ChangesPanel
