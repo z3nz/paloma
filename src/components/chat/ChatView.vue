@@ -17,6 +17,7 @@
     </div>
     <TrinityStatus :trinity-groups="sessionTrinityGroups" />
     <ArkStatus :ark-groups="sessionArkGroups" />
+    <HydraStatus :hydra-groups="sessionHydraGroups" />
     <PromptBuilder
       :session="session"
       :streaming="streaming"
@@ -69,6 +70,7 @@ import AskUserDialog from './AskUserDialog.vue'
 import ThinkingPanel from './ThinkingPanel.vue'
 import TrinityStatus from './TrinityStatus.vue'
 import ArkStatus from './ArkStatus.vue'
+import HydraStatus from './HydraStatus.vue'
 import { useChat } from '../../composables/useChat.js'
 import { useChanges } from '../../composables/useChanges.js'
 import { useVoiceInput } from '../../composables/useVoiceInput.js'
@@ -98,7 +100,7 @@ const { voiceMode, isListening, startListening } = useVoiceInput()
 const { apiKey } = useSettings()
 const { dirHandle, projectRoot, projectInstructions, activePlans, roots, mcpConfig, refreshActivePlans } = useProject()
 const { search: searchFiles } = useFileIndex()
-const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool, pendingAutoResume, singularityGroups, trinityGroups, arkGroups } = useMCP()
+const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool, pendingAutoResume, singularityGroups, trinityGroups, arkGroups, hydraGroups } = useMCP()
 
 // Filter trinity groups to only those belonging to the current chat session
 const sessionTrinityGroups = computed(() => {
@@ -116,6 +118,16 @@ const sessionArkGroups = computed(() => {
   for (const [groupId, group] of arkGroups) {
     if (group.chatDbSessionId === props.session?.id) {
       filtered.set(groupId, group)
+    }
+  }
+  return filtered
+})
+
+const sessionHydraGroups = computed(() => {
+  const filtered = new Map()
+  for (const [hydraId, group] of hydraGroups) {
+    if (group.chatDbSessionId === props.session?.id) {
+      filtered.set(hydraId, group)
     }
   }
   return filtered

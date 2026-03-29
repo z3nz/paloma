@@ -66,6 +66,9 @@ const trinityGroups = reactive(new Map()) // groupId → { trinityId, mindPillar
 // Gen7 Ark state
 const arkGroups = reactive(new Map()) // groupId → { arkId, head1PillarId, head2PillarId, head3PillarId, chatDbSessionId }
 
+// Gen7 Hydra state
+const hydraGroups = reactive(new Map()) // hydraId → { hydraId, round, phase, aliveHeads, deadHeads, workers, totalHeadsEver, consensusBy, chatDbSessionId }
+
 const connected = ref(false)
 const connectionState = ref('disconnected') // 'disconnected' | 'connecting' | 'connected'
 const servers = ref({})
@@ -457,6 +460,19 @@ export function useMCP() {
           head1PillarId: msg.head1PillarId,
           head2PillarId: msg.head2PillarId,
           head3PillarId: msg.head3PillarId,
+          chatDbSessionId: msg.chatDbSessionId || null
+        })
+      },
+      onHydraUpdate(msg) {
+        hydraGroups.set(msg.hydraId, {
+          hydraId: msg.hydraId,
+          round: msg.round,
+          phase: msg.phase,
+          aliveHeads: msg.aliveHeads || [],
+          deadHeads: msg.deadHeads || [],
+          workers: msg.workers || [],
+          totalHeadsEver: msg.totalHeadsEver || 0,
+          consensusBy: msg.consensusBy || null,
           chatDbSessionId: msg.chatDbSessionId || null
         })
       },
@@ -914,6 +930,11 @@ export function useMCP() {
     return bridge.sendArkChat(options, callbacks)
   }
 
+  function sendHydraChat(options, callbacks) {
+    if (!bridge || !connected.value) throw new Error('Bridge not connected')
+    return bridge.sendHydraChat(options, callbacks)
+  }
+
   function stopOllamaChat(requestId) {
     if (bridge) bridge.stopOllamaChat(requestId)
   }
@@ -1163,6 +1184,7 @@ export function useMCP() {
     sendQuinnGen5Chat,
     sendHolyTrinityChat,
     sendArkChat,
+    sendHydraChat,
     stopOllamaChat,
     respondToAskUser,
     approveCliTool,
@@ -1185,7 +1207,8 @@ export function useMCP() {
     singularityGroups,
     singularityThinkerContent,
     trinityGroups,
-    arkGroups
+    arkGroups,
+    hydraGroups
   }
 }
 

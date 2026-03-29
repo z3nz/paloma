@@ -37,6 +37,8 @@ export function createMcpBridge() {
   let onSingularityReady = null
   let onSingularityComplete = null
   let onTrinityCreated = null
+  let onArkCreated = null
+  let onHydraUpdate = null
   let pingTimer = null
   let lastPongTime = 0
 
@@ -73,6 +75,8 @@ export function createMcpBridge() {
     onSingularityReady = callbacks.onSingularityReady || null
     onSingularityComplete = callbacks.onSingularityComplete || null
     onTrinityCreated = callbacks.onTrinityCreated || null
+    onArkCreated = callbacks.onArkCreated || null
+    onHydraUpdate = callbacks.onHydraUpdate || null
     url = bridgeUrl
     intentionalClose = false
     _connect()
@@ -327,6 +331,8 @@ export function createMcpBridge() {
         onTrinityCreated?.(msg)
       } else if (msg.type === 'ark_created') {
         onArkCreated?.(msg)
+      } else if (msg.type === 'hydra_update') {
+        onHydraUpdate?.(msg)
       } else if (msg.type === 'singularity_ready') {
         onSingularityReady?.(msg)
       } else if (msg.type === 'singularity_complete') {
@@ -610,6 +616,38 @@ export function createMcpBridge() {
     })
   }
 
+  function sendHydraChat(options, callbacks) {
+    const id = crypto.randomUUID()
+    streamListeners.set(id, {
+      onStream: callbacks.onStream,
+      onDone: callbacks.onDone,
+      onError: callbacks.onError
+    })
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (pending.has(id)) {
+          pending.delete(id)
+          streamListeners.delete(id)
+          reject(new Error('Bridge did not acknowledge Hydra message'))
+        }
+      }, CHAT_ACK_TIMEOUT)
+      const wrappedResolve = (v) => { clearTimeout(timer); resolve(v) }
+      const wrappedReject = (e) => { clearTimeout(timer); streamListeners.delete(id); reject(e) }
+      pending.set(id, { resolve: wrappedResolve, reject: wrappedReject })
+      _send({
+        type: 'hydra_chat',
+        id,
+        chatDbSessionId: options.chatDbSessionId || null,
+        userMessage: options.prompt
+      }).catch((e) => {
+        clearTimeout(timer)
+        pending.delete(id)
+        streamListeners.delete(id)
+        reject(e)
+      })
+    })
+  }
+
   function stopOllamaChat(requestId) {
     _send({ type: 'ollama_stop', requestId })
   }
@@ -682,7 +720,7 @@ export function createMcpBridge() {
     return promise
   }
 
-  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendGeminiChat, stopGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, resumePillar, sendPillarUserMessage, getState }
+  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendGeminiChat, stopGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, resumePillar, sendPillarUserMessage, getState }
 }
 
 // Enable HMR boundary — errors here don't cascade to full reload

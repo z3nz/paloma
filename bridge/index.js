@@ -117,6 +117,8 @@ const flowChatBuffers = new Map()
 const trinityPillarToChat = new Map()
 // The Ark (Gen7): head1PillarId → { ws, msgId } — intercepts pillar_stream for chat UI
 const arkPillarToChat = new Map()
+// The Hydra (Gen7 refined): primaryPillarId → { ws, msgId } — intercepts pillar_stream for chat UI
+const hydraPillarToChat = new Map()
 
 // Auto-reject stale pending requests and clean up leaked mappings (30s interval)
 const PENDING_TIMEOUT_MS = 5 * 60 * 1000
@@ -715,10 +717,10 @@ async function main() {
       }
     }
 
-    // Holy Trinity / Ark interceptor: translate pillar_stream/pillar_done from Mind/Head1
+    // Holy Trinity / Ark / Hydra interceptor: translate pillar_stream/pillar_done
     // into ollama_stream/ollama_done for the chat UI
     if ((msg.type === 'pillar_stream' || msg.type === 'pillar_done') && msg.pillarId) {
-      const mapping = trinityPillarToChat.get(msg.pillarId) || arkPillarToChat.get(msg.pillarId)
+      const mapping = trinityPillarToChat.get(msg.pillarId) || arkPillarToChat.get(msg.pillarId) || hydraPillarToChat.get(msg.pillarId)
       if (mapping && mapping.ws.readyState === 1) {
         try {
           if (msg.type === 'pillar_stream') {
@@ -732,6 +734,7 @@ async function main() {
             }))
             trinityPillarToChat.delete(msg.pillarId)
             arkPillarToChat.delete(msg.pillarId)
+            hydraPillarToChat.delete(msg.pillarId)
           }
         } catch (_) { /* client disconnected */ }
       }
@@ -1514,6 +1517,31 @@ async function main() {
             sessionId: result.arkGroupId || result.pillarId
           }))
           log.info(`[gen7] Ark spawned — head1: ${result.pillarId.slice(0, 8)}, head2: ${result.head2PillarId?.slice(0, 8) || 'n/a'}, head3: ${result.head3PillarId?.slice(0, 8) || 'n/a'}`)
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
+        }
+      } else if (msg.type === 'hydra_chat') {
+        // Gen7 Hydra Protocol: spawn dynamic consensus engine via PillarManager
+        try {
+          if (!pillarManager) throw new Error('PillarManager not initialized')
+          const result = await pillarManager.spawn({
+            pillar: 'forge',
+            prompt: msg.userMessage || msg.prompt || '',
+            backend: 'ollama',
+            singularityRole: 'hydra',
+            _chatDbSessionId: msg.chatDbSessionId || null
+          })
+          if (!result.pillarId) {
+            throw new Error(result.message || 'Failed to spawn The Hydra')
+          }
+          // Register primary pillarId for stream routing
+          hydraPillarToChat.set(result.pillarId, { ws, msgId: msg.id })
+          ws.send(JSON.stringify({
+            type: 'ollama_ack', id: msg.id,
+            requestId: result.pillarId,
+            sessionId: result.hydraId || result.pillarId
+          }))
+          log.info(`[gen7] Hydra spawned — primary: ${result.pillarId.slice(0, 8)}, hydraId: ${result.hydraId}`)
         } catch (e) {
           ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
         }

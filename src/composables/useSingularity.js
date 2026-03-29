@@ -18,7 +18,7 @@ let _instance = null
 export function useSingularity() {
   if (_instance) return _instance
 
-  const { singularityGroups, singularityThinkerContent, trinityGroups, arkGroups } = useMCP()
+  const { singularityGroups, singularityThinkerContent, trinityGroups, arkGroups, hydraGroups } = useMCP()
 
   // The group ID of the most recently activated singularity session
   const activeGroupId = ref(null)
@@ -28,6 +28,9 @@ export function useSingularity() {
 
   // The group ID of the most recently activated Gen7 Ark session
   const activeArkGroupId = ref(null)
+
+  // The hydra ID of the most recently activated Hydra session
+  const activeHydraId = ref(null)
 
   // Thinker tool calls for the active group — populated via handleSingularityEvent
   const thinkerToolCalls = ref([])
@@ -72,6 +75,14 @@ export function useSingularity() {
   /** True when an Ark session is active. */
   const isArkActive = computed(() => !!activeArkGroupId.value && arkGroups.has(activeArkGroupId.value))
 
+  /** The current Hydra group, or null if none active. */
+  const activeHydraGroup = computed(() =>
+    activeHydraId.value ? hydraGroups.get(activeHydraId.value) ?? null : null
+  )
+
+  /** True when a Hydra session is active. */
+  const isHydraActive = computed(() => !!activeHydraId.value && hydraGroups.has(activeHydraId.value))
+
   // ── Event handler ───────────────────────────────────────────────────────────
 
   /**
@@ -105,6 +116,11 @@ export function useSingularity() {
       case 'ark_created':
         // Gen7 Ark group started — tracked in arkGroups (useMCP handles storage)
         activeArkGroupId.value = event.groupId
+        break
+
+      case 'hydra_update':
+        // Gen7 Hydra update — tracked in hydraGroups (useMCP handles storage)
+        activeHydraId.value = event.hydraId
         break
 
       case 'pillar_tool_call':
@@ -213,6 +229,11 @@ export function useSingularity() {
     activeArkGroupId,
     isArkActive,
     arkGroups,
+    // Gen7 Hydra state
+    activeHydraGroup,
+    activeHydraId,
+    isHydraActive,
+    hydraGroups,
     // Internal (exposed for components that need the raw ID)
     activeGroupId,
     // Methods
