@@ -35,11 +35,11 @@ A repeatable, multi-machine self-improvement cycle. Each run: assess what's chan
 
 ### Tier 3: Medium Priority (5 items)
 
-- [ ] **MP-1: No consolidated error recovery strategy** — Each CLI manager (claude, codex, copilot, gemini) handles errors differently. No shared patterns or retry logic
-- [ ] **MP-2: Frontend error handling sparse** — No Vue error boundaries around tool components. Uncaught errors can blank the UI
-- [ ] **MP-3: Persistence debouncing (2s) could lose state on crash** — If bridge crashes within the 2s debounce window, pending state writes are lost
+- [x] **MP-1: No consolidated error recovery strategy** ✔ (Lenovo) — Standardized stderr logging across all 4 CLI managers. Added orphaned temp cleanup to Claude. Base class extraction deferred to Chart.
+- [x] **MP-2: Frontend error handling sparse** ✔ (Lenovo) — Added ErrorBoundary wrappers at ChatView/InboxView/FilesView level. Added label prop. Added unhandledrejection handler in main.js.
+- [x] **MP-3: Persistence debouncing (2s) could lose state on crash** ✔ (Lenovo) — Made PillarManager.shutdown() async, await persistence.flush() before process.exit(). Also awaited in bridge/index.js shutdown.
 - [ ] **MP-4: Ollama eval system lacks structured logging** — Eval runs produce output but no aggregated logs for trend analysis
-- [ ] **MP-5: No validation of plan file format** — Corrupted or malformed plan files fail silently when parsed by orchestration tools
+- [x] **MP-5: No validation of plan file format** ✔ (Lenovo) — orchestrate() now validates dependency references, detects cycles via DFS, normalizes file paths for disjointness analysis. Warnings returned in response.
 
 ### Tier 4: Quick Wins (9 items)
 
@@ -59,8 +59,7 @@ A repeatable, multi-machine self-improvement cycle. Each run: assess what's chan
 |---------|-------|--------|
 | Lynch Tower | CF-1–CF-5 ✓, HP-3 ✓, HP-4 ✓, HP-2 ✓, QW-5 ✓, QW-8 ✓ | All Lynch Tower items done |
 | Adam's MacBook Pro | HP-5 ✓, QW-2 ✓, QW-1 ✓, QW-4 ✓, QW-6 ✓, QW-9 ✓, QW-3 ✓, QW-7 ✓ | Round 3 complete |
-| Lenovo | HP-1 (test suite), MP-4 (eval logging) | Pending Lenovo input |
-| Unassigned | MP-1, MP-2, MP-3, MP-5 | Available for next round |
+| Lenovo | HP-1 (test suite), MP-4 (eval logging), MP-1 ✓, MP-2 ✓, MP-3 ✓, MP-5 ✓ | Round 5 complete |
 
 ## Coordination Protocol
 
@@ -91,6 +90,17 @@ A repeatable, multi-machine self-improvement cycle. Each run: assess what's chan
 
 ### Run 4 — 2026-03-25 (Lenovo — Deep Logger Migration + Code Quality)
 Continued QW-9 structured logger migration across all remaining bridge modules. Also code quality + accessibility pass.
+(details below)
+
+### Run 5 — 2026-03-29 (Lenovo — Medium Priority Sweep)
+Adam AFK, Lenovo self-improving autonomously. Tackled all remaining medium-priority items:
+- MP-3: Persistence flush race condition — critical bug where `flush()` was never awaited on shutdown
+- MP-2: Vue error boundaries at view level + unhandledrejection handler
+- MP-5: Plan file validation — dependency reference checks, cycle detection, path normalization
+- MP-1: Standardized stderr logging across CLI managers, orphaned temp cleanup for Claude
+- Commit 68b6be9, pushed to main
+
+**Remaining:** Only HP-1 (test suite — large effort) and MP-4 (Ollama eval logging) are open.
 
 **Completed:**
 - [x] Extracted shared JSONL stream parser (`bridge/cli-stream-parser.js`) — eliminated ~100 lines of duplicated buffer management across 4 CLI managers → commit 5101723
