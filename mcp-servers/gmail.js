@@ -36,7 +36,8 @@ const TOKENS_PATH = resolve(homedir(), '.paloma', 'gmail-tokens.json')
 const REDIRECT_URI = 'http://localhost:3456/oauth2callback'
 const SCOPES = [
   'https://www.googleapis.com/auth/gmail.send',
-  'https://www.googleapis.com/auth/gmail.readonly'
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.modify'
 ]
 const DEFAULT_RECIPIENT = process.env.GMAIL_RECIPIENT || null
 
