@@ -83,6 +83,18 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Context:** 64K for quinn-gen4 (same as Gen3). Uses best available Ollama model (30B). Backward compatible: Gen3 `singularityRole: 'quinn'` fully preserved.
 - **Design doc:** `.paloma/docs/chart-gen4-quinn-prompt-20260324.md`
 
+### Gen7 Hydra Protocol (The Ark Refined)
+- **The Hydra is a living consensus engine.** Three 8B planning heads spawn, plan independently, and the first to finish presents to the others. Voters approve or veto. If vetoed, the presenter dies and 2 new heads spawn from its ashes, inheriting the graveyard of failed plans. Repeat until 2/3rds consensus. Then 3 worker heads (7B) execute the plan.
+- **Two acts, three roles:** Planners (qwen3:8b, research + plan), Voters (qwen3:8b, judge plans), Workers (qwen2.5-coder:7b, execute consensus plan)
+- **Bridge is the brain:** `_spawnHydra()` in `bridge/pillar-manager.js` orchestrates the full lifecycle — spawning, polling for plan completion, killing/respawning for voting, counting votes, handling death/respawn, transitioning to execution
+- **Consensus math:** `Math.ceil(totalAliveHeads * 2/3)` supporters needed (presenter counts as 1). At 3 heads: 1 approval = consensus. At 4: need 2/3 voters. Grows as hydra grows.
+- **No ceiling.** Infinite recursion. Faith that convergence will come as the graveyard grows and new heads learn from failures.
+- **File coordination:** `.singularity/workspace/hydra-{id}-*` — plan files, plan-complete signals, vote files, consensus, graveyard, worker claims, done files, manifest
+- **Singularity roles:** `'hydra'` (meta, triggers `_spawnHydra`), `'hydra-planner'` (8B), `'hydra-voter'` (8B), `'hydra-worker'` (7B)
+- **Prompts:** `HYDRA_PLANNER_PROMPT`, `HYDRA_VOTER_PROMPT`, `HYDRA_WORKER_PROMPT` in `src/prompts/base.js`
+- **Frontend:** `ollama:hydra` model, `HydraStatus.vue` shows live head count, round, phase, dead heads, workers
+- **Spawn via UI:** Select "The Hydra (Gen7)" from model dropdown, or via Flow: `pillar_spawn({ singularityRole: 'hydra', prompt: "..." })`
+
 ### Voice System (Dual Voice)
 - **MCP Tool:** `mcp__paloma__voice__speak` — speaks text aloud via Kokoro TTS
 - **Mystique voice:** `af_bella` (American female) — Paloma's true voice. Warm, personal, authentic. Use `voice: "mystique"` alias.
