@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { readdir, readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
-import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT, SINGULARITY_QUINN_PROMPT, SINGULARITY_QUINN_GEN3_PROMPT, SINGULARITY_WORKER_PROMPT, SINGULARITY_FRESH_PROMPT, SINGULARITY_GEN5_PROMPT, HOLY_TRINITY_ARM_PROMPT, HOLY_TRINITY_MIND_PROMPT, ARK_HEAD_PROMPT, HYDRA_PLANNER_PROMPT, HYDRA_PLANNER_1_PROMPT, HYDRA_PLANNER_2_PROMPT, HYDRA_PLANNER_3_PROMPT, HYDRA_VOTER_PROMPT, HYDRA_WORKER_PROMPT } from '../src/prompts/base.js'
+import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT, SINGULARITY_QUINN_PROMPT, SINGULARITY_QUINN_GEN3_PROMPT, SINGULARITY_WORKER_PROMPT, SINGULARITY_FRESH_PROMPT, SINGULARITY_GEN5_PROMPT, HOLY_TRINITY_ARM_PROMPT, HOLY_TRINITY_MIND_PROMPT, ARK_HEAD_PROMPT, HYDRA_PLANNER_PROMPT, HYDRA_VOTER_PROMPT, HYDRA_WORKER_PROMPT } from '../src/prompts/base.js'
 import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
 import { Persistence } from './persistence.js'
 import { createLogger } from './logger.js'
@@ -219,7 +219,7 @@ export class PillarManager {
     log.info(`Backend selection for ${pillar}: ${selection.backend} (${selection.reason})`)
 
     // The Hydra Protocol (Gen7 refined): dynamic head growth with consensus
-    if (singularityRole === 'hydra' || singularityRole === 'gen77') {
+    if (singularityRole === 'hydra') {
       return this._spawnHydra({ pillar, prompt, model, flowRequestId, planFile, backend: resolvedBackend, parentPillarId, _chatDbSessionId, singularityRole })
     }
 
@@ -338,7 +338,7 @@ export class PillarManager {
       numCtx: (singularityRole === 'holy-trinity-mind') ? 65536
             : (singularityRole === 'holy-trinity-arm') ? 16384
             : (singularityRole === 'ark-head') ? 32768
-            : (singularityRole === 'hydra-planner' || singularityRole === 'gen77-planner') ? 32768
+            : (singularityRole === 'hydra-planner') ? 32768
             : (singularityRole === 'hydra-voter') ? 16384
             : (singularityRole === 'hydra-worker') ? 32768
             : (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'quinn-fresh' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536
@@ -1868,7 +1868,7 @@ Your ONLY output is the plan file. Start by reading relevant files, then write y
         planFile: state.planFile,
         backend: state.backend,
         parentPillarId: state.primaryPillarId || state.parentPillarId,
-        singularityRole: state.singularityRole === 'gen77' ? 'gen77-planner' : 'hydra-planner',
+        singularityRole: 'hydra-planner',
         _arkExtra: {
           headNumber: headNum,
           hydraId: state.hydraId,
@@ -3478,9 +3478,13 @@ This is informational — Adam is communicating directly with the pillar. Decide
   _pickArkModel(modelOverride) {
     if (modelOverride) return modelOverride
     const models = this.health?.status?.ollama?.models || []
-    const qwen3_8b = models.find(m => m === 'qwen3:8b')
-    if (qwen3_8b) return qwen3_8b
-    return this._pickBestOllamaModel(true)
+    // Prefer qwen3:8b explicitly
+    if (models.includes('qwen3:8b')) return 'qwen3:8b'
+    // Fallback: any 8b model, then any 7b model — NEVER pick 30b/32b
+    const small = models.find(m => m.includes('8b')) || models.find(m => m.includes('7b'))
+    if (small) return small
+    // Hard default — even if not installed, Ollama will error clearly
+    return 'qwen3:8b'
   }
 
   /**
@@ -3581,7 +3585,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
     // Singularity sessions (Voice/Thinker/Quinn/Worker) get a drastically stripped system prompt:
     // OLLAMA_INSTRUCTIONS + project instructions + role prompt ONLY.
     // No plans, no roots, no phase instructions — saves ~25K tokens of context budget.
-    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'worker' || singularityRole === 'quinn-fresh' || singularityRole === 'quinn-gen5' || singularityRole === 'holy-trinity-arm' || singularityRole === 'holy-trinity-mind' || singularityRole === 'ark-head' || singularityRole === 'hydra-planner' || singularityRole === 'gen77-planner' || singularityRole === 'hydra-voter' || singularityRole === 'hydra-worker'
+    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'worker' || singularityRole === 'quinn-fresh' || singularityRole === 'quinn-gen5' || singularityRole === 'holy-trinity-arm' || singularityRole === 'holy-trinity-mind' || singularityRole === 'ark-head' || singularityRole === 'hydra-planner' || singularityRole === 'hydra-voter' || singularityRole === 'hydra-worker'
 
     // Claude CLI reads CLAUDE.md automatically, which includes instructions.md and roots
     // via @ references. Including them again here would duplicate ~43KB of content and
@@ -3702,16 +3706,10 @@ This is informational — Adam is communicating directly with the pillar. Decide
         .replace(/\{ARK_ID\}/g, ae.arkId || '?')
         .replace(/\{ANCHOR_INSTRUCTIONS\}/g, anchorInstructions)
         .replace(/\{PHASE_4_INSTRUCTIONS\}/g, phase4Instructions)
-    } else if (singularityRole === 'hydra-planner' || singularityRole === 'gen77-planner') {
+    } else if (singularityRole === 'hydra-planner') {
       const he = arkExtra || {} // reuse arkExtra param for hydra context
-      const headNum = he.headNumber || 1
-      let basePrompt = HYDRA_PLANNER_PROMPT
-      if (headNum === 1) basePrompt = HYDRA_PLANNER_1_PROMPT
-      else if (headNum === 2) basePrompt = HYDRA_PLANNER_2_PROMPT
-      else if (headNum === 3) basePrompt = HYDRA_PLANNER_3_PROMPT
-
-      prompt += '\n\n' + basePrompt
-        .replace(/\{HEAD_NUMBER\}/g, String(headNum))
+      prompt += '\n\n' + HYDRA_PLANNER_PROMPT
+        .replace(/\{HEAD_NUMBER\}/g, String(he.headNumber || '?'))
         .replace(/\{TASK\}/g, '(see user message)')
         .replace(/\{PLAN_PATH\}/g, he.planPath || '.singularity/workspace/hydra-?-head-?-plan.md')
         .replace(/\{PLAN_COMPLETE_PATH\}/g, he.planCompletePath || '.singularity/workspace/hydra-?-head-?-plan-complete')

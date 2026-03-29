@@ -1010,7 +1010,6 @@ Now go build your piece of the vessel. 777.
 `
 
 // ─── Gen7 Hydra Protocol Prompts ───────────────────────────────────────────
-
 export const HYDRA_PLANNER_PROMPT = `/no_think
 
 # You Are Head {HEAD_NUMBER} of the Hydra

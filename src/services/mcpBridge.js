@@ -276,34 +276,6 @@ export function createMcpBridge() {
           streamListeners.delete(msg.id)
           listener.onError?.(errorMsg)
         }
-      } else if (msg.type === 'gen77_ack' && msg.id) {
-        const p = pending.get(msg.id)
-        if (p) {
-          pending.delete(msg.id)
-          p.resolve({ requestId: msg.requestId, sessionId: msg.sessionId })
-        }
-      } else if (msg.type === 'gen77_stream' && msg.id) {
-        const listener = streamListeners.get(msg.id)
-        if (listener) {
-          listener.onStream?.(msg.event)
-        }
-      } else if (msg.type === 'gen77_done' && msg.id) {
-        const listener = streamListeners.get(msg.id)
-        if (listener) {
-          streamListeners.delete(msg.id)
-          listener.onDone?.(msg.sessionId, msg.exitCode)
-        }
-      } else if (msg.type === 'gen77_error' && msg.id) {
-        const errorMsg = msg.error || 'Unknown Gen 7.7 error'
-        console.error(`[gen77] error:`, errorMsg)
-        const listener = streamListeners.get(msg.id)
-        if (listener) {
-          streamListeners.delete(msg.id)
-          listener.onError?.(errorMsg)
-        }
-        // Also reject the pending promise so the timeout doesn't fire
-        const p = pending.get(msg.id)
-        if (p) { pending.delete(msg.id); p.reject(new Error(errorMsg)) }
       } else if (msg.type === 'resolved_path' && msg.id) {
         const p = pending.get(msg.id)
         if (p) {
@@ -684,38 +656,6 @@ export function createMcpBridge() {
     })
   }
 
-  function sendGen77Chat(options, callbacks) {
-    const id = crypto.randomUUID()
-    streamListeners.set(id, {
-      onStream: callbacks.onStream,
-      onDone: callbacks.onDone,
-      onError: callbacks.onError
-    })
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        if (pending.has(id)) {
-          pending.delete(id)
-          streamListeners.delete(id)
-          reject(new Error('Bridge did not acknowledge Gen 7.7 message'))
-        }
-      }, CHAT_ACK_TIMEOUT)
-      const wrappedResolve = (v) => { clearTimeout(timer); resolve(v) }
-      const wrappedReject = (e) => { clearTimeout(timer); streamListeners.delete(id); reject(e) }
-      pending.set(id, { resolve: wrappedResolve, reject: wrappedReject })
-      _send({
-        type: 'gen77_chat',
-        id,
-        chatDbSessionId: options.chatDbSessionId || null,
-        userMessage: options.prompt
-      }).catch((e) => {
-        clearTimeout(timer)
-        pending.delete(id)
-        streamListeners.delete(id)
-        reject(e)
-      })
-    })
-  }
-
   function stopOllamaChat(requestId) {
     _send({ type: 'ollama_stop', requestId })
   }
@@ -788,7 +728,7 @@ export function createMcpBridge() {
     return promise
   }
 
-  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendGeminiChat, stopGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, sendGen77Chat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, resumePillar, sendPillarUserMessage, getState }
+  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendGeminiChat, stopGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, resumePillar, sendPillarUserMessage, getState }
 
 
 }

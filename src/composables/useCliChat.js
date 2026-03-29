@@ -1,4 +1,4 @@
-import { isDirectCliModel, isCodexModel, isCopilotModel, isGeminiModel, isOllamaModel, isQuinnGen5Model, isHolyTrinityModel, isArkModel, isGen77Model, isHydraModel, getCliModelName, getCodexModelName, getCopilotModelName, getGeminiModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamCopilotChat, streamGeminiChat, streamOllamaChat } from '../services/claudeStream.js'
+import { isDirectCliModel, isCodexModel, isCopilotModel, isGeminiModel, isOllamaModel, isQuinnGen5Model, isHolyTrinityModel, isArkModel, isHydraModel, getCliModelName, getCodexModelName, getCopilotModelName, getGeminiModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamCopilotChat, streamGeminiChat, streamOllamaChat } from '../services/claudeStream.js'
 import { useMCP } from './useMCP.js'
 import { useProject } from './useProject.js'
 import { useToolExecution } from './useToolExecution.js'
@@ -18,7 +18,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     sessionState = activeState()
   }
 
-  const { sendClaudeChat, sendCodexChat, sendCopilotChat, sendGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, sendGen77Chat } = useMCP()
+  const { sendClaudeChat, sendCodexChat, sendCopilotChat, sendGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat } = useMCP()
   const { addActivity, markActivityDone, toolActivity } = useToolExecution(sessionState)
 
   const useCodex = isCodexModel(model)
@@ -28,7 +28,6 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   const isGen5 = isQuinnGen5Model(model)
   const isGen6 = isHolyTrinityModel(model)
   const isGen7 = isArkModel(model)
-  const isGen77 = isGen77Model(model)
   const isHydra = isHydraModel(model)
   const session = await db.sessions.get(sessionId)
 
@@ -72,15 +71,15 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     prompt,
     model: resolvedModel,
     sessionId: existingCliSession,
-    chatDbSessionId: (isGen6 || isGen7 || isGen77 || isHydra) ? sessionId : undefined,
-    systemPrompt: (existingCliSession || isDirectCliModel(model) || isGen5 || isGen6 || isGen7 || isGen77 || isHydra)
+    chatDbSessionId: (isGen6 || isGen7 || isHydra) ? sessionId : undefined,
+    systemPrompt: (existingCliSession || isDirectCliModel(model) || isGen5 || isGen6 || isGen7 || isHydra)
       ? undefined
       : useOllama
         ? buildOllamaSystemPrompt(phase, projectInstructions)
         : buildSystemPrompt(phase, projectInstructions, activePlans, [], roots),
     cwd: useProject().projectRoot.value || undefined,
     enableTools: useOllama ? true : undefined,
-    freshContext: (useOllama && !isGen5 && !isGen6 && !isGen7 && !isGen77 && !isHydra) ? true : undefined
+    freshContext: (useOllama && !isGen5 && !isGen6 && !isGen7 && !isHydra) ? true : undefined
   }
 
   let accumulatedContent = ''
@@ -88,9 +87,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   const toolUseToActivity = new Map()  // toolUseId → activityId
   const toolUseMeta = new Map()        // toolUseId → { name, args }
 
-  const sendFn = isGen77
-    ? (opts, cbs) => sendGen77Chat(opts, cbs)
-    : isHydra
+  const sendFn = isHydra
     ? (opts, cbs) => sendHydraChat(opts, cbs)
     : isGen7
     ? (opts, cbs) => sendArkChat(opts, cbs)

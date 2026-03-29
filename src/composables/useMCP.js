@@ -950,11 +950,6 @@ export function useMCP() {
     pendingHydraVote.value = null // Clear the pending vote
   }
 
-  function sendHydroChat(options, callbacks) {
-    if (!bridge || !connected.value) throw new Error('Bridge not connected')
-    return bridge.sendHydroChat(options, callbacks)
-  }
-
   function stopOllamaChat(requestId) {
     if (bridge) bridge.stopOllamaChat(requestId)
   }
@@ -1207,7 +1202,6 @@ export function useMCP() {
     sendHydraChat,
     submitHydraVote,
     pendingHydraVote,
-    sendHydroChat,
     stopOllamaChat,
     respondToAskUser,
     approveCliTool,
