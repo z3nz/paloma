@@ -53,6 +53,12 @@
       :ask-user="pendingAskUser"
       @respond="handleAskUserRespond"
     />
+
+    <HydraVoteDialog
+      v-if="pendingHydraVote"
+      :vote="pendingHydraVote"
+      @submit="handleHydraVote"
+    />
     </div>
 
     <!-- Singularity Thinking Panel -->
@@ -71,6 +77,7 @@ import ThinkingPanel from './ThinkingPanel.vue'
 import TrinityStatus from './TrinityStatus.vue'
 import ArkStatus from './ArkStatus.vue'
 import HydraStatus from './HydraStatus.vue'
+import HydraVoteDialog from './HydraVoteDialog.vue'
 import { useChat } from '../../composables/useChat.js'
 import { useChanges } from '../../composables/useChanges.js'
 import { useVoiceInput } from '../../composables/useVoiceInput.js'
@@ -100,7 +107,7 @@ const { voiceMode, isListening, startListening } = useVoiceInput()
 const { apiKey } = useSettings()
 const { dirHandle, projectRoot, projectInstructions, activePlans, roots, mcpConfig, refreshActivePlans } = useProject()
 const { search: searchFiles } = useFileIndex()
-const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool, pendingAutoResume, singularityGroups, trinityGroups, arkGroups, hydraGroups } = useMCP()
+const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool, pendingAutoResume, singularityGroups, trinityGroups, arkGroups, hydraGroups, pendingHydraVote, submitHydraVote } = useMCP()
 
 // Filter trinity groups to only those belonging to the current chat session
 const sessionTrinityGroups = computed(() => {
@@ -578,6 +585,10 @@ async function handleToolAllowToolAlways({ server, tool }) {
 
 function handleAskUserRespond(answer) {
   respondToAskUser(answer)
+}
+
+function handleHydraVote({ hydraId, chosenHead, reasoning }) {
+  submitHydraVote(hydraId, chosenHead, reasoning)
 }
 
 function handleNavigateToPillar(dbSessionId) {

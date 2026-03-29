@@ -39,6 +39,7 @@ export function createMcpBridge() {
   let onTrinityCreated = null
   let onArkCreated = null
   let onHydraUpdate = null
+  let onHydraVoteNeeded = null
   let pingTimer = null
   let lastPongTime = 0
 
@@ -77,6 +78,7 @@ export function createMcpBridge() {
     onTrinityCreated = callbacks.onTrinityCreated || null
     onArkCreated = callbacks.onArkCreated || null
     onHydraUpdate = callbacks.onHydraUpdate || null
+    onHydraVoteNeeded = callbacks.onHydraVoteNeeded || null
     url = bridgeUrl
     intentionalClose = false
     _connect()
@@ -333,6 +335,8 @@ export function createMcpBridge() {
         onArkCreated?.(msg)
       } else if (msg.type === 'hydra_update') {
         onHydraUpdate?.(msg)
+      } else if (msg.type === 'hydra_vote_needed') {
+        onHydraVoteNeeded?.(msg)
       } else if (msg.type === 'singularity_ready') {
         onSingularityReady?.(msg)
       } else if (msg.type === 'singularity_complete') {
@@ -616,6 +620,10 @@ export function createMcpBridge() {
     })
   }
 
+  function sendHydraVote(hydraId, chosenHead, reasoning) {
+    _send({ type: 'hydra_vote_response', hydraId, chosenHead, reasoning })
+  }
+
   function sendHydraChat(options, callbacks) {
     const id = crypto.randomUUID()
     streamListeners.set(id, {
@@ -636,6 +644,38 @@ export function createMcpBridge() {
       pending.set(id, { resolve: wrappedResolve, reject: wrappedReject })
       _send({
         type: 'hydra_chat',
+        id,
+        chatDbSessionId: options.chatDbSessionId || null,
+        userMessage: options.prompt
+      }).catch((e) => {
+        clearTimeout(timer)
+        pending.delete(id)
+        streamListeners.delete(id)
+        reject(e)
+      })
+    })
+  }
+
+  function sendHydroChat(options, callbacks) {
+    const id = crypto.randomUUID()
+    streamListeners.set(id, {
+      onStream: callbacks.onStream,
+      onDone: callbacks.onDone,
+      onError: callbacks.onError
+    })
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (pending.has(id)) {
+          pending.delete(id)
+          streamListeners.delete(id)
+          reject(new Error('Bridge did not acknowledge Hydro message'))
+        }
+      }, CHAT_ACK_TIMEOUT)
+      const wrappedResolve = (v) => { clearTimeout(timer); resolve(v) }
+      const wrappedReject = (e) => { clearTimeout(timer); streamListeners.delete(id); reject(e) }
+      pending.set(id, { resolve: wrappedResolve, reject: wrappedReject })
+      _send({
+        type: 'hydro_chat',
         id,
         chatDbSessionId: options.chatDbSessionId || null,
         userMessage: options.prompt
@@ -720,7 +760,8 @@ export function createMcpBridge() {
     return promise
   }
 
-  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendGeminiChat, stopGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, resumePillar, sendPillarUserMessage, getState }
+  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendGeminiChat, stopGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, sendHydraVote, sendHydroChat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, resumePillar, sendPillarUserMessage, getState }
+
 }
 
 // Enable HMR boundary — errors here don't cascade to full reload

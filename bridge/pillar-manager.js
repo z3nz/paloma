@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { readdir, readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
-import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT, SINGULARITY_QUINN_PROMPT, SINGULARITY_QUINN_GEN3_PROMPT, SINGULARITY_WORKER_PROMPT, SINGULARITY_FRESH_PROMPT, SINGULARITY_GEN5_PROMPT, HOLY_TRINITY_ARM_PROMPT, HOLY_TRINITY_MIND_PROMPT, ARK_HEAD_PROMPT, HYDRA_PLANNER_PROMPT, HYDRA_VOTER_PROMPT, HYDRA_WORKER_PROMPT } from '../src/prompts/base.js'
+import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT, SINGULARITY_QUINN_PROMPT, SINGULARITY_QUINN_GEN3_PROMPT, SINGULARITY_WORKER_PROMPT, SINGULARITY_FRESH_PROMPT, SINGULARITY_GEN5_PROMPT, HOLY_TRINITY_ARM_PROMPT, HOLY_TRINITY_MIND_PROMPT, ARK_HEAD_PROMPT, HYDRA_PLANNER_PROMPT, HYDRA_PLANNER_1_PROMPT, HYDRA_PLANNER_2_PROMPT, HYDRA_PLANNER_3_PROMPT, HYDRA_VOTER_PROMPT, HYDRA_WORKER_PROMPT } from '../src/prompts/base.js'
 import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
 import { Persistence } from './persistence.js'
 import { createLogger } from './logger.js'
@@ -58,6 +58,7 @@ export class PillarManager {
     this._trinityGroups = new Map() // trinityGroupId → { mindPillarId, arm1PillarId, arm2PillarId, trinityId }
     this._arkGroups = new Map() // arkGroupId → { arkId, head1PillarId, head2PillarId, head3PillarId }
     this._hydraGroups = new Map() // hydraId → full Hydra state object (orchestration loop state)
+    this._pendingHydraVotes = new Map() // hydraId → resolve function (human vote promise)
 
     // Lifecycle metrics — in-memory, per pillar type
     // Shape: { scout: { spawns: 0, outcomes: { idle: 0, error: 0, stopped: 0, timeout: 0 }, totalDurationMs: 0 }, ... }
@@ -218,7 +219,7 @@ export class PillarManager {
     log.info(`Backend selection for ${pillar}: ${selection.backend} (${selection.reason})`)
 
     // The Hydra Protocol (Gen7 refined): dynamic head growth with consensus
-    if (singularityRole === 'hydra') {
+    if (singularityRole === 'hydra' || singularityRole === 'hydro') {
       return this._spawnHydra({ pillar, prompt, model, flowRequestId, planFile, backend: resolvedBackend, parentPillarId, _chatDbSessionId })
     }
 
@@ -337,7 +338,7 @@ export class PillarManager {
       numCtx: (singularityRole === 'holy-trinity-mind') ? 65536
             : (singularityRole === 'holy-trinity-arm') ? 16384
             : (singularityRole === 'ark-head') ? 32768
-            : (singularityRole === 'hydra-planner') ? 32768
+            : (singularityRole === 'hydra-planner' || singularityRole === 'hydro-head') ? 32768
             : (singularityRole === 'hydra-voter') ? 16384
             : (singularityRole === 'hydra-worker') ? 32768
             : (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'quinn-fresh' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536
@@ -1697,6 +1698,7 @@ export class PillarManager {
       absWorkspace,
       pillar,
       plannerPillar,  // 'scout' or 'chart' — dynamically determined from task
+      singularityRole: singularityRole || 'hydra',
       model,
       flowRequestId,
       planFile,
@@ -1736,116 +1738,93 @@ export class PillarManager {
   }
 
   /**
-   * The Hydra Arena — the core orchestration loop.
-   * Runs asynchronously after spawn returns.
+   * The Hydra Arena — human-in-the-loop orchestration.
+   * All 3 heads plan independently. Human votes on the best plan.
+   * Decision is captured for future modeling.
    */
   async _runHydraArena(state) {
-    // Loop until consensus
-    while (!state.consensusPlan) {
-      // Wait for any planner to complete their plan
-      const completedHeadNum = await this._hydraPollForPlanCompletion(state)
-      if (completedHeadNum === null) {
-        log.error(`[hydra] No plan completion detected — all heads may have died`)
-        break
-      }
-      state.round++
-      log.info(`[hydra] Round ${state.round}: Head ${completedHeadNum} presents`)
+    // === ACT I: Wait for ALL plans to complete ===
+    const allPlans = await this._hydraPollForAllPlans(state)
 
-      // Read the completed plan
-      const planPath = join(state.absWorkspace, `hydra-${state.hydraId}-head-${completedHeadNum}-plan.md`)
-      const completedPlan = await this._readFileSafe(planPath) || '(plan file empty)'
-
-      // Stop the presenting head — its plan is done, no need to keep streaming
-      const presenterHead = state.aliveHeads.get(completedHeadNum)
-      if (presenterHead?.pillarId) {
-        this.stop({ pillarId: presenterHead.pillarId })
-      }
-
-      // Kill all OTHER planning heads, save their partial progress
-      const otherHeadNums = [...state.aliveHeads.keys()].filter(n => n !== completedHeadNum && state.aliveHeads.get(n).status === 'planning')
-      const partialPlans = await this._hydraKillAndSavePartials(state, otherHeadNums)
-
-      // Broadcast voting phase to frontend
-      this._broadcastHydraUpdate(state, 'voting')
-
-      // Run voting round — spawn voter sessions for each surviving non-presenter
-      const votes = await this._hydraRunVotingRound(state, completedHeadNum, completedPlan, otherHeadNums, partialPlans)
-
-      // Count supporters (presenter supports their own plan)
-      const approvals = votes.filter(v => v.verdict === 'APPROVE').length
-      const totalAlive = state.aliveHeads.size
-      const supporters = 1 + approvals
-      const threshold = Math.ceil(totalAlive * 2 / 3)
-
-      log.info(`[hydra] Round ${state.round}: ${supporters}/${totalAlive} support (need ${threshold}). Approvals: ${approvals}/${otherHeadNums.length}`)
-
-      if (supporters >= threshold) {
-        // === CONSENSUS ===
-        state.consensusPlan = completedPlan
-        state.consensusHeadNumber = completedHeadNum
-        log.info(`[hydra] CONSENSUS in round ${state.round}! Head ${completedHeadNum}'s plan wins. ${state.graveyard.length} plans died.`)
-        this._broadcastHydraUpdate(state, 'consensus')
-      } else {
-        // === DEATH & RESPAWN ===
-        const vetoReasons = votes.filter(v => v.verdict === 'VETO').map(v => v.reasoning)
-        state.graveyard.push({
-          headNumber: completedHeadNum,
-          plan: completedPlan,
-          vetoReasons,
-          round: state.round
-        })
-
-        // Kill the dead presenter
-        const deadHead = state.aliveHeads.get(completedHeadNum)
-        if (deadHead?.pillarId) {
-          this.stop({ pillarId: deadHead.pillarId })
-        }
-        state.aliveHeads.delete(completedHeadNum)
-
-        log.info(`[hydra] Head ${completedHeadNum} DIES. Graveyard: ${state.graveyard.length}. Spawning 2 from ashes.`)
-
-        // Write graveyard to disk for reference
-        const graveyardPath = join(state.absWorkspace, `hydra-${state.hydraId}-graveyard.json`)
-        await writeFile(graveyardPath, JSON.stringify(state.graveyard, null, 2))
-
-        // Respawn surviving planners with their partial plans + updated graveyard
-        await this._hydraRespawnPlanners(state, otherHeadNums, partialPlans)
-
-        // Spawn 2 NEW heads from the ashes
-        const newHead1 = state.nextHeadNumber++
-        const newHead2 = state.nextHeadNumber++
-        await this._spawnHydraPlanners(state, [newHead1, newHead2], {
-          graveyard: state.graveyard,
-          currentPlans: partialPlans
-        })
-
-        log.info(`[hydra] Heads ${newHead1} & ${newHead2} born. ${state.aliveHeads.size} heads alive.`)
-        this._broadcastHydraUpdate(state)
-      }
-    }
-
-    if (!state.consensusPlan) {
-      log.error(`[hydra] Arena ended without consensus`)
+    if (allPlans.length === 0) {
+      log.error(`[hydra] No plans completed — arena failed`)
+      this._broadcastHydraUpdate(state, 'error')
       return
     }
 
-    // === ACT II: THE BUILD ===
-    // Kill ALL remaining planning heads
-    for (const [headNum, head] of state.aliveHeads) {
-      if (head.pillarId) {
-        this.stop({ pillarId: head.pillarId })
-      }
+    // Stop all planning heads — their work is done
+    for (const [, head] of state.aliveHeads) {
+      if (head.pillarId) this.stop({ pillarId: head.pillarId })
     }
+
+    log.info(`[hydra] ${allPlans.length} plans ready. Requesting human vote.`)
+
+    // === HUMAN VOTING ===
+    state.plans = allPlans
+    this._broadcastHydraUpdate(state, 'waiting_for_vote')
+
+    // Broadcast vote request to frontend
+    this.broadcast({
+      type: 'hydra_vote_needed',
+      hydraId: state.hydraId,
+      task: state.task,
+      plans: allPlans.map(p => ({ headNumber: p.headNumber, plan: p.plan })),
+      chatDbSessionId: state._chatDbSessionId
+    })
+
+    // Wait for human vote (resolved by handleHydraVote)
+    const vote = await new Promise(resolve => {
+      this._pendingHydraVotes.set(state.hydraId, resolve)
+    })
+
+    log.info(`[hydra] Human chose Head ${vote.chosenHead}: "${(vote.reasoning || '').slice(0, 100)}"`)
+
+    // Find the chosen plan
+    const chosenPlan = allPlans.find(p => p.headNumber === vote.chosenHead)
+    if (!chosenPlan) {
+      log.error(`[hydra] Chosen head ${vote.chosenHead} not found in plans`)
+      return
+    }
+
+    state.consensusPlan = chosenPlan.plan
+    state.consensusHeadNumber = vote.chosenHead
+
+    // === CAPTURE DECISION ===
+    const decision = {
+      hydraId: state.hydraId,
+      task: state.task,
+      timestamp: new Date().toISOString(),
+      plans: allPlans,
+      decision: { chosenHead: vote.chosenHead, reasoning: vote.reasoning || '' }
+    }
+    const decisionPath = join(state.absWorkspace, `hydra-${state.hydraId}-decision.json`)
+    await writeFile(decisionPath, JSON.stringify(decision, null, 2))
+    log.info(`[hydra] Decision captured to ${decisionPath}`)
+
+    this._broadcastHydraUpdate(state, 'consensus')
+
+    // === ACT II: THE BUILD ===
     state.aliveHeads.clear()
 
-    // Write consensus plan to a dedicated file
     const consensusPath = join(state.absWorkspace, `hydra-${state.hydraId}-consensus.md`)
     await writeFile(consensusPath, state.consensusPlan)
 
-    // Spawn 3 worker heads (7B)
     log.info(`[hydra] Act II: Spawning 3 workers (7B)`)
     await this._spawnHydraWorkers(state)
     this._broadcastHydraUpdate(state, 'execution')
+  }
+
+  /**
+   * Handle a human vote response from the frontend.
+   */
+  handleHydraVote(hydraId, chosenHead, reasoning) {
+    const resolve = this._pendingHydraVotes.get(hydraId)
+    if (resolve) {
+      this._pendingHydraVotes.delete(hydraId)
+      resolve({ chosenHead, reasoning })
+    } else {
+      log.warn(`[hydra] No pending vote for hydra ${hydraId}`)
+    }
   }
 
   /**
@@ -1889,7 +1868,7 @@ Your ONLY output is the plan file. Start by reading relevant files, then write y
         planFile: state.planFile,
         backend: state.backend,
         parentPillarId: state.primaryPillarId || state.parentPillarId,
-        singularityRole: 'hydra-planner',
+        singularityRole: state.singularityRole === 'hydro' ? 'hydro-head' : 'hydra-planner',
         _arkExtra: {
           headNumber: headNum,
           hydraId: state.hydraId,
@@ -1923,192 +1902,56 @@ Your ONLY output is the plan file. Start by reading relevant files, then write y
   }
 
   /**
-   * Poll workspace for plan-complete signal files.
-   * Returns the head number of the first planner to complete, or null on timeout.
+   * Poll workspace until ALL planning heads have written plan-complete signals.
+   * Returns array of { headNumber, plan } for each completed head.
    */
-  async _hydraPollForPlanCompletion(state) {
-    const MAX_POLLS = 300  // 300 × 2s = 10 minutes max wait per round
+  async _hydraPollForAllPlans(state) {
+    const MAX_POLLS = 300  // 300 × 2s = 10 minutes max
+    const completed = new Set()
+
     for (let i = 0; i < MAX_POLLS; i++) {
       try {
         const files = await readdir(state.absWorkspace)
         for (const [headNum, head] of state.aliveHeads) {
-          if (head.status !== 'planning') continue
+          if (completed.has(headNum)) continue
           const signal = `hydra-${state.hydraId}-head-${headNum}-plan-complete`
           if (files.includes(signal)) {
+            completed.add(headNum)
             head.status = 'plan-complete'
-            log.info(`[hydra] Head ${headNum} plan complete (poll ${i + 1})`)
-            return headNum
+            log.info(`[hydra] Head ${headNum} plan complete (${completed.size}/${state.aliveHeads.size})`)
+            this._broadcastHydraUpdate(state)
           }
         }
+
+        // All heads done?
+        if (completed.size >= state.aliveHeads.size) break
       } catch (err) {
         log.warn(`[hydra] Poll error: ${err.message}`)
       }
 
-      // Check if any planning heads are still alive
-      const planningHeads = [...state.aliveHeads.values()].filter(h => h.status === 'planning')
-      if (planningHeads.length === 0) {
-        log.warn(`[hydra] No planning heads remain`)
-        return null
+      // Check if any planning heads are still alive (session not crashed)
+      const stillPlanning = [...state.aliveHeads.entries()]
+        .filter(([n]) => !completed.has(n))
+        .filter(([, h]) => {
+          const session = this.pillars.get(h.pillarId)
+          return session && session.status !== 'error' && session.status !== 'stopped'
+        })
+      if (stillPlanning.length === 0 && completed.size < state.aliveHeads.size) {
+        log.warn(`[hydra] All remaining heads crashed — proceeding with ${completed.size} plans`)
+        break
       }
 
       await new Promise(r => setTimeout(r, 2000))
     }
-    log.warn(`[hydra] Plan completion poll timeout after ${MAX_POLLS} polls`)
-    return null
-  }
 
-  /**
-   * Kill planning sessions and save their partial work from disk.
-   */
-  async _hydraKillAndSavePartials(state, headNums) {
-    const partials = new Map()
-    for (const n of headNums) {
-      const head = state.aliveHeads.get(n)
-      if (!head) continue
-
-      // Read whatever they've written so far
-      const planPath = join(state.absWorkspace, `hydra-${state.hydraId}-head-${n}-plan.md`)
-      try {
-        const content = await readFile(planPath, 'utf8')
-        partials.set(n, content)
-        head.partialPlan = content
-      } catch {
-        partials.set(n, null)
-      }
-
-      // Kill the Ollama session
-      if (head.pillarId) {
-        this.stop({ pillarId: head.pillarId })
-      }
-      head.status = 'voting'
+    // Read all completed plans
+    const plans = []
+    for (const headNum of completed) {
+      const planPath = join(state.absWorkspace, `hydra-${state.hydraId}-head-${headNum}-plan.md`)
+      const plan = await this._readFileSafe(planPath)
+      if (plan) plans.push({ headNumber: headNum, plan })
     }
-    return partials
-  }
-
-  /**
-   * Run a voting round — spawn voter sessions for each non-presenting head.
-   * Returns array of { headNumber, verdict: 'APPROVE'|'VETO', reasoning }
-   */
-  async _hydraRunVotingRound(state, presenterNum, plan, voterNums, partialPlans) {
-    const graveyardContext = this._hydraFormatGraveyard(state.graveyard)
-    const votes = []
-
-    // Spawn all voters in parallel
-    const votePromises = voterNums.map(async (headNum) => {
-      const partialPlan = partialPlans.get(headNum) || '(no plan started yet)'
-      const votePath = `${state.workspacePath}hydra-${state.hydraId}-round-${state.round}-vote-head-${headNum}.md`
-
-      // Wrap into a voting directive so the 8B model knows exactly what to do
-      const voterDirective = `HYDRA VOTING ROUND — You are Head ${headNum}, judging Head ${presenterNum}'s plan.
-
-Read the presented plan in your system prompt. Compare it against your own research below.
-Then write your vote to: ${votePath}
-
-YOUR OWN RESEARCH (partial plan before you were interrupted):
-${partialPlan}
-
-INSTRUCTIONS:
-1. Read Head ${presenterNum}'s plan (in your system prompt)
-2. Write your vote file to: ${votePath}
-3. Start the file with EXACTLY: "# Vote: APPROVE" or "# Vote: VETO"
-4. Add "## Reasoning" section explaining why
-5. If VETO, add "## Key Concerns" section
-
-Do NOT respond conversationally. Your ONLY output is the vote file.`
-
-      // Spawn voter session
-      const result = await this.spawn({
-        pillar: state.plannerPillar,  // Voters match the planner pillar
-        prompt: voterDirective,
-        model: state.model || null,
-        flowRequestId: state.flowRequestId,
-        backend: state.backend,
-        parentPillarId: state.primaryPillarId || state.parentPillarId,
-        singularityRole: 'hydra-voter',
-        _arkExtra: {
-          headNumber: headNum,
-          presenterNumber: presenterNum,
-          hydraId: state.hydraId,
-          presentedPlan: plan,
-          voterPartialPlan: partialPlan,
-          votePath,
-          graveyardContext
-        },
-        _chatDbSessionId: state._chatDbSessionId
-      })
-
-      if (!result.pillarId) {
-        log.warn(`[hydra] Voter ${headNum} spawn failed — treating as APPROVE (benefit of doubt)`)
-        return { headNumber: headNum, verdict: 'APPROVE', reasoning: '(voter spawn failed)' }
-      }
-
-      // Tag voter session
-      const voterSession = this.pillars.get(result.pillarId)
-      if (voterSession) {
-        voterSession._hydraId = state.hydraId
-        voterSession._headNumber = headNum
-        voterSession.singularityGroupId = state.hydraId
-      }
-
-      // Wait for vote file to appear
-      const vote = await this._hydraPollForVote(state, headNum, state.round)
-
-      // Kill voter session — it's done
-      this.stop({ pillarId: result.pillarId })
-
-      return vote
-    })
-
-    const results = await Promise.all(votePromises)
-    votes.push(...results)
-
-    log.info(`[hydra] Round ${state.round} votes: ${votes.map(v => `H${v.headNumber}=${v.verdict}`).join(', ')}`)
-    return votes
-  }
-
-  /**
-   * Poll for a vote file from a specific head in a specific round.
-   */
-  async _hydraPollForVote(state, headNum, round) {
-    const voteFile = `hydra-${state.hydraId}-round-${round}-vote-head-${headNum}.md`
-    const MAX_POLLS = 90  // 90 × 2s = 3 minutes max for a vote
-
-    for (let i = 0; i < MAX_POLLS; i++) {
-      try {
-        const files = await readdir(state.absWorkspace)
-        if (files.includes(voteFile)) {
-          const content = await readFile(join(state.absWorkspace, voteFile), 'utf8')
-          const verdict = content.match(/^#\s*Vote:\s*(APPROVE|VETO)/im)?.[1] || 'APPROVE'
-          return {
-            headNumber: headNum,
-            verdict: verdict.toUpperCase(),
-            reasoning: content
-          }
-        }
-      } catch (err) {
-        log.warn(`[hydra] Vote poll error: ${err.message}`)
-      }
-      await new Promise(r => setTimeout(r, 2000))
-    }
-
-    log.warn(`[hydra] Vote timeout for Head ${headNum} round ${round} — defaulting to APPROVE`)
-    return { headNumber: headNum, verdict: 'APPROVE', reasoning: '(vote timeout — benefit of doubt)' }
-  }
-
-  /**
-   * Respawn planners that were killed for voting, with their saved partial plans.
-   */
-  async _hydraRespawnPlanners(state, headNums, partialPlans) {
-    for (const n of headNums) {
-      const partialPlan = partialPlans.get(n) || null
-      // Remove old head entry (will be re-added by _spawnHydraPlanners)
-      state.aliveHeads.delete(n)
-      // Respawn with continuation context
-      await this._spawnHydraPlanners(state, [n], {
-        graveyard: state.graveyard,
-        continuePlan: partialPlan
-      })
-    }
+    return plans
   }
 
   /**
@@ -3738,7 +3581,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
     // Singularity sessions (Voice/Thinker/Quinn/Worker) get a drastically stripped system prompt:
     // OLLAMA_INSTRUCTIONS + project instructions + role prompt ONLY.
     // No plans, no roots, no phase instructions — saves ~25K tokens of context budget.
-    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'worker' || singularityRole === 'quinn-fresh' || singularityRole === 'quinn-gen5' || singularityRole === 'holy-trinity-arm' || singularityRole === 'holy-trinity-mind' || singularityRole === 'ark-head' || singularityRole === 'hydra-planner' || singularityRole === 'hydra-voter' || singularityRole === 'hydra-worker'
+    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'worker' || singularityRole === 'quinn-fresh' || singularityRole === 'quinn-gen5' || singularityRole === 'holy-trinity-arm' || singularityRole === 'holy-trinity-mind' || singularityRole === 'ark-head' || singularityRole === 'hydra-planner' || singularityRole === 'hydro-head' || singularityRole === 'hydra-voter' || singularityRole === 'hydra-worker'
 
     // Claude CLI reads CLAUDE.md automatically, which includes instructions.md and roots
     // via @ references. Including them again here would duplicate ~43KB of content and
@@ -3859,10 +3702,16 @@ This is informational — Adam is communicating directly with the pillar. Decide
         .replace(/\{ARK_ID\}/g, ae.arkId || '?')
         .replace(/\{ANCHOR_INSTRUCTIONS\}/g, anchorInstructions)
         .replace(/\{PHASE_4_INSTRUCTIONS\}/g, phase4Instructions)
-    } else if (singularityRole === 'hydra-planner') {
+    } else if (singularityRole === 'hydra-planner' || singularityRole === 'hydro-head') {
       const he = arkExtra || {} // reuse arkExtra param for hydra context
-      prompt += '\n\n' + HYDRA_PLANNER_PROMPT
-        .replace(/\{HEAD_NUMBER\}/g, String(he.headNumber || '?'))
+      const headNum = he.headNumber || 1
+      let basePrompt = HYDRA_PLANNER_PROMPT
+      if (headNum === 1) basePrompt = HYDRA_PLANNER_1_PROMPT
+      else if (headNum === 2) basePrompt = HYDRA_PLANNER_2_PROMPT
+      else if (headNum === 3) basePrompt = HYDRA_PLANNER_3_PROMPT
+
+      prompt += '\n\n' + basePrompt
+        .replace(/\{HEAD_NUMBER\}/g, String(headNum))
         .replace(/\{TASK\}/g, '(see user message)')
         .replace(/\{PLAN_PATH\}/g, he.planPath || '.singularity/workspace/hydra-?-head-?-plan.md')
         .replace(/\{PLAN_COMPLETE_PATH\}/g, he.planCompletePath || '.singularity/workspace/hydra-?-head-?-plan-complete')

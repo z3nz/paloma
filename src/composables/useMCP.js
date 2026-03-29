@@ -68,6 +68,7 @@ const arkGroups = reactive(new Map()) // groupId → { arkId, head1PillarId, hea
 
 // Gen7 Hydra state
 const hydraGroups = reactive(new Map()) // hydraId → { hydraId, round, phase, aliveHeads, deadHeads, workers, totalHeadsEver, consensusBy, chatDbSessionId }
+const pendingHydraVote = ref(null) // { hydraId, task, plans: [{ headNumber, plan }], chatDbSessionId }
 
 const connected = ref(false)
 const connectionState = ref('disconnected') // 'disconnected' | 'connecting' | 'connected'
@@ -475,6 +476,14 @@ export function useMCP() {
           consensusBy: msg.consensusBy || null,
           chatDbSessionId: msg.chatDbSessionId || null
         })
+      },
+      onHydraVoteNeeded(msg) {
+        pendingHydraVote.value = {
+          hydraId: msg.hydraId,
+          task: msg.task,
+          plans: msg.plans || [],
+          chatDbSessionId: msg.chatDbSessionId || null
+        }
       },
       async onPillarFallback(msg) {
         const dbSessionId = pillarSessionMap.get(msg.pillarId)
@@ -935,6 +944,17 @@ export function useMCP() {
     return bridge.sendHydraChat(options, callbacks)
   }
 
+  function submitHydraVote(hydraId, chosenHead, reasoning) {
+    if (!bridge || !connected.value) throw new Error('Bridge not connected')
+    bridge.sendHydraVote(hydraId, chosenHead, reasoning)
+    pendingHydraVote.value = null // Clear the pending vote
+  }
+
+  function sendHydroChat(options, callbacks) {
+    if (!bridge || !connected.value) throw new Error('Bridge not connected')
+    return bridge.sendHydroChat(options, callbacks)
+  }
+
   function stopOllamaChat(requestId) {
     if (bridge) bridge.stopOllamaChat(requestId)
   }
@@ -1185,6 +1205,9 @@ export function useMCP() {
     sendHolyTrinityChat,
     sendArkChat,
     sendHydraChat,
+    submitHydraVote,
+    pendingHydraVote,
+    sendHydroChat,
     stopOllamaChat,
     respondToAskUser,
     approveCliTool,

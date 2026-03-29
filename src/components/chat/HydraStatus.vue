@@ -64,7 +64,7 @@ const phaseLabel = computed(() => {
   if (!activeHydra.value) return ''
   switch (activeHydra.value.phase) {
     case 'planning': return 'Planning'
-    case 'voting': return 'Voting'
+    case 'waiting_for_vote': return 'Waiting for your vote'
     case 'consensus': return 'Consensus!'
     case 'execution': return 'Building'
     case 'error': return 'Error'

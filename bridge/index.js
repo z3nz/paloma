@@ -1545,6 +1545,37 @@ async function main() {
         } catch (e) {
           ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
         }
+      } else if (msg.type === 'hydra_vote_response') {
+        // Human voted on a Hydra plan
+        if (pillarManager) {
+          pillarManager.handleHydraVote(msg.hydraId, msg.chosenHead, msg.reasoning)
+          log.info(`[gen7] Hydra vote received — hydra: ${msg.hydraId}, chosen: Head ${msg.chosenHead}`)
+        }
+      } else if (msg.type === 'hydro_chat') {
+        // Gen7 Hydro Protocol: spawn dynamic consensus engine via PillarManager
+        try {
+          if (!pillarManager) throw new Error('PillarManager not initialized')
+          const result = await pillarManager.spawn({
+            pillar: 'forge',
+            prompt: msg.userMessage || msg.prompt || '',
+            backend: 'ollama',
+            singularityRole: 'hydro',
+            _chatDbSessionId: msg.chatDbSessionId || null
+          })
+          if (!result.pillarId) {
+            throw new Error(result.message || 'Failed to spawn The Hydro')
+          }
+          // Register primary pillarId for stream routing
+          hydraPillarToChat.set(result.pillarId, { ws, msgId: msg.id })
+          ws.send(JSON.stringify({
+            type: 'ollama_ack', id: msg.id,
+            requestId: result.pillarId,
+            sessionId: result.hydraId || result.pillarId
+          }))
+          log.info(`[gen7] Hydro spawned — primary: ${result.pillarId.slice(0, 8)}, hydraId: ${result.hydraId}`)
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
+        }
       } else if (msg.type === 'claude_stop') {
         cliRequestToWs.delete(msg.requestId)
         cliManager.stop(msg.requestId)
