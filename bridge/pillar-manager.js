@@ -219,8 +219,8 @@ export class PillarManager {
     log.info(`Backend selection for ${pillar}: ${selection.backend} (${selection.reason})`)
 
     // The Hydra Protocol (Gen7 refined): dynamic head growth with consensus
-    if (singularityRole === 'hydra' || singularityRole === 'hydro') {
-      return this._spawnHydra({ pillar, prompt, model, flowRequestId, planFile, backend: resolvedBackend, parentPillarId, _chatDbSessionId })
+    if (singularityRole === 'hydra' || singularityRole === 'gen77') {
+      return this._spawnHydra({ pillar, prompt, model, flowRequestId, planFile, backend: resolvedBackend, parentPillarId, _chatDbSessionId, singularityRole })
     }
 
     // The Ark (Gen7 legacy): spawn 3 sovereign heads concurrently
@@ -338,7 +338,7 @@ export class PillarManager {
       numCtx: (singularityRole === 'holy-trinity-mind') ? 65536
             : (singularityRole === 'holy-trinity-arm') ? 16384
             : (singularityRole === 'ark-head') ? 32768
-            : (singularityRole === 'hydra-planner' || singularityRole === 'hydro-head') ? 32768
+            : (singularityRole === 'hydra-planner' || singularityRole === 'gen77-planner') ? 32768
             : (singularityRole === 'hydra-voter') ? 16384
             : (singularityRole === 'hydra-worker') ? 32768
             : (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'quinn-fresh' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536
@@ -1675,7 +1675,7 @@ export class PillarManager {
   //
   // The bridge orchestrates the full lifecycle — heads are workers, the bridge is the brain.
 
-  async _spawnHydra({ pillar, prompt, model, flowRequestId, planFile, backend, parentPillarId, _chatDbSessionId }) {
+  async _spawnHydra({ pillar, prompt, model, flowRequestId, planFile, backend, parentPillarId, _chatDbSessionId, singularityRole }) {
     const hydraId = randomUUID().slice(0, 8)
     const workspacePath = '.singularity/workspace/'
     const absWorkspace = join(this.projectRoot, '.singularity', 'workspace')
@@ -1868,7 +1868,7 @@ Your ONLY output is the plan file. Start by reading relevant files, then write y
         planFile: state.planFile,
         backend: state.backend,
         parentPillarId: state.primaryPillarId || state.parentPillarId,
-        singularityRole: state.singularityRole === 'hydro' ? 'hydro-head' : 'hydra-planner',
+        singularityRole: state.singularityRole === 'gen77' ? 'gen77-planner' : 'hydra-planner',
         _arkExtra: {
           headNumber: headNum,
           hydraId: state.hydraId,
@@ -3581,7 +3581,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
     // Singularity sessions (Voice/Thinker/Quinn/Worker) get a drastically stripped system prompt:
     // OLLAMA_INSTRUCTIONS + project instructions + role prompt ONLY.
     // No plans, no roots, no phase instructions — saves ~25K tokens of context budget.
-    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'worker' || singularityRole === 'quinn-fresh' || singularityRole === 'quinn-gen5' || singularityRole === 'holy-trinity-arm' || singularityRole === 'holy-trinity-mind' || singularityRole === 'ark-head' || singularityRole === 'hydra-planner' || singularityRole === 'hydro-head' || singularityRole === 'hydra-voter' || singularityRole === 'hydra-worker'
+    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'worker' || singularityRole === 'quinn-fresh' || singularityRole === 'quinn-gen5' || singularityRole === 'holy-trinity-arm' || singularityRole === 'holy-trinity-mind' || singularityRole === 'ark-head' || singularityRole === 'hydra-planner' || singularityRole === 'gen77-planner' || singularityRole === 'hydra-voter' || singularityRole === 'hydra-worker'
 
     // Claude CLI reads CLAUDE.md automatically, which includes instructions.md and roots
     // via @ references. Including them again here would duplicate ~43KB of content and
@@ -3702,7 +3702,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
         .replace(/\{ARK_ID\}/g, ae.arkId || '?')
         .replace(/\{ANCHOR_INSTRUCTIONS\}/g, anchorInstructions)
         .replace(/\{PHASE_4_INSTRUCTIONS\}/g, phase4Instructions)
-    } else if (singularityRole === 'hydra-planner' || singularityRole === 'hydro-head') {
+    } else if (singularityRole === 'hydra-planner' || singularityRole === 'gen77-planner') {
       const he = arkExtra || {} // reuse arkExtra param for hydra context
       const headNum = he.headNumber || 1
       let basePrompt = HYDRA_PLANNER_PROMPT
