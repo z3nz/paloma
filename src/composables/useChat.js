@@ -133,7 +133,7 @@ export function useChat() {
     s.messages.value = result
   }
 
-  async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions, activePlans, searchFn, mcpConfig, roots, thinkMode) {
+  async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions, activePlans, searchFn, mcpConfig, roots, thinkMode, paestroMode) {
     const s = getState(sessionId)
     s.error.value = null
 
@@ -262,7 +262,8 @@ export function useChat() {
           phase, projectInstructions, activePlans, roots,
           onContent(text) { s.streamingContent.value = text },
           sessionState: s,
-          thinkMode
+          thinkMode,
+          paestroMode
         })
 
         // If superseded by a newer sendMessage call, discard this result

@@ -1723,7 +1723,15 @@ async function main() {
 
           // Apply think mode toggle from UI
           const thinkPrefix = msg.thinkMode === 'think' ? '/think\n' : msg.thinkMode === 'no_think' ? '/no_think\n' : ''
-          const userPrompt = thinkPrefix + (msg.userMessage || msg.prompt || '')
+
+          // Apply Paestro 666/777 mode — inject lens directive
+          const modeDirective = msg.paestroMode === '666'
+            ? '\n\n[MODE: 666 — EARTH. Be practical, grounded, material. Focus on what IS. What does the code actually do? What is the concrete problem? What is the real, tangible next step? Stay grounded. No idealism — just reality.]\n\n'
+            : msg.paestroMode === '777'
+            ? '\n\n[MODE: 777 — SPIRIT. Be visionary, divine, ideal. Focus on what SHOULD BE. What is the perfect architecture? What does God-tier code look like? What is the highest truth here? Aim for the divine. No compromises — just the vision.]\n\n'
+            : '' // 67 = balanced, no directive needed — the natural oscillation
+
+          const userPrompt = thinkPrefix + (msg.userMessage || msg.prompt || '') + modeDirective
 
           const { requestId, sessionId } = ollamaManager.chat(
             {

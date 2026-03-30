@@ -688,6 +688,7 @@ export function createMcpBridge() {
         chatDbSessionId: options.chatDbSessionId || null,
         userMessage: options.prompt,
         thinkMode: options.thinkMode || null,
+        paestroMode: options.paestroMode || null,
         sessionId: options.sessionId || null
       }).catch((e) => {
         clearTimeout(timer)

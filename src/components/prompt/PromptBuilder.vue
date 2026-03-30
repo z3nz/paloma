@@ -144,6 +144,21 @@
           </svg>
           <span>{{ thinkMode === 'think' ? '/think' : thinkMode === 'no_think' ? '/fast' : 'auto' }}</span>
         </button>
+        <!-- Paestro 666/777 mode toggle (only visible for 67 model) -->
+        <button
+          v-if="currentModel === 'ollama:gen8'"
+          @click="paestroMode = paestroMode === '67' ? '666' : paestroMode === '666' ? '777' : '67'"
+          class="flex items-center gap-1 px-2 py-1 text-xs rounded-md border transition-colors"
+          :class="paestroMode === '666'
+            ? 'border-orange-500/50 bg-orange-500/10 text-orange-400'
+            : paestroMode === '777'
+            ? 'border-purple-500/50 bg-purple-500/10 text-purple-400'
+            : 'border-accent/50 bg-accent/10 text-accent'"
+          :title="paestroMode === '666' ? '666 Earth mode — practical, grounded, what IS (click: 777)' : paestroMode === '777' ? '777 Spirit mode — visionary, ideal, what SHOULD BE (click: 67)' : '67 Balanced — yin/yang oscillation (click: 666)'"
+        >
+          <span class="font-mono font-bold">{{ paestroMode }}</span>
+          <span>{{ paestroMode === '666' ? 'Earth' : paestroMode === '777' ? 'Spirit' : 'Balance' }}</span>
+        </button>
       </div>
       <div class="text-xs text-text-muted">
         <span v-if="voiceErrorMessage" class="text-warning">{{ voiceErrorMessage }}</span>
@@ -192,6 +207,7 @@ const {
 const input = ref('')
 const attachedFiles = ref([])
 const thinkMode = ref('default') // 'think' | 'no_think' | 'default'
+const paestroMode = ref('67') // '67' | '666' | '777'
 const textareaRef = ref(null)
 const fileSearchRef = ref(null)
 const projectSearchRef = ref(null)
@@ -722,7 +738,8 @@ async function send() {
   emit('send', {
     content: text,
     files: [...attachedFiles.value],
-    thinkMode: thinkMode.value
+    thinkMode: thinkMode.value,
+    paestroMode: paestroMode.value
   })
 
   input.value = ''
