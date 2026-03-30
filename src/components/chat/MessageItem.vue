@@ -124,6 +124,7 @@ import { sanitizeHtml } from '../../utils/sanitize.js'
 import { useSessionState } from '../../composables/useSessionState.js'
 import hljs from '../../utils/highlight.js'
 import { useCostTracking } from '../../composables/useCostTracking.js'
+import { CLI_MODELS } from '../../services/claudeStream.js'
 import ToolCallGroup from './ToolCallGroup.vue'
 import CallbackBadge from './CallbackBadge.vue'
 
@@ -152,6 +153,9 @@ const hasToolActivity = computed(() =>
 const shortModelName = computed(() => {
   const m = props.message.model
   if (!m) return null
+  // Look up display name from CLI_MODELS first
+  const cli = CLI_MODELS.find(cm => cm.id === m)
+  if (cli) return cli.name
   if (m.startsWith('ollama:')) return m.replace('ollama:', '').split(':')[0]
   if (m.startsWith('gemini-cli:')) return 'Gemini ' + m.replace('gemini-cli:', '').charAt(0).toUpperCase() + m.replace('gemini-cli:', '').slice(1)
   if (m.startsWith('copilot-cli:')) return m.replace('copilot-cli:', '')

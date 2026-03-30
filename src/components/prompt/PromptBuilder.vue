@@ -122,6 +122,28 @@
           :model-value="currentPhase"
           @update:model-value="onPhaseChange"
         />
+        <!-- Think mode toggle -->
+        <button
+          @click="thinkMode = thinkMode === 'think' ? 'no_think' : thinkMode === 'no_think' ? 'default' : 'think'"
+          class="flex items-center gap-1 px-2 py-1 text-xs rounded-md border transition-colors"
+          :class="thinkMode === 'think'
+            ? 'border-accent/50 bg-accent/10 text-accent'
+            : thinkMode === 'no_think'
+            ? 'border-warning/50 bg-warning/10 text-warning'
+            : 'border-border text-text-muted hover:text-text-primary hover:border-border'"
+          :title="thinkMode === 'think' ? 'Deep thinking ON (click: off)' : thinkMode === 'no_think' ? 'No thinking (click: default)' : 'Default (click: think)'"
+        >
+          <svg v-if="thinkMode === 'think'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+          </svg>
+          <svg v-else-if="thinkMode === 'no_think'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+          </svg>
+          <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>
+          </svg>
+          <span>{{ thinkMode === 'think' ? '/think' : thinkMode === 'no_think' ? '/fast' : 'auto' }}</span>
+        </button>
       </div>
       <div class="text-xs text-text-muted">
         <span v-if="voiceErrorMessage" class="text-warning">{{ voiceErrorMessage }}</span>
@@ -169,6 +191,7 @@ const {
 
 const input = ref('')
 const attachedFiles = ref([])
+const thinkMode = ref('default') // 'think' | 'no_think' | 'default'
 const textareaRef = ref(null)
 const fileSearchRef = ref(null)
 const projectSearchRef = ref(null)
@@ -698,7 +721,8 @@ async function send() {
 
   emit('send', {
     content: text,
-    files: [...attachedFiles.value]
+    files: [...attachedFiles.value],
+    thinkMode: thinkMode.value
   })
 
   input.value = ''

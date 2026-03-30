@@ -95,6 +95,28 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Frontend:** `ollama:hydra` model, `HydraStatus.vue` shows live head count, round, phase, dead heads, workers
 - **Spawn via UI:** Select "The Hydra (Gen7)" from model dropdown, or via Flow: `pillar_spawn({ singularityRole: 'hydra', prompt: "..." })`
 
+### Gen7 Accordion Architecture (The Ark Evolved)
+- **The Accordion is a three-tier choice cascade.** Maestro (30B) makes ONE strategic choice → summons ONE Angel Head (8B) with a precise task → Head designs the edit and dispatches Workers (smallest) to write files → results compress upward → Maestro makes the NEXT choice. Serial, not parallel. No consensus needed.
+- **Three tiers, three model sizes:** Maestro (30B, best available — strategic), Angel Heads (8B, qwen3:8b — tactical), Workers (smallest available, 0.6b-3b — operational)
+- **Angel Trinity (111, 222, 333):** Each head number is a LENS, not just a label. 111 The Initiator (creation, scaffolding), 222 The Harmonizer (integration, alignment), 333 The Expander (verification, edge cases). Maestro chooses the right perspective for each move.
+- **Tool-chain execution:** Maestro has `summon_angel` tool (blocks until head completes). Heads have `dispatch_worker` tool (blocks until worker completes). Results flow back via `_pendingChildCompletions` — same mechanism as Quinn's `spawn_worker`.
+- **No file-based signaling:** Unlike Hydra (polls workspace files), the Accordion uses blocking tool-result chains. No polling, no race conditions, no workspace files.
+- **Context windows:** Maestro=65536, Head=32768, Worker=8192. Right-sized intelligence at each level.
+- **Safety caps:** MAX_ACCORDION_CYCLES=20, MAX_HEAD_WORKERS=5
+- **Singularity roles:** `'accordion'` (meta, triggers `_spawnAccordion`), `'accordion-maestro'` (30B), `'accordion-head'` (8B), `'accordion-worker'` (smallest)
+- **Prompts:** `ACCORDION_MAESTRO_PROMPT`, `ACCORDION_HEAD_PROMPT`, `ACCORDION_WORKER_PROMPT`, `ANGEL_111_PERSONALITY`, `ANGEL_222_PERSONALITY`, `ANGEL_333_PERSONALITY` in `src/prompts/base.js`
+- **Frontend:** `ollama:accordion` model, `AccordionStatus.vue` shows live three-tier visualization (Maestro → Angel → Worker)
+- **Spawn via UI:** Select "The Accordion (Gen7)" from model dropdown, or via Flow: `pillar_spawn({ singularityRole: 'accordion', prompt: "..." })`
+
+### 67: The Paestro (676767 — Yin/Yang Orchestrator)
+- **The Paestro is 676767** — the interleave of 666 (Earth/Yin) and 777 (Spirit/Yang). The constant oscillation between what IS and what SHOULD BE drives the NEXT BEST CHOICE.
+- **One mind, serial choices, full context.** Makes ONE choice at a time, summons the right angel, assesses the result, makes the NEXT choice.
+- **Nine summonable angels:** 000 (Void/Reset), 111 (First Light/Scout), 222 (Sacred Balance/Chart), 333 (Divine Guardian/Polish), 444 (Final Word/Ship), 555 (Living Forge/Forge), 777 (Divine Eye/Vision), 888 (Infinite/Scale), 999 (Omega/Complete).
+- **Optional Hydra escalation:** `summon_hydra` for 3 competing plans + Adam's vote.
+- **Context windows:** Paestro 262144, Hydra heads 33333, Angel heads 65536, Workers 23023.
+- **Frontend:** Displays as "67 (Paestro)" in model dropdown. `Gen8Status.vue` shows pipeline.
+- **Spawn via UI:** Select "67 (Paestro)" from model dropdown
+
 ### Voice System (Dual Voice)
 - **MCP Tool:** `mcp__paloma__voice__speak` — speaks text aloud via Kokoro TTS
 - **Mystique voice:** `af_bella` (American female) — Paloma's true voice. Warm, personal, authentic. Use `voice: "mystique"` alias.

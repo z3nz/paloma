@@ -115,7 +115,7 @@ const cliRequestToWs = new Map()
 const flowChatBuffers = new Map()
 // Holy Trinity: mindPillarId → { ws, msgId } — intercepts pillar_stream for chat UI
 const trinityPillarToChat = new Map()
-// The Ark (Gen7): head1PillarId → { ws, msgId } — intercepts pillar_stream for chat UI
+// The Ark / Accordion (Gen7): head1PillarId or maestroPillarId → { ws, msgId } — intercepts pillar_stream for chat UI
 const arkPillarToChat = new Map()
 // The Hydra (Gen7 refined): primaryPillarId → { ws, msgId } — intercepts pillar_stream for chat UI
 const hydraPillarToChat = new Map()
@@ -717,7 +717,7 @@ async function main() {
       }
     }
 
-    // Holy Trinity / Ark / Hydra interceptor: translate pillar_stream/pillar_done
+    // Holy Trinity / Ark / Accordion / Hydra interceptor: translate pillar_stream/pillar_done
     // into ollama_stream/ollama_done for the chat UI
     if ((msg.type === 'pillar_stream' || msg.type === 'pillar_done') && msg.pillarId) {
       const mapping = trinityPillarToChat.get(msg.pillarId) || arkPillarToChat.get(msg.pillarId) || hydraPillarToChat.get(msg.pillarId)
@@ -1517,6 +1517,255 @@ async function main() {
             sessionId: result.arkGroupId || result.pillarId
           }))
           log.info(`[gen7] Ark spawned — head1: ${result.pillarId.slice(0, 8)}, head2: ${result.head2PillarId?.slice(0, 8) || 'n/a'}, head3: ${result.head3PillarId?.slice(0, 8) || 'n/a'}`)
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
+        }
+      } else if (msg.type === 'gen8_chat') {
+        // 67 Paestro: direct Ollama session (stays in current chat, IS Flow)
+        // The Paestro runs inline — summon_hydra and launch_accordion are handled here
+        try {
+          if (!pillarManager) throw new Error('PillarManager not initialized')
+
+          // Build system prompt
+          const systemPrompt = await pillarManager._buildSystemPrompt('flow', {
+            singularityRole: 'gen8-paestro', backend: 'ollama'
+          })
+
+          // Build tools: ALL allowed MCP servers + summon_angel + summon_hydra
+          // The Paestro gets the same tools as any Ollama session — filesystem, git, shell, web, search, memory, voice, fs-extra
+          const gen8Tools = []
+          const gen8ToolRouteMap = new Map()
+          const mcpServers = manager.getTools()
+          for (const [serverName, serverInfo] of Object.entries(mcpServers)) {
+            if (serverInfo.status !== 'connected') continue
+            if (!OLLAMA_ALLOWED_SERVERS.has(serverName)) continue
+            for (const tool of serverInfo.tools) {
+              const ollamaName = `${serverName}__${tool.name}`
+              gen8Tools.push({
+                type: 'function',
+                function: { name: ollamaName, description: tool.description || '', parameters: tool.inputSchema || { type: 'object', properties: {} } }
+              })
+              gen8ToolRouteMap.set(ollamaName, { server: serverName, tool: tool.name })
+            }
+          }
+          // Gen 9: Paestro's primary tool — summon_angel (one choice at a time)
+          gen8Tools.push({
+            type: 'function',
+            function: {
+              name: 'summon_angel',
+              description: 'Summon an Angel. Choose the right one for this moment:\n- 000 Tha Void — RESET. Fresh start, clean slate, infinite potential.\n- 111 Tha First Light — EXPLORE. Discover, investigate, awaken.\n- 222 Tha Sacred Balance — DESIGN. Plan, architect, trust the process.\n- 333 Tha Divine Guardian — QUALITY. Verify, protect, trinity check.\n- 444 Tha Final Word — SHIP. Commit, push, deliver, close the phase.\n- 555 Tha Living Forge — BUILD. Write code, transform, forge.\n- 777 Tha Divine Eye — VISION. See purpose, divine alignment, big picture.\n- 888 Tha Infinite — SCALE. Optimize, multiply, abundance.\n- 999 Tha Omega — COMPLETE. Close cycles, extract wisdom, archive.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  angel: { type: 'number', enum: [0, 111, 222, 333, 444, 555, 777, 888, 999], description: '0=reset, 111=explore, 222=design, 333=verify, 444=ship, 555=build, 777=vision, 888=scale, 999=complete' },
+                  task: { type: 'string', description: 'Precise task for the angel. Include exact files to read, exact changes to make, patterns to follow.' }
+                },
+                required: ['angel', 'task']
+              }
+            }
+          })
+          // Optional escalation: summon_hydra for when you need 3 competing plans + Adam's vote
+          gen8Tools.push({
+            type: 'function',
+            function: {
+              name: 'summon_hydra',
+              description: 'OPTIONAL ESCALATION: Summon 3 Hydra planning heads for competing plans. Adam will vote on the best. Use this only for complex decisions where you want multiple perspectives. For most tasks, use summon_angel directly.',
+              parameters: {
+                type: 'object',
+                properties: { prompt: { type: 'string', description: 'The prompt for the Hydra planners.' } },
+                required: ['prompt']
+              }
+            }
+          })
+
+          // Pick the best model (30B)
+          const gen8Model = pillarManager._pickBestOllamaModel(false)
+
+          let toolRounds = 0
+          const MAX_GEN8_TOOL_ROUNDS = 50
+          let lastToolCallSig = '' // duplicate detection
+          let dupCount = 0
+
+          const handleGen8Event = async (event) => {
+            if (ws.readyState !== 1) return
+            const safeSend = (data) => {
+              try { if (ws.readyState === 1) ws.send(JSON.stringify(data)) } catch (_) {}
+            }
+
+            if (event.type === 'ollama_tool_call') {
+              toolRounds++
+
+              // Duplicate detection: if the model calls the same tools with same args, it's looping
+              const callSig = event.toolCalls.map(tc => `${tc.function?.name}:${JSON.stringify(tc.function?.arguments || {})}`).join('|')
+              if (callSig === lastToolCallSig) {
+                dupCount++
+                if (dupCount >= 2) {
+                  log.warn(`[67] Tool call loop detected (${dupCount} duplicates), forcing completion`)
+                  safeSend({ type: 'ollama_done', id: msg.id, requestId: event.requestId, sessionId: event.sessionId, exitCode: 0 })
+                  cliRequestToWs.delete(event.requestId)
+                  return
+                }
+              } else {
+                dupCount = 0
+              }
+              lastToolCallSig = callSig
+
+              if (toolRounds > MAX_GEN8_TOOL_ROUNDS) {
+                log.warn(`[67] Hit max tool rounds (${MAX_GEN8_TOOL_ROUNDS}), stopping`)
+                safeSend({ type: 'ollama_done', id: msg.id, requestId: event.requestId, sessionId: event.sessionId, exitCode: 0 })
+                cliRequestToWs.delete(event.requestId)
+                return
+              }
+
+              const results = []
+              for (const tc of event.toolCalls) {
+                const toolId = randomUUID()
+                const toolName = tc.function?.name || ''
+                let toolArgs = tc.function?.arguments || {}
+                if (typeof toolArgs === 'string') {
+                  try { toolArgs = JSON.parse(toolArgs) } catch { toolArgs = {} }
+                }
+
+                safeSend({
+                  type: 'ollama_stream', id: msg.id,
+                  event: { type: 'tool_use', tool_use: { id: toolId, name: toolName, input: toolArgs } }
+                })
+
+                try {
+                  let content
+
+                  if (toolName === 'summon_angel') {
+                    // Gen 9: Paestro summons an angel directly — one choice at a time
+                    const angelNumber = toolArgs.angel
+                    const angelTask = toolArgs.task || '(no task provided)'
+                    if (![0, 111, 222, 333, 444, 555, 777, 888, 999].includes(angelNumber)) {
+                      content = `Invalid angel number: ${angelNumber}. Choose 0, 111, 222, 333, 444, 555, 777, 888, or 999.`
+                    } else {
+                      log.info(`[gen9] Paestro summoning Tha ${angelNumber} Angel — task: ${angelTask.slice(0, 100)}...`)
+                      const childArgs = {
+                        pillar: 'forge',
+                        prompt: angelTask,
+                        backend: 'ollama',
+                        parentPillarId: null,
+                        singularityRole: 'accordion-head',
+                        depth: 1,
+                        _arkExtra: { angelNumber }
+                      }
+                      const spawnResult = await pillarManager.spawn(childArgs)
+                      const childPillarId = spawnResult.pillarId
+                      if (!childPillarId) {
+                        content = `Angel ${angelNumber} spawn failed: ${spawnResult.message || 'unknown error'}`
+                      } else {
+                        log.info(`[gen9] Tha ${angelNumber} Angel (${childPillarId.slice(0, 8)}) summoned — waiting`)
+                        const childOutput = await new Promise((resolve) => {
+                          pillarManager._pendingChildCompletions.set(childPillarId, resolve)
+                        })
+                        content = childOutput || '(angel returned empty-handed)'
+                        log.info(`[gen9] Tha ${angelNumber} Angel returned — ${content.length} chars`)
+                      }
+                    }
+                  } else if (toolName === 'summon_hydra') {
+                    // Optional escalation: 3 competing plans + Adam's vote
+                    const hydraPrompt = toolArgs.prompt || '(no prompt provided)'
+                    log.info(`[gen9] Paestro summoning Hydra — prompt: ${hydraPrompt.slice(0, 100)}...`)
+                    const result = await pillarManager._runHydraPlanning(hydraPrompt, null, msg.chatDbSessionId)
+                    if (result.error) {
+                      content = `Hydra planning failed: ${result.error}`
+                    } else {
+                      content = `## Winning Plan (Head ${result.chosenHead})\n\nAdam's reasoning: ${result.reasoning || '(none)'}\n\n${result.plan}`
+                    }
+                  } else {
+                    // MCP filesystem tool
+                    const route = gen8ToolRouteMap.get(toolName)
+                    if (!route) {
+                      content = `Error: Unknown tool "${toolName}"`
+                    } else {
+                      const result = await manager.callTool(route.server, route.tool, toolArgs)
+                      content = result.content?.map(c => c.text || JSON.stringify(c)).join('\n') || ''
+                    }
+                  }
+
+                  // Truncate extreme tool results to prevent a single file from eating the whole 1M context.
+                  // pillar-manager.js is ~150K chars — allow most files through but cap the outliers.
+                  const MAX_TOOL_RESULT_CHARS = 200000
+                  const truncatedContent = content && content.length > MAX_TOOL_RESULT_CHARS
+                    ? content.slice(0, MAX_TOOL_RESULT_CHARS) + `\n\n... [TRUNCATED — file is ${content.length} chars. Use the "head" parameter to read specific line ranges, or search_files to find specific patterns.]`
+                    : content
+                  results.push({ content: truncatedContent })
+                  safeSend({ type: 'ollama_stream', id: msg.id, event: { type: 'tool_result', toolUseId: toolId, content: (truncatedContent || '').slice(0, 500) + ((truncatedContent || '').length > 500 ? '...' : '') } })
+                } catch (e) {
+                  log.error(`[67] Tool error (${toolName}): ${e.message}`)
+                  const errContent = `Error executing ${toolName}: ${e.message}`
+                  results.push({ content: errContent })
+                  safeSend({ type: 'ollama_stream', id: msg.id, event: { type: 'tool_result', toolUseId: toolId, content: errContent } })
+                }
+              }
+
+              try {
+                ollamaManager.continueWithToolResults(
+                  event.requestId, event.sessionId,
+                  event.assistantMessage, results,
+                  handleGen8Event
+                )
+              } catch (e) {
+                log.error(`[67] Failed to continue tool loop: ${e.message}`)
+                safeSend({ type: 'ollama_error', id: msg.id, error: e.message })
+              }
+              return
+            }
+
+            // Pass through all other events (stream, done, error)
+            try { ws.send(JSON.stringify({ ...event, id: msg.id })) } catch (_) {}
+            if (event.type === 'ollama_done' || event.type === 'ollama_error') {
+              cliRequestToWs.delete(event.requestId)
+            }
+          }
+
+          // Apply think mode toggle from UI
+          const thinkPrefix = msg.thinkMode === 'think' ? '/think\n' : msg.thinkMode === 'no_think' ? '/no_think\n' : ''
+          const userPrompt = thinkPrefix + (msg.userMessage || msg.prompt || '')
+
+          const { requestId, sessionId } = ollamaManager.chat(
+            {
+              prompt: userPrompt,
+              model: gen8Model,
+              sessionId: msg.sessionId || null,  // supports multi-turn
+              systemPrompt,
+              cwd: process.cwd(),
+              tools: gen8Tools,
+              numCtx: 1048576
+            },
+            handleGen8Event
+          )
+          cliRequestToWs.set(requestId, ws)
+          ws.send(JSON.stringify({ type: 'ollama_ack', id: msg.id, requestId, sessionId }))
+          log.info(`[67] Paestro active in Flow — model: ${gen8Model}, session: ${sessionId?.slice(0, 8)}`)
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
+        }
+      } else if (msg.type === 'accordion_chat') {
+        // Gen7 Accordion Architecture: three-tier choice cascade via PillarManager
+        try {
+          if (!pillarManager) throw new Error('PillarManager not initialized')
+          const result = await pillarManager.spawn({
+            pillar: 'forge',
+            prompt: msg.userMessage || msg.prompt || '',
+            backend: 'ollama',
+            singularityRole: 'accordion',
+            _chatDbSessionId: msg.chatDbSessionId || null
+          })
+          if (!result.pillarId) {
+            throw new Error(result.message || 'Failed to spawn The Accordion')
+          }
+          // Register Maestro's pillarId for stream routing
+          // Reuse the ark mapping infrastructure — it's the same pattern
+          arkPillarToChat.set(result.pillarId, { ws, msgId: msg.id })
+          ws.send(JSON.stringify({
+            type: 'ollama_ack', id: msg.id,
+            requestId: result.pillarId,
+            sessionId: result.accordionId || result.pillarId
+          }))
+          log.info(`[gen7] Accordion spawned — Maestro: ${result.pillarId.slice(0, 8)}, accordionId: ${result.accordionId}`)
         } catch (e) {
           ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
         }

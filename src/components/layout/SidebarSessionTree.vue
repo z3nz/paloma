@@ -162,6 +162,7 @@
 
 <script setup>
 import { reactive } from 'vue'
+import { CLI_MODELS } from '../../services/claudeStream.js'
 import { useMCP } from '../../composables/useMCP.js'
 import { useSessionState } from '../../composables/useSessionState.js'
 import PillarLoader from '../ui/PillarLoader.vue'
@@ -261,6 +262,9 @@ function phaseIcon(phase) {
 
 function formatModel(model) {
   if (!model) return ''
+  // Look up display name from CLI_MODELS first
+  const cli = CLI_MODELS.find(m => m.id === model)
+  if (cli) return cli.name
   if (model.startsWith('claude-cli:')) {
     return model.split(':').pop() + ' (CLI)'
   }

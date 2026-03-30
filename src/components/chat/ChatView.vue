@@ -18,6 +18,8 @@
     <TrinityStatus :trinity-groups="sessionTrinityGroups" />
     <ArkStatus :ark-groups="sessionArkGroups" />
     <HydraStatus :hydra-groups="sessionHydraGroups" />
+    <AccordionStatus :accordion-groups="sessionAccordionGroups" />
+    <Gen8Status :gen8-groups="sessionGen8Groups" />
     <PromptBuilder
       :session="session"
       :streaming="streaming"
@@ -77,6 +79,8 @@ import ThinkingPanel from './ThinkingPanel.vue'
 import TrinityStatus from './TrinityStatus.vue'
 import ArkStatus from './ArkStatus.vue'
 import HydraStatus from './HydraStatus.vue'
+import AccordionStatus from './AccordionStatus.vue'
+import Gen8Status from './Gen8Status.vue'
 import HydraVoteDialog from './HydraVoteDialog.vue'
 import { useChat } from '../../composables/useChat.js'
 import { useChanges } from '../../composables/useChanges.js'
@@ -107,7 +111,7 @@ const { voiceMode, isListening, startListening } = useVoiceInput()
 const { apiKey } = useSettings()
 const { dirHandle, projectRoot, projectInstructions, activePlans, roots, mcpConfig, refreshActivePlans } = useProject()
 const { search: searchFiles } = useFileIndex()
-const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool, pendingAutoResume, singularityGroups, trinityGroups, arkGroups, hydraGroups, pendingHydraVote, submitHydraVote } = useMCP()
+const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool, pendingAutoResume, singularityGroups, trinityGroups, arkGroups, hydraGroups, accordionGroups, gen8Groups, pendingHydraVote, submitHydraVote } = useMCP()
 
 // Filter trinity groups to only those belonging to the current chat session
 const sessionTrinityGroups = computed(() => {
@@ -135,6 +139,26 @@ const sessionHydraGroups = computed(() => {
   for (const [hydraId, group] of hydraGroups) {
     if (group.chatDbSessionId === props.session?.id) {
       filtered.set(hydraId, group)
+    }
+  }
+  return filtered
+})
+
+const sessionAccordionGroups = computed(() => {
+  const filtered = new Map()
+  for (const [accordionId, group] of accordionGroups) {
+    if (group.chatDbSessionId === props.session?.id) {
+      filtered.set(accordionId, group)
+    }
+  }
+  return filtered
+})
+
+const sessionGen8Groups = computed(() => {
+  const filtered = new Map()
+  for (const [gen8Id, group] of gen8Groups) {
+    if (group.chatDbSessionId === props.session?.id) {
+      filtered.set(gen8Id, group)
     }
   }
   return filtered
@@ -269,7 +293,7 @@ watch(pendingAutoResume, async (resume) => {
   }
 })
 
-async function handleSend({ content, files }) {
+async function handleSend({ content, files, thinkMode }) {
   if (!props.session || !content.trim()) return
 
   // Check for slash commands — execute locally without API call
@@ -357,7 +381,8 @@ async function handleSend({ content, files }) {
     activePlans.value,
     searchFiles,
     mcpConfig.value,
-    roots.value
+    roots.value,
+    thinkMode
   )
 
   if (title) {

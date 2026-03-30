@@ -70,6 +70,12 @@ const arkGroups = reactive(new Map()) // groupId → { arkId, head1PillarId, hea
 const hydraGroups = reactive(new Map()) // hydraId → { hydraId, round, phase, aliveHeads, deadHeads, workers, totalHeadsEver, consensusBy, chatDbSessionId }
 const pendingHydraVote = ref(null) // { hydraId, task, plans: [{ headNumber, plan }], chatDbSessionId }
 
+// Gen7 Accordion state
+const accordionGroups = reactive(new Map()) // accordionId → { accordionId, phase, currentAngel, cycleCount, historyCount, maestroPillarId, chatDbSessionId }
+
+// Gen 8 Paestro state
+const gen8Groups = reactive(new Map()) // gen8Id → { gen8Id, phase, hydraId, accordionId, cycleCount, paestroPillarId, chatDbSessionId }
+
 const connected = ref(false)
 const connectionState = ref('disconnected') // 'disconnected' | 'connecting' | 'connected'
 const servers = ref({})
@@ -474,6 +480,28 @@ export function useMCP() {
           workers: msg.workers || [],
           totalHeadsEver: msg.totalHeadsEver || 0,
           consensusBy: msg.consensusBy || null,
+          chatDbSessionId: msg.chatDbSessionId || null
+        })
+      },
+      onGen8Update(msg) {
+        gen8Groups.set(msg.gen8Id, {
+          gen8Id: msg.gen8Id,
+          phase: msg.phase,
+          hydraId: msg.hydraId || null,
+          accordionId: msg.accordionId || null,
+          cycleCount: msg.cycleCount || 0,
+          paestroPillarId: msg.paestroPillarId,
+          chatDbSessionId: msg.chatDbSessionId || null
+        })
+      },
+      onAccordionUpdate(msg) {
+        accordionGroups.set(msg.accordionId, {
+          accordionId: msg.accordionId,
+          phase: msg.phase,
+          currentAngel: msg.currentAngel,
+          cycleCount: msg.cycleCount || 0,
+          historyCount: msg.historyCount || 0,
+          maestroPillarId: msg.maestroPillarId,
           chatDbSessionId: msg.chatDbSessionId || null
         })
       },
@@ -944,6 +972,16 @@ export function useMCP() {
     return bridge.sendHydraChat(options, callbacks)
   }
 
+  function sendAccordionChat(options, callbacks) {
+    if (!bridge || !connected.value) throw new Error('Bridge not connected')
+    return bridge.sendAccordionChat(options, callbacks)
+  }
+
+  function sendGen8Chat(options, callbacks) {
+    if (!bridge || !connected.value) throw new Error('Bridge not connected')
+    return bridge.sendGen8Chat(options, callbacks)
+  }
+
   function submitHydraVote(hydraId, chosenHead, reasoning) {
     if (!bridge || !connected.value) throw new Error('Bridge not connected')
     bridge.sendHydraVote(hydraId, chosenHead, reasoning)
@@ -1200,6 +1238,8 @@ export function useMCP() {
     sendHolyTrinityChat,
     sendArkChat,
     sendHydraChat,
+    sendAccordionChat,
+    sendGen8Chat,
     submitHydraVote,
     pendingHydraVote,
     stopOllamaChat,
@@ -1225,7 +1265,9 @@ export function useMCP() {
     singularityThinkerContent,
     trinityGroups,
     arkGroups,
-    hydraGroups
+    hydraGroups,
+    accordionGroups,
+    gen8Groups
   }
 }
 

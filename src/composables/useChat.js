@@ -133,7 +133,7 @@ export function useChat() {
     s.messages.value = result
   }
 
-  async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions, activePlans, searchFn, mcpConfig, roots) {
+  async function sendMessage(sessionId, content, attachedFiles, apiKey, model, dirHandle, phase, projectInstructions, activePlans, searchFn, mcpConfig, roots, thinkMode) {
     const s = getState(sessionId)
     s.error.value = null
 
@@ -261,7 +261,8 @@ export function useChat() {
           sessionId, model, fullContent,
           phase, projectInstructions, activePlans, roots,
           onContent(text) { s.streamingContent.value = text },
-          sessionState: s
+          sessionState: s,
+          thinkMode
         })
 
         // If superseded by a newer sendMessage call, discard this result
@@ -439,6 +440,13 @@ export function useChat() {
   }
 
   async function saveAssistantMessage(sessionId, s, content, toolCalls, usage, model, toolActivitySnapshot, interrupted = false) {
+    // Dedupe guard: don't save if the last message has the same content (prevents double-save on stop)
+    const lastMsg = s.messages.value[s.messages.value.length - 1]
+    if (lastMsg?.role === 'assistant' && lastMsg?.content === content) {
+      console.log('[chat] Skipping duplicate assistant message save')
+      return lastMsg
+    }
+
     const raw = {
       sessionId,
       role: 'assistant',

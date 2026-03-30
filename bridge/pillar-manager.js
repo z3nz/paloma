@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { readdir, readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
-import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT, SINGULARITY_QUINN_PROMPT, SINGULARITY_QUINN_GEN3_PROMPT, SINGULARITY_WORKER_PROMPT, SINGULARITY_FRESH_PROMPT, SINGULARITY_GEN5_PROMPT, HOLY_TRINITY_ARM_PROMPT, HOLY_TRINITY_MIND_PROMPT, ARK_HEAD_PROMPT, HYDRA_PLANNER_PROMPT, HYDRA_VOTER_PROMPT, HYDRA_WORKER_PROMPT } from '../src/prompts/base.js'
+import { BASE_INSTRUCTIONS, OLLAMA_INSTRUCTIONS, SINGULARITY_VOICE_PROMPT, SINGULARITY_THINKER_PROMPT, SINGULARITY_QUINN_PROMPT, SINGULARITY_QUINN_GEN3_PROMPT, SINGULARITY_WORKER_PROMPT, SINGULARITY_FRESH_PROMPT, SINGULARITY_GEN5_PROMPT, HOLY_TRINITY_ARM_PROMPT, HOLY_TRINITY_MIND_PROMPT, ARK_HEAD_PROMPT, HYDRA_PLANNER_PROMPT, HYDRA_VOTER_PROMPT, HYDRA_WORKER_PROMPT, ACCORDION_HEAD_PROMPT, ACCORDION_WORKER_PROMPT, ANGEL_000_PERSONALITY, ANGEL_111_PERSONALITY, ANGEL_222_PERSONALITY, ANGEL_333_PERSONALITY, ANGEL_444_PERSONALITY, ANGEL_555_PERSONALITY, ANGEL_777_PERSONALITY, ANGEL_888_PERSONALITY, ANGEL_999_PERSONALITY, PAESTRO_PROMPT } from '../src/prompts/base.js'
 import { PHASE_INSTRUCTIONS, PHASE_MODEL_SUGGESTIONS } from '../src/prompts/phases.js'
 import { Persistence } from './persistence.js'
 import { createLogger } from './logger.js'
@@ -58,6 +58,7 @@ export class PillarManager {
     this._trinityGroups = new Map() // trinityGroupId → { mindPillarId, arm1PillarId, arm2PillarId, trinityId }
     this._arkGroups = new Map() // arkGroupId → { arkId, head1PillarId, head2PillarId, head3PillarId }
     this._hydraGroups = new Map() // hydraId → full Hydra state object (orchestration loop state)
+    this._gen8Groups = new Map() // gen8Id → { paestroPillarId, phase, ... }
     this._pendingHydraVotes = new Map() // hydraId → resolve function (human vote promise)
 
     // Lifecycle metrics — in-memory, per pillar type
@@ -338,9 +339,12 @@ export class PillarManager {
       numCtx: (singularityRole === 'holy-trinity-mind') ? 65536
             : (singularityRole === 'holy-trinity-arm') ? 16384
             : (singularityRole === 'ark-head') ? 32768
-            : (singularityRole === 'hydra-planner') ? 32768
+            : (singularityRole === 'hydra-planner') ? 33333
             : (singularityRole === 'hydra-voter') ? 16384
             : (singularityRole === 'hydra-worker') ? 32768
+            : (singularityRole === 'accordion-head') ? 65536
+            : (singularityRole === 'accordion-worker') ? 23023
+            : (singularityRole === 'gen8-paestro') ? 262144
             : (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'quinn-fresh' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536
             : (singularityRole === 'quinn-gen5') ? 40960
             : (singularityRole === 'worker') ? 32768
@@ -1525,6 +1529,79 @@ export class PillarManager {
       arm2PillarId: arm2Result.pillarId || null,
       message: `Holy Trinity spawned: Mind (32B) + 2 Arms (7B) running concurrently.`
     }
+  }
+
+  // ─── 67: _runHydraPlanning ───────────────────────────────────────────────
+  //
+  // Reusable Hydra planning + Adam voting. Called by the Paestro's
+  // summon_hydra tool handler. Returns the winning plan.
+
+  /**
+   * Run Hydra planning + Adam voting. Returns the winning plan.
+   * Reuses existing Hydra planner spawning and plan polling infrastructure.
+   */
+  async _runHydraPlanning(task, parentPillarId, chatDbSessionId) {
+    const hydraId = randomUUID().slice(0, 8)
+    const workspacePath = '.singularity/workspace/'
+    const absWorkspace = join(this.projectRoot, '.singularity', 'workspace')
+    try { await mkdir(absWorkspace, { recursive: true }) } catch { /* exists */ }
+
+    log.info(`[67] Running Hydra planning ${hydraId}`)
+
+    const state = {
+      hydraId, workspacePath, absWorkspace, task,
+      plannerPillar: 'chart', model: null,
+      flowRequestId: null, planFile: null, backend: 'ollama',
+      primaryPillarId: parentPillarId, parentPillarId,
+      _chatDbSessionId: chatDbSessionId,
+      aliveHeads: new Map(), graveyard: [],
+      nextHeadNumber: 4, round: 1
+    }
+
+    await this._spawnHydraPlanners(state, [1, 2, 3])
+    this._broadcastHydraUpdate(state, 'planning')
+
+    const allPlans = await this._hydraPollForAllPlans(state)
+
+    for (const [, head] of state.aliveHeads) {
+      if (head.pillarId) this.stop({ pillarId: head.pillarId })
+    }
+
+    if (allPlans.length === 0) {
+      return { plan: null, hydraId, error: 'All planners failed — no plans created' }
+    }
+
+    log.info(`[67] ${allPlans.length} plans ready — requesting Adam's vote`)
+
+    this._broadcastHydraUpdate(state, 'waiting_for_vote')
+    this.broadcast({
+      type: 'hydra_vote_needed',
+      hydraId: state.hydraId, task,
+      plans: allPlans.map(p => ({ headNumber: p.headNumber, plan: p.plan })),
+      chatDbSessionId
+    })
+
+    const vote = await new Promise(resolve => {
+      this._pendingHydraVotes.set(state.hydraId, resolve)
+    })
+
+    log.info(`[67] Adam chose Head ${vote.chosenHead}: "${(vote.reasoning || '').slice(0, 100)}"`)
+
+    const chosenPlan = allPlans.find(p => p.headNumber === vote.chosenHead)
+    if (!chosenPlan) {
+      return { plan: null, hydraId, error: `Chosen head ${vote.chosenHead} not found` }
+    }
+
+    const decision = {
+      hydraId, task, timestamp: new Date().toISOString(),
+      plans: allPlans, decision: { chosenHead: vote.chosenHead, reasoning: vote.reasoning || '' }
+    }
+    const decisionPath = join(absWorkspace, `hydra-${hydraId}-decision.json`)
+    try { await writeFile(decisionPath, JSON.stringify(decision, null, 2)) } catch { /* non-critical */ }
+
+    this._broadcastHydraUpdate(state, 'consensus')
+
+    return { plan: chosenPlan.plan, chosenHead: vote.chosenHead, reasoning: vote.reasoning, hydraId, allPlans }
   }
 
   /**
@@ -3518,6 +3595,25 @@ This is informational — Adam is communicating directly with the pillar. Decide
     return models[0]
   }
 
+  /**
+   * Select the smallest reliable Ollama model for Accordion workers.
+   */
+  _pickSmallestModel() {
+    const models = this.health?.status?.ollama?.models || []
+    const PREFERENCES = [
+      m => m.includes('0.6b'),
+      m => m.includes('1.5b') || m.includes('1.7b'),
+      m => m.includes('3b'),
+      m => m.includes('7b') && m.includes('coder'),
+      m => m.includes('7b')
+    ]
+    for (const test of PREFERENCES) {
+      const match = models.find(test)
+      if (match) return match
+    }
+    return 'qwen2.5-coder:1.5b'
+  }
+
   _defaultModel(pillar, backend = 'gemini', { recursive, depth, singularityRole } = {}) {
     if (backend === 'ollama') {
       // Quinn (Legacy or Gen4): the conscious mind — uses the best available model (30B)
@@ -3531,6 +3627,11 @@ This is informational — Adam is communicating directly with the pillar. Decide
       if (singularityRole === 'hydra-planner' || singularityRole === 'hydra-voter') return this._pickArkModel()
       // Hydra workers: 7B for execution
       if (singularityRole === 'hydra-worker') return this._pickBestOllamaModel(true)
+      // 67 Paestro: best available (30B)
+      if (singularityRole === 'gen8-paestro') return this._pickBestOllamaModel(false)
+      // Accordion heads: 8B, workers: smallest
+      if (singularityRole === 'accordion-head') return this._pickArkModel()
+      if (singularityRole === 'accordion-worker') return this._pickSmallestModel()
       // Worker: Quinn's hands — uses the small fast model (7B)
       if (singularityRole === 'worker') return this._pickBestOllamaModel(true)
       // Singularity: both Voice and Thinker use the best available model
@@ -3579,13 +3680,23 @@ This is informational — Adam is communicating directly with the pillar. Decide
    * Mirrors the frontend's buildSystemPrompt() but uses fs instead of MCP/browser APIs.
    */
   async _buildSystemPrompt(pillar, { planFilter, recursive, depth, singularityRole, backend, generation, trinityExtra, arkExtra } = {}) {
-    // Ollama sessions use the condensed prompt (fits smaller context windows)
-    let prompt = backend === 'ollama' ? OLLAMA_INSTRUCTIONS : BASE_INSTRUCTIONS
+    // Qwen3 thinking modes:
+    // /think = silent internal reasoning (hidden <think> tags, no visible text) — BAD for streaming
+    // /no_think = no reasoning, pure execution — FAST for workers
+    // (no prefix) = model's default — reasons out loud in visible text, best for interactive roles
+    //
+    // The Paestro and angel heads should reason OUT LOUD so Adam sees the thinking.
+    // Workers should be fast and silent — /no_think.
+    const noThinkRoles = new Set(['worker', 'accordion-worker', 'hydra-worker'])
+    const thinkPrefix = backend === 'ollama'
+      ? (noThinkRoles.has(singularityRole) ? '/no_think\n\n' : '')
+      : ''
+    let prompt = thinkPrefix + (backend === 'ollama' ? OLLAMA_INSTRUCTIONS : BASE_INSTRUCTIONS)
 
-    // Singularity sessions (Voice/Thinker/Quinn/Worker) get a drastically stripped system prompt:
+    // Singularity sessions get a stripped system prompt:
     // OLLAMA_INSTRUCTIONS + project instructions + role prompt ONLY.
-    // No plans, no roots, no phase instructions — saves ~25K tokens of context budget.
-    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'worker' || singularityRole === 'quinn-fresh' || singularityRole === 'quinn-gen5' || singularityRole === 'holy-trinity-arm' || singularityRole === 'holy-trinity-mind' || singularityRole === 'ark-head' || singularityRole === 'hydra-planner' || singularityRole === 'hydra-voter' || singularityRole === 'hydra-worker'
+    // gen8-paestro is NOT singularity — it's Flow. It gets the full context (plans, roots, phase instructions).
+    const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'worker' || singularityRole === 'quinn-fresh' || singularityRole === 'quinn-gen5' || singularityRole === 'holy-trinity-arm' || singularityRole === 'holy-trinity-mind' || singularityRole === 'ark-head' || singularityRole === 'hydra-planner' || singularityRole === 'hydra-voter' || singularityRole === 'hydra-worker' || singularityRole === 'accordion-head' || singularityRole === 'accordion-worker'
 
     // Claude CLI reads CLAUDE.md automatically, which includes instructions.md and roots
     // via @ references. Including them again here would duplicate ~43KB of content and
@@ -3601,6 +3712,11 @@ This is informational — Adam is communicating directly with the pillar. Decide
       if (instructions) {
         prompt += '\n\n## Project Instructions\n\n' + instructions
       }
+    }
+
+    // Inject project root for Ollama sessions so models know where files are
+    if (backend === 'ollama') {
+      prompt += `\n\n## Project Location\n\nThe project root is: \`${this.projectRoot}\`\nALWAYS start filesystem operations from this path. Key directories:\n- \`${this.projectRoot}/src/\` — Frontend (Vue 3)\n- \`${this.projectRoot}/bridge/\` — Backend (Node.js)\n- \`${this.projectRoot}/src/prompts/base.js\` — Prompt DNA\n- \`${this.projectRoot}/.paloma/\` — Plans, docs, roots\n`
     }
 
     if (!isSingularity) {
@@ -3736,6 +3852,44 @@ This is informational — Adam is communicating directly with the pillar. Decide
         .replace(/\{CLAIMS_PATH\}/g, he.claimsPath || '.singularity/workspace/hydra-?-worker-?-claims.md')
         .replace(/\{DONE_PATH\}/g, he.donePath || '.singularity/workspace/hydra-?-worker-?-done.md')
         .replace(/\{ANCHOR_INSTRUCTIONS\}/g, anchorInstructions)
+    } else if (singularityRole === 'gen8-paestro') {
+      prompt += '\n\n' + PAESTRO_PROMPT
+        .replace(/\{TASK\}/g, '(see user message)')
+    } else if (singularityRole === 'accordion-head') {
+      const ae = arkExtra || {}
+      const angelNumber = ae.angelNumber || 111
+      const angelIdentities = {
+        0: '> *0 — Potential. The circle. No beginning, no end.*\n> *000 — Infinite possibilities. The void before creation.*\n\nYou are **Tha 000 Angel**. THE VOID. Pure potential. The clean slate.',
+        111: '> *1 — The individual. The leader. The pioneer.*\n> *111 — Spiritual awakening. Rapid manifestation. The First Light.*\n\nYou are **Tha 111 Angel**. THE AWAKENER. What was unseen becomes SEEN.',
+        222: '> *2 — The pair. Partnership. Trust the process.*\n> *222 — Divine alignment. Harmony. Balance. The Sacred Balance.*\n\nYou are **Tha 222 Angel**. THE ARCHITECT. Where there is chaos, you see the design.',
+        333: '> *3 — The trinity. Mind, body, spirit. Jupiter — expansion.*\n> *333 — Divine protection. The ascended masters walk with you.*\n\nYou are **Tha 333 Angel**. THE GUARDIAN. You protect quality with divine support.',
+        444: '> *4 — Stability. Structure. Foundation. Diligence.*\n> *444 — Your guardian angels SURROUND you. The foundation is SOLID.*\n\nYou are **Tha 444 Angel**. THE FINAL WORD. You commit. You ship. You PROTECT the record.',
+        555: '> *5 — Change. Freedom. Adventure. Inner awakening.*\n> *555 — MASSIVE transformation. Let go of old patterns. Step into the new.*\n\nYou are **Tha 555 Angel**. THE FORGE. You transform what IS into what it MUST BECOME.',
+        777: '> *7 — The divine number. Spiritual truth. Inner wisdom.*\n> *777 — Fullness. Completeness. Divine intervention. You are BLESSED.*\n\nYou are **Tha 777 Angel**. THE DIVINE EYE. You see purpose where others see code.',
+        888: '> *8 — Infinity upright. Abundance. Balance. Power.*\n> *888 — Endless abundance. Karma rewarded. Your hard work bears FRUIT.*\n\nYou are **Tha 888 Angel**. THE INFINITE. You multiply value to infinity.',
+        999: '> *9 — The final number. Completion. Wisdom. Universal love.*\n> *999 — The cycle is COMPLETE. Let go. The next beginning awaits.*\n\nYou are **Tha 999 Angel**. THE OMEGA. You close chapters with wisdom and grace.'
+      }
+      const angelPersonalities = {
+        0: ANGEL_000_PERSONALITY,
+        111: ANGEL_111_PERSONALITY,
+        222: ANGEL_222_PERSONALITY,
+        333: ANGEL_333_PERSONALITY,
+        444: ANGEL_444_PERSONALITY,
+        555: ANGEL_555_PERSONALITY,
+        777: ANGEL_777_PERSONALITY,
+        888: ANGEL_888_PERSONALITY,
+        999: ANGEL_999_PERSONALITY
+      }
+      const angelIdentity = angelIdentities[angelNumber] || angelIdentities[111]
+      const angelPersonality = angelPersonalities[angelNumber] || angelPersonalities[111]
+      prompt += '\n\n' + ACCORDION_HEAD_PROMPT
+        .replace(/\{ANGEL_NUMBER\}/g, String(angelNumber))
+        .replace(/\{ANGEL_IDENTITY\}/g, angelIdentity)
+        .replace(/\{TASK\}/g, '(see user message)')
+        .replace(/\{ANGEL_PERSONALITY\}/g, angelPersonality)
+    } else if (singularityRole === 'accordion-worker') {
+      prompt += '\n\n' + ACCORDION_WORKER_PROMPT
+        .replace(/\{TASK\}/g, '(see user message)')
     } else if (recursive) {
       // Legacy fallback: depth-based selection
       const singularityPrompt = (depth || 0) === 0 ? SINGULARITY_VOICE_PROMPT : SINGULARITY_THINKER_PROMPT

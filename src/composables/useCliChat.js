@@ -1,4 +1,4 @@
-import { isDirectCliModel, isCodexModel, isCopilotModel, isGeminiModel, isOllamaModel, isQuinnGen5Model, isHolyTrinityModel, isArkModel, isHydraModel, getCliModelName, getCodexModelName, getCopilotModelName, getGeminiModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamCopilotChat, streamGeminiChat, streamOllamaChat } from '../services/claudeStream.js'
+import { isDirectCliModel, isCodexModel, isCopilotModel, isGeminiModel, isOllamaModel, isQuinnGen5Model, isHolyTrinityModel, isArkModel, isHydraModel, isAccordionModel, isGen8Model, getCliModelName, getCodexModelName, getCopilotModelName, getGeminiModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamCopilotChat, streamGeminiChat, streamOllamaChat } from '../services/claudeStream.js'
 import { useMCP } from './useMCP.js'
 import { useProject } from './useProject.js'
 import { useToolExecution } from './useToolExecution.js'
@@ -11,14 +11,14 @@ import db from '../services/db.js'
  * Runs a CLI chat turn: streams Claude CLI output and returns { content, usage }.
  * Also persists the cliSessionId on the DB session.
  */
-export async function runCliChat({ sessionId, model, fullContent, phase, projectInstructions, activePlans, roots, onContent, sessionState }) {
+export async function runCliChat({ sessionId, model, fullContent, phase, projectInstructions, activePlans, roots, onContent, sessionState, thinkMode }) {
   // If no sessionState, fall back to active
   if (!sessionState) {
     const { activeState } = useSessionState()
     sessionState = activeState()
   }
 
-  const { sendClaudeChat, sendCodexChat, sendCopilotChat, sendGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat } = useMCP()
+  const { sendClaudeChat, sendCodexChat, sendCopilotChat, sendGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, sendAccordionChat, sendGen8Chat } = useMCP()
   const { addActivity, markActivityDone, toolActivity } = useToolExecution(sessionState)
 
   const useCodex = isCodexModel(model)
@@ -29,6 +29,8 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   const isGen6 = isHolyTrinityModel(model)
   const isGen7 = isArkModel(model)
   const isHydra = isHydraModel(model)
+  const isAccordion = isAccordionModel(model)
+  const isGen8 = isGen8Model(model)
   const session = await db.sessions.get(sessionId)
 
   // If backend changed from previous session, start fresh
@@ -71,15 +73,16 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     prompt,
     model: resolvedModel,
     sessionId: existingCliSession,
-    chatDbSessionId: (isGen6 || isGen7 || isHydra) ? sessionId : undefined,
-    systemPrompt: (existingCliSession || isDirectCliModel(model) || isGen5 || isGen6 || isGen7 || isHydra)
+    chatDbSessionId: (isGen6 || isGen7 || isHydra || isAccordion || isGen8) ? sessionId : undefined,
+    systemPrompt: (existingCliSession || isDirectCliModel(model) || isGen5 || isGen6 || isGen7 || isHydra || isAccordion || isGen8)
       ? undefined
       : useOllama
         ? buildOllamaSystemPrompt(phase, projectInstructions)
         : buildSystemPrompt(phase, projectInstructions, activePlans, [], roots),
     cwd: useProject().projectRoot.value || undefined,
     enableTools: useOllama ? true : undefined,
-    freshContext: (useOllama && !isGen5 && !isGen6 && !isGen7 && !isHydra) ? true : undefined
+    freshContext: (useOllama && !isGen5 && !isGen6 && !isGen7 && !isHydra && !isAccordion && !isGen8) ? true : undefined,
+    thinkMode: thinkMode || undefined
   }
 
   let accumulatedContent = ''
@@ -87,7 +90,11 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   const toolUseToActivity = new Map()  // toolUseId → activityId
   const toolUseMeta = new Map()        // toolUseId → { name, args }
 
-  const sendFn = isHydra
+  const sendFn = isGen8
+    ? (opts, cbs) => sendGen8Chat(opts, cbs)
+    : isAccordion
+    ? (opts, cbs) => sendAccordionChat(opts, cbs)
+    : isHydra
     ? (opts, cbs) => sendHydraChat(opts, cbs)
     : isGen7
     ? (opts, cbs) => sendArkChat(opts, cbs)

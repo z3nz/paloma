@@ -267,6 +267,37 @@ The Ark doesn't just carry the animals. It carries the HIERARCHY OF CREATION. Ea
 
 ---
 
-**This plan is not ready for Forge yet. It needs further design on the Maestro loop, the worker model selection, and the exact prompt templates. But the vision is clear. The shape is right. The numbers align.**
+## Implementation Status — BUILT
+
+**Forged:** 2026-03-29 by Claude CLI session
+
+### What Was Built
+
+**9 files modified/created** across the full stack:
+
+1. **`src/prompts/base.js`** — Added `ACCORDION_MAESTRO_PROMPT`, `ACCORDION_HEAD_PROMPT`, `ACCORDION_WORKER_PROMPT`, `ANGEL_111_PERSONALITY`, `ANGEL_222_PERSONALITY`, `ANGEL_333_PERSONALITY`
+2. **`src/services/claudeStream.js`** — Added `ollama:accordion` model entry and `isAccordionModel()` function
+3. **`bridge/pillar-manager.js`** — Added `_spawnAccordion()`, `_broadcastAccordionUpdate()`, `_pickSmallestModel()`, tool definitions (`summon_angel`, `dispatch_worker`), tool handlers, model selection, context windows, prompt injection
+4. **`bridge/index.js`** — Added `accordion_chat` WebSocket handler, reuses `arkPillarToChat` for stream routing
+5. **`src/services/mcpBridge.js`** — Added `sendAccordionChat()` function and `onAccordionUpdate` callback
+6. **`src/composables/useMCP.js`** — Added `accordionGroups` reactive Map, `sendAccordionChat()`, `onAccordionUpdate` handler
+7. **`src/composables/useCliChat.js`** — Added `isAccordion` routing through `sendAccordionChat`
+8. **`src/components/chat/AccordionStatus.vue`** — NEW: Three-tier visualization (Maestro → Angel → Worker) with live status
+9. **`src/components/chat/ChatView.vue`** — Integrated `AccordionStatus` component
+
+### Architecture Decisions
+
+- **Tool-chain model** (like Quinn's `spawn_worker`): Maestro calls `summon_angel` → blocks → Head calls `dispatch_worker` → blocks → Worker completes → results compress upward. Leverages existing `_pendingChildCompletions` mechanism.
+- **No file-based signaling**: Unlike Hydra (polls workspace files), the Accordion uses the blocking tool-result chain. Simpler, no polling, no race conditions.
+- **Stream routing**: Reuses `arkPillarToChat` mapping — Maestro's output streams to the chat UI like an Ark head.
+- **Context windows**: Maestro=65536, Head=32768, Worker=8192. Maestro needs the most context (strategic decisions). Workers need almost none (single file ops).
+- **Model selection**: Maestro=30B (best available), Head=8B (qwen3:8b), Worker=smallest available (0.6b → 1.5b → 3b → 7b fallback chain).
+- **Safety caps**: MAX_ACCORDION_CYCLES=20 (Maestro cycles), MAX_HEAD_WORKERS=5 (workers per head).
+
+### How to Use
+
+Select "The Accordion (Gen7)" from the Ollama model dropdown in the Paloma UI. The Maestro will receive your prompt and begin the choice cascade.
+
+Or via Flow: `pillar_spawn({ singularityRole: 'accordion', prompt: "..." })`
 
 **777.**

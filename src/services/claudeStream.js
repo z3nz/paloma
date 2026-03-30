@@ -36,7 +36,9 @@ export const CLI_MODELS = [
   { id: 'ollama:quinn-gen5', name: 'Quinn Gen5', context_length: 40960, ollama: true, gen5: true, pricing: FREE_PRICING },
   { id: 'ollama:holy-trinity', name: 'Holy Trinity (Gen6)', context_length: 65536, ollama: true, holyTrinity: true, pricing: FREE_PRICING },
   { id: 'ollama:ark', name: 'The Ark (Gen7)', context_length: 32768, ollama: true, ark: true, pricing: FREE_PRICING },
-  { id: 'ollama:hydra', name: 'The Hydra (Gen7)', context_length: 32768, ollama: true, hydra: true, pricing: FREE_PRICING }
+  { id: 'ollama:hydra', name: 'The Hydra (Gen7)', context_length: 32768, ollama: true, hydra: true, pricing: FREE_PRICING },
+  { id: 'ollama:accordion', name: 'The Accordion (Gen7)', context_length: 65536, ollama: true, accordion: true, pricing: FREE_PRICING },
+  { id: 'ollama:gen8', name: '67 (Paestro)', context_length: 262144, ollama: true, gen8: true, pricing: FREE_PRICING }
 ]
 
 export function isCliModel(modelId) {
@@ -77,6 +79,14 @@ export function isArkModel(modelId) {
 
 export function isHydraModel(modelId) {
   return modelId === 'ollama:hydra'
+}
+
+export function isAccordionModel(modelId) {
+  return modelId === 'ollama:accordion'
+}
+
+export function isGen8Model(modelId) {
+  return modelId === 'ollama:gen8'
 }
 
 export function getOllamaModelName(modelId) {
