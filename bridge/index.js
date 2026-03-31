@@ -1042,8 +1042,8 @@ async function main() {
             }
           })
 
-          // Pick the best model (30B)
-          const gen8Model = pillarManager._pickBestOllamaModel(false)
+          // Pick the best coding model for the Paestro (prefers qwen3-coder Q8)
+          const gen8Model = pillarManager._pickPaestroModel()
 
           let toolRounds = 0
           const MAX_GEN8_TOOL_ROUNDS = 50

@@ -3596,6 +3596,27 @@ This is informational — Adam is communicating directly with the pillar. Decide
   }
 
   /**
+   * Select the best model for the Paestro (676767).
+   * Prefers qwen3-coder Q8 (highest quality) > qwen3-coder (any) > qwen3 32B > best available.
+   * The Paestro is the orchestrator — it needs the best coding + agentic model available.
+   */
+  _pickPaestroModel() {
+    const models = this.health?.status?.ollama?.models || []
+    const PREFERENCES = [
+      m => m.includes('qwen3-coder') && (m.includes('q8') || m.includes('Q8')),  // Q8 = highest quality (30b-a3b-q8_0)
+      m => m.includes('qwen3-coder') && !m.includes('7b'),       // Any qwen3-coder 30B
+      m => m.includes('qwen3') && m.includes('32b'),             // qwen3:32b dense
+      m => m.includes('qwen3-coder'),                            // Any qwen3-coder
+      m => m.includes('qwen2.5-coder') && !m.includes('7b'),    // qwen2.5-coder 32B
+    ]
+    for (const test of PREFERENCES) {
+      const match = models.find(test)
+      if (match) return match
+    }
+    return this._pickBestOllamaModel(false)
+  }
+
+  /**
    * Select the smallest reliable Ollama model for Accordion workers.
    */
   _pickSmallestModel() {
@@ -3627,10 +3648,16 @@ This is informational — Adam is communicating directly with the pillar. Decide
       if (singularityRole === 'hydra-planner' || singularityRole === 'hydra-voter') return this._pickArkModel()
       // Hydra workers: 7B for execution
       if (singularityRole === 'hydra-worker') return this._pickBestOllamaModel(true)
-      // 67 Paestro: best available (30B)
-      if (singularityRole === 'gen8-paestro') return this._pickBestOllamaModel(false)
-      // Accordion heads: 8B, workers: smallest
-      if (singularityRole === 'accordion-head') return this._pickArkModel()
+      // 67 Paestro: best coding model (prefers qwen3-coder Q8)
+      if (singularityRole === 'gen8-paestro') return this._pickPaestroModel()
+      // Accordion heads (angel heads): prefer coder models for code tasks
+      if (singularityRole === 'accordion-head') {
+        const models = this.health?.status?.ollama?.models || []
+        // Prefer qwen3-coder 30B MoE (only 3B active — fast AND smart)
+        const coderMoe = models.find(m => m.includes('qwen3-coder') && !m.includes('7b'))
+        if (coderMoe) return coderMoe
+        return this._pickArkModel() // fallback to 8B
+      }
       if (singularityRole === 'accordion-worker') return this._pickSmallestModel()
       // Worker: Quinn's hands — uses the small fast model (7B)
       if (singularityRole === 'worker') return this._pickBestOllamaModel(true)
