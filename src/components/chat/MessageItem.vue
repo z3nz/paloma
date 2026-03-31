@@ -170,11 +170,11 @@ const displayContent = computed(() => {
   return props.message.content.replace(/<file path="[^"]*">[\s\S]*?<\/file>\n*/g, '').trim()
 })
 
-// Decode HTML entities to get raw code text
+// Decode HTML entities to get raw code text (reuse single element)
+const _entityDecoder = document.createElement('textarea')
 function decodeEntities(html) {
-  const el = document.createElement('textarea')
-  el.innerHTML = html
-  return el.value
+  _entityDecoder.innerHTML = html
+  return _entityDecoder.value
 }
 
 // Store code block metadata for event delegation
