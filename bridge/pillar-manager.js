@@ -339,11 +339,11 @@ export class PillarManager {
       numCtx: (singularityRole === 'holy-trinity-mind') ? 65536
             : (singularityRole === 'holy-trinity-arm') ? 16384
             : (singularityRole === 'ark-head') ? 32768
-            : (singularityRole === 'hydra-planner') ? 65536
-            : (singularityRole === 'hydra-voter') ? 16384
-            : (singularityRole === 'hydra-worker') ? 32768
-            : (singularityRole === 'accordion-head') ? 65536
-            : (singularityRole === 'accordion-worker') ? 23023
+            : (singularityRole === 'hydra-planner') ? 66667
+            : (singularityRole === 'hydra-voter') ? 16667
+            : (singularityRole === 'hydra-worker') ? 33333
+            : (singularityRole === 'accordion-head') ? 66667
+            : (singularityRole === 'accordion-worker') ? 33333
             : (singularityRole === 'gen8-paestro') ? 262144
             : (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'quinn-fresh' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536
             : (singularityRole === 'quinn-gen5') ? 40960
