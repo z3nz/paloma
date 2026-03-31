@@ -992,7 +992,7 @@ async function main() {
 
           // Build system prompt
           const systemPrompt = await pillarManager._buildSystemPrompt('flow', {
-            singularityRole: 'gen8-paestro', backend: 'ollama'
+            singularityRole: 'paestro', backend: 'ollama'
           })
 
           // Build tools: ALL allowed MCP servers + summon_angel + summon_hydra

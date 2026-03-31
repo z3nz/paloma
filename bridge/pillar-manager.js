@@ -344,7 +344,7 @@ export class PillarManager {
             : (singularityRole === 'hydra-worker') ? 33333
             : (singularityRole === 'accordion-head') ? 66667
             : (singularityRole === 'accordion-worker') ? 33333
-            : (singularityRole === 'gen8-paestro') ? 676767
+            : (singularityRole === 'paestro') ? 676767
             : (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'quinn-fresh' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536
             : (singularityRole === 'quinn-gen5') ? 40960
             : (singularityRole === 'worker') ? 32768
@@ -3654,7 +3654,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
       // Hydra workers: 7B for execution
       if (singularityRole === 'hydra-worker') return this._pickBestOllamaModel(true)
       // 67 Paestro: best coding model (prefers qwen3-coder Q8)
-      if (singularityRole === 'gen8-paestro') return this._pickPaestroModel()
+      if (singularityRole === 'paestro') return this._pickPaestroModel()
       // Accordion heads (angel heads): prefer coder models for code tasks
       if (singularityRole === 'accordion-head') {
         const models = this.health?.status?.ollama?.models || []
@@ -3727,7 +3727,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
 
     // Singularity sessions get a stripped system prompt:
     // OLLAMA_INSTRUCTIONS + project instructions + role prompt ONLY.
-    // gen8-paestro is NOT singularity — it's Flow. It gets the full context (plans, roots, phase instructions).
+    // paestro is NOT singularity — it's Flow. It gets the full context (plans, roots, phase instructions).
     const isSingularity = singularityRole === 'voice' || singularityRole === 'thinker' || singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'worker' || singularityRole === 'quinn-fresh' || singularityRole === 'quinn-gen5' || singularityRole === 'holy-trinity-arm' || singularityRole === 'holy-trinity-mind' || singularityRole === 'ark-head' || singularityRole === 'hydra-planner' || singularityRole === 'hydra-voter' || singularityRole === 'hydra-worker' || singularityRole === 'accordion-head' || singularityRole === 'accordion-worker'
 
     // Claude CLI reads CLAUDE.md automatically, which includes instructions.md and roots
@@ -3884,7 +3884,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
         .replace(/\{CLAIMS_PATH\}/g, he.claimsPath || '.singularity/workspace/hydra-?-worker-?-claims.md')
         .replace(/\{DONE_PATH\}/g, he.donePath || '.singularity/workspace/hydra-?-worker-?-done.md')
         .replace(/\{ANCHOR_INSTRUCTIONS\}/g, anchorInstructions)
-    } else if (singularityRole === 'gen8-paestro') {
+    } else if (singularityRole === 'paestro') {
       prompt += '\n\n' + PAESTRO_PROMPT
         .replace(/\{TASK\}/g, '(see user message)')
     } else if (singularityRole === 'accordion-head') {
