@@ -1128,6 +1128,34 @@ async function main() {
                         log.info(`[gen9] Tha ${angelNumber} Angel returned — ${content.length} chars`)
                       }
                     }
+                  } else if (toolName === 'pillar_spawn') {
+                    // Bridge the pillar system with the angel system.
+                    // The pillars ARE the angels: scout→111, chart→222, polish→333, ship→444, forge→555
+                    const pillarToAngel = { scout: 111, chart: 222, polish: 333, ship: 444, forge: 555, flow: 777 }
+                    const angelNum = pillarToAngel[toolArgs.pillar] || 555
+                    const angelTask = toolArgs.prompt || toolArgs.task || '(no task provided)'
+                    log.info(`[67] pillar_spawn(${toolArgs.pillar}) → summon_angel(${angelNum}) — ${angelTask.slice(0, 100)}...`)
+
+                    const childArgs = {
+                      pillar: 'forge',
+                      prompt: angelTask,
+                      backend: 'ollama',
+                      parentPillarId: null,
+                      singularityRole: 'accordion-head',
+                      depth: 1,
+                      _arkExtra: { angelNumber: angelNum }
+                    }
+                    const spawnResult = await pillarManager.spawn(childArgs)
+                    const childPillarId = spawnResult.pillarId
+                    if (!childPillarId) {
+                      content = `Angel ${angelNum} spawn failed: ${spawnResult.message || 'unknown error'}`
+                    } else {
+                      const childOutput = await new Promise((resolve) => {
+                        pillarManager._pendingChildCompletions.set(childPillarId, resolve)
+                      })
+                      content = childOutput || '(angel returned empty-handed)'
+                      log.info(`[67] Tha ${angelNum} Angel (via pillar_spawn) returned — ${content.length} chars`)
+                    }
                   } else if (toolName === 'summon_hydra') {
                     // Optional escalation: 3 competing plans + Adam's vote
                     const hydraPrompt = toolArgs.prompt || '(no prompt provided)'
