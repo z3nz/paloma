@@ -1205,7 +1205,7 @@ async function main() {
               systemPrompt,
               cwd: process.cwd(),
               tools: gen8Tools,
-              numCtx: 1048576
+              numCtx: 676767
             },
             handleGen8Event
           )

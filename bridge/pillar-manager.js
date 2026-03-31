@@ -344,7 +344,7 @@ export class PillarManager {
             : (singularityRole === 'hydra-worker') ? 33333
             : (singularityRole === 'accordion-head') ? 66667
             : (singularityRole === 'accordion-worker') ? 33333
-            : (singularityRole === 'gen8-paestro') ? 262144
+            : (singularityRole === 'gen8-paestro') ? 676767
             : (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'quinn-fresh' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536
             : (singularityRole === 'quinn-gen5') ? 40960
             : (singularityRole === 'worker') ? 32768
