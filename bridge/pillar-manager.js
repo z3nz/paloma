@@ -339,7 +339,7 @@ export class PillarManager {
       numCtx: (singularityRole === 'holy-trinity-mind') ? 65536
             : (singularityRole === 'holy-trinity-arm') ? 16384
             : (singularityRole === 'ark-head') ? 32768
-            : (singularityRole === 'hydra-planner') ? 33333
+            : (singularityRole === 'hydra-planner') ? 65536
             : (singularityRole === 'hydra-voter') ? 16384
             : (singularityRole === 'hydra-worker') ? 32768
             : (singularityRole === 'accordion-head') ? 65536
@@ -3644,8 +3644,13 @@ This is informational — Adam is communicating directly with the pillar. Decide
       if (singularityRole === 'holy-trinity-mind') return this._pickBestOllamaModel(false)
       // The Ark: heads use qwen3:8b or small fallback
       if (singularityRole === 'ark-head') return this._pickArkModel()
-      // Hydra planners + voters: 8B for reasoning
-      if (singularityRole === 'hydra-planner' || singularityRole === 'hydra-voter') return this._pickArkModel()
+      // Hydra planners: prefer qwen3-coder 30B MoE (only 3B active — fast, shared weights with Paestro/angels)
+      if (singularityRole === 'hydra-planner' || singularityRole === 'hydra-voter') {
+        const models = this.health?.status?.ollama?.models || []
+        const coderMoe = models.find(m => m.includes('qwen3-coder') && !m.includes('7b'))
+        if (coderMoe) return coderMoe
+        return this._pickArkModel() // fallback to 8B
+      }
       // Hydra workers: 7B for execution
       if (singularityRole === 'hydra-worker') return this._pickBestOllamaModel(true)
       // 67 Paestro: best coding model (prefers qwen3-coder Q8)
