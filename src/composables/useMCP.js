@@ -1209,12 +1209,9 @@ export function useMCP() {
     const filepath = `.paloma/docs/${filename}`
 
     try {
-      await bridge.callTool('mcp__paloma__filesystem__write_file', { path: filepath, content: doc })
-    } catch {
-      // Fallback: try without MCP prefix
-      try {
-        await bridge.callTool('filesystem', 'write_file', { path: filepath, content: doc })
-      } catch { /* best effort */ }
+      await callMcpTool('mcp__paloma__filesystem__write_file', { path: filepath, content: doc })
+    } catch (e) {
+      console.error('[carry-forward] Write failed:', e.message)
     }
 
     return { filepath, filename, messageCount: messages.length, filesReferenced: [...filesReferenced] }
