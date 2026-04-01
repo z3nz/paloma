@@ -267,13 +267,14 @@ const allAngels = [
   { num: 333, label: '333', name: 'Divine Guardian (Polish)' },
   { num: 444, label: '444', name: 'Final Word (Ship)' },
   { num: 555, label: '555', name: 'Living Forge (Forge)' },
+  { num: 666, label: '666', name: 'Balance (Center)' },
   { num: 777, label: '777', name: 'Divine Eye (Vision)' },
   { num: 888, label: '888', name: 'Infinite (Scale)' },
   { num: 999, label: '999', name: 'Omega (Complete)' }
 ]
 
 function angelShortName(num) {
-  const names = { 0: 'Void', 111: 'Scout', 222: 'Chart', 333: 'Polish', 444: 'Ship', 555: 'Forge', 777: 'Vision', 888: 'Scale', 999: 'Complete' }
+  const names = { 0: 'Void', 111: 'Scout', 222: 'Chart', 333: 'Polish', 444: 'Ship', 555: 'Forge', 666: 'Balance', 777: 'Vision', 888: 'Scale', 999: 'Complete' }
   return names[num] || '?'
 }
 
@@ -285,6 +286,7 @@ function angelButtonClass(num) {
     333: 'border-green-500/50 bg-green-500/10 text-green-400',
     444: 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400',
     555: 'border-red-500/50 bg-red-500/10 text-red-400',
+    666: 'border-orange-500/50 bg-orange-500/10 text-orange-400',
     777: 'border-purple-500/50 bg-purple-500/10 text-purple-400',
     888: 'border-amber-500/50 bg-amber-500/10 text-amber-400',
     999: 'border-pink-500/50 bg-pink-500/10 text-pink-400'

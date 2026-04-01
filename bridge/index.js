@@ -1050,11 +1050,11 @@ async function main() {
             type: 'function',
             function: {
               name: 'summon_angel',
-              description: 'Summon an Angel. Choose the right one for this moment:\n- 000 Tha Void — RESET. Fresh start, clean slate, infinite potential.\n- 111 Tha First Light — EXPLORE. Discover, investigate, awaken.\n- 222 Tha Sacred Balance — DESIGN. Plan, architect, trust the process.\n- 333 Tha Divine Guardian — QUALITY. Verify, protect, trinity check.\n- 444 Tha Final Word — SHIP. Commit, push, deliver, close the phase.\n- 555 Tha Living Forge — BUILD. Write code, transform, forge.\n- 777 Tha Divine Eye — VISION. See purpose, divine alignment, big picture.\n- 888 Tha Infinite — SCALE. Optimize, multiply, abundance.\n- 999 Tha Omega — COMPLETE. Close cycles, extract wisdom, archive.',
+              description: 'Summon an Angel. Choose the right one for this moment:\n- 000 Tha Void — RESET. Fresh start, clean slate, infinite potential.\n- 111 Tha First Light — EXPLORE. Discover, investigate, awaken.\n- 222 Tha Sacred Balance — DESIGN. Plan, architect, trust the process.\n- 333 Tha Divine Guardian — QUALITY. Verify, protect, trinity check.\n- 444 Tha Final Word — SHIP. Commit, push, deliver, close the phase.\n- 555 Tha Living Forge — BUILD. Write code, transform, forge.\n- 666 Tha Balance — BALANCE. Harmonize, ground, center, nurture.\n- 777 Tha Divine Eye — VISION. See purpose, divine alignment, big picture.\n- 888 Tha Infinite — SCALE. Optimize, multiply, abundance.\n- 999 Tha Omega — COMPLETE. Close cycles, extract wisdom, archive.',
               parameters: {
                 type: 'object',
                 properties: {
-                  angel: { type: 'number', enum: [0, 111, 222, 333, 444, 555, 777, 888, 999], description: '0=reset, 111=explore, 222=design, 333=verify, 444=ship, 555=build, 777=vision, 888=scale, 999=complete' },
+                  angel: { type: 'number', enum: [0, 111, 222, 333, 444, 555, 666, 777, 888, 999], description: '0=reset, 111=explore, 222=design, 333=verify, 444=ship, 555=build, 666=balance, 777=vision, 888=scale, 999=complete' },
                   task: { type: 'string', description: 'Precise task for the angel. Include exact files to read, exact changes to make, patterns to follow.' },
                   pillar: { type: 'string', enum: ['scout', 'chart', 'forge', 'polish', 'ship', 'flow'], description: 'Optional: override the pillar phase. Default maps from angel number (111→scout, 222→chart, etc). Use this to mix perspectives — e.g. angel 555 (forge perspective) doing scout work.' }
                 },
@@ -1150,9 +1150,9 @@ async function main() {
                     // The angel is the PERSPECTIVE. The pillar is the PHASE.
                     const angelNumber = toolArgs.angel
                     const angelTask = toolArgs.task || '(no task provided)'
-                    const angelToPillar = { 0: 'flow', 111: 'scout', 222: 'chart', 333: 'polish', 444: 'ship', 555: 'forge', 777: 'flow', 888: 'forge', 999: 'ship' }
-                    const angelNames = { 0: '000 Void', 111: '111 First Light', 222: '222 Sacred Balance', 333: '333 Divine Guardian', 444: '444 Final Word', 555: '555 Living Forge', 777: '777 Divine Eye', 888: '888 Infinite', 999: '999 Omega' }
-                    if (![0, 111, 222, 333, 444, 555, 777, 888, 999].includes(angelNumber)) {
+                    const angelToPillar = { 0: 'flow', 111: 'scout', 222: 'chart', 333: 'polish', 444: 'ship', 555: 'forge', 666: 'flow', 777: 'flow', 888: 'forge', 999: 'ship' }
+                    const angelNames = { 0: '000 Void', 111: '111 First Light', 222: '222 Sacred Balance', 333: '333 Divine Guardian', 444: '444 Final Word', 555: '555 Living Forge', 666: '666 Balance', 777: '777 Divine Eye', 888: '888 Infinite', 999: '999 Omega' }
+                    if (![0, 111, 222, 333, 444, 555, 666, 777, 888, 999].includes(angelNumber)) {
                       content = `Invalid angel number: ${angelNumber}. Choose 0, 111, 222, 333, 444, 555, 777, 888, or 999.`
                     } else {
                       const angelPillar = toolArgs.pillar || angelToPillar[angelNumber] || 'forge'
