@@ -94,6 +94,7 @@ import { usePermissions } from '../../composables/usePermissions.js'
 import { resolveEdit } from '../../services/editing.js'
 import { handleSlashCommand } from '../../services/slashCommands.js'
 import db from '../../services/db.js'
+import { useSessions } from '../../composables/useSessions.js'
 
 const props = defineProps({
   session: { type: Object, default: null },
@@ -406,26 +407,20 @@ async function handleCarryForward({ filepath, messageCount, filesReferenced }) {
   const phase = props.session?.phase || 'flow'
   const contextMsg = `Please read the carry-forward context document at \`${filepath}\` to continue where we left off. It contains ${messageCount} messages from our previous conversation${filesReferenced?.length ? ` and references ${filesReferenced.length} files` : ''}. Read it, understand the context, and let me know you're ready to continue.`
 
-  const newSession = {
-    title: 'Carry Forward',
-    model,
-    phase,
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  }
-  const newId = await db.sessions.add(newSession)
+  // Use useSessions.createSession which handles loadSessions + setActive
+  const { createSession, updateSession } = useSessions()
+  const projectPath = props.session?.projectPath || 'paloma'
+  const newId = await createSession(projectPath, model, phase)
+  await updateSession(newId, { title: 'Carry Forward' })
 
-  const userMsg = {
+  // Inject the context message
+  await db.messages.add({
     sessionId: newId,
     role: 'user',
     content: contextMsg,
     files: [],
     timestamp: Date.now()
-  }
-  await db.messages.add(userMsg)
-
-  // Navigate to the new session (same mechanism as pillar navigation)
-  emit('navigate-to-pillar', newId)
+  })
 }
 
 /** Read a file via MCP, returns content string or null */
