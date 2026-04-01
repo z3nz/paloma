@@ -146,7 +146,7 @@
         </button>
         <!-- Paestro 666/777 mode toggle (only visible for 67 model) -->
         <button
-          v-if="currentModel === 'ollama:gen8'"
+          v-if="currentModel === 'ollama:67'"
           @click="paestroMode = paestroMode === '67' ? '666' : paestroMode === '666' ? '777' : '67'"
           class="flex items-center gap-1 px-2 py-1 text-xs rounded-md border transition-colors"
           :class="paestroMode === '666'
@@ -243,7 +243,7 @@ const openHydraDropdown = ref(-1) // which dropdown is open (-1 = none)
 const hydraDropdownRefs = reactive([null, null, null])
 
 const showHydraConfig = computed(() => {
-  return currentModel.value === 'ollama:gen8' || currentModel.value === 'ollama:gen8:8b' || currentModel.value === 'ollama:hydra'
+  return currentModel.value === 'ollama:67' || currentModel.value === 'ollama:67:8b' || currentModel.value === 'ollama:hydra'
 })
 
 const allAngels = [

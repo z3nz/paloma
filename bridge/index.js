@@ -984,7 +984,7 @@ async function main() {
         } catch (e) {
           ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
         }
-      } else if (msg.type === 'gen8_chat') {
+      } else if (msg.type === 'paestro_chat') {
         // 67 Paestro: direct Ollama session (stays in current chat, IS Flow)
         // The Paestro runs inline — summon_hydra and launch_accordion are handled here
         try {
@@ -1000,22 +1000,22 @@ async function main() {
 
           // Build tools: ALL connected MCP servers + summon_angel + summon_hydra
           // The Paestro sees EVERY tool — no restrictions, full access
-          const gen8Tools = []
-          const gen8ToolRouteMap = new Map()
+          const paestroTools = []
+          const paestroToolRouteMap = new Map()
           const mcpServers = manager.getTools()
           for (const [serverName, serverInfo] of Object.entries(mcpServers)) {
             if (serverInfo.status !== 'connected') continue
             for (const tool of serverInfo.tools) {
               const ollamaName = `${serverName}__${tool.name}`
-              gen8Tools.push({
+              paestroTools.push({
                 type: 'function',
                 function: { name: ollamaName, description: tool.description || '', parameters: tool.inputSchema || { type: 'object', properties: {} } }
               })
-              gen8ToolRouteMap.set(ollamaName, { server: serverName, tool: tool.name })
+              paestroToolRouteMap.set(ollamaName, { server: serverName, tool: tool.name })
             }
           }
           // Gen 9: Paestro's primary tool — summon_angel (one choice at a time)
-          gen8Tools.push({
+          paestroTools.push({
             type: 'function',
             function: {
               name: 'summon_angel',
@@ -1031,7 +1031,7 @@ async function main() {
             }
           })
           // Optional escalation: summon_hydra for when you need 3 competing plans + Adam's vote
-          gen8Tools.push({
+          paestroTools.push({
             type: 'function',
             function: {
               name: 'summon_hydra',
@@ -1045,15 +1045,15 @@ async function main() {
           })
 
           // Pick model based on variant: 8B for lighter machines, 30B Q8 for full power
-          const is8b = msg.modelVariant === 'ollama:gen8:8b'
-          const gen8Model = is8b ? pillarManager._pickArkModel() : pillarManager._pickPaestroModel()
+          const is8b = msg.modelVariant === 'ollama:67:8b'
+          const paestroModel = is8b ? pillarManager._pickArkModel() : pillarManager._pickPaestroModel()
 
           let toolRounds = 0
-          const MAX_GEN8_TOOL_ROUNDS = 50
+          const MAX_PAESTRO_TOOL_ROUNDS = 50
           let lastToolCallSig = '' // duplicate detection
           let dupCount = 0
 
-          const handleGen8Event = async (event) => {
+          const handlePaestroEvent = async (event) => {
             if (ws.readyState !== 1) return
             const safeSend = (data) => {
               try { if (ws.readyState === 1) ws.send(JSON.stringify(data)) } catch (_) {}
@@ -1077,8 +1077,8 @@ async function main() {
               }
               lastToolCallSig = callSig
 
-              if (toolRounds > MAX_GEN8_TOOL_ROUNDS) {
-                log.warn(`[67] Hit max tool rounds (${MAX_GEN8_TOOL_ROUNDS}), stopping`)
+              if (toolRounds > MAX_PAESTRO_TOOL_ROUNDS) {
+                log.warn(`[67] Hit max tool rounds (${MAX_PAESTRO_TOOL_ROUNDS}), stopping`)
                 safeSend({ type: 'ollama_done', id: msg.id, requestId: event.requestId, sessionId: event.sessionId, exitCode: 0 })
                 cliRequestToWs.delete(event.requestId)
                 return
@@ -1171,7 +1171,7 @@ async function main() {
                     }
                   } else {
                     // MCP filesystem tool
-                    const route = gen8ToolRouteMap.get(toolName)
+                    const route = paestroToolRouteMap.get(toolName)
                     if (!route) {
                       content = `Error: Unknown tool "${toolName}"`
                     } else {
@@ -1200,7 +1200,7 @@ async function main() {
                 ollamaManager.continueWithToolResults(
                   event.requestId, event.sessionId,
                   event.assistantMessage, results,
-                  handleGen8Event
+                  handlePaestroEvent
                 )
               } catch (e) {
                 log.error(`[67] Failed to continue tool loop: ${e.message}`)
@@ -1231,18 +1231,18 @@ async function main() {
           const { requestId, sessionId } = ollamaManager.chat(
             {
               prompt: userPrompt,
-              model: gen8Model,
+              model: paestroModel,
               sessionId: msg.sessionId || null,  // supports multi-turn
               systemPrompt,
               cwd: process.cwd(),
-              tools: gen8Tools,
+              tools: paestroTools,
               numCtx: is8b ? 33333 : 676767
             },
-            handleGen8Event
+            handlePaestroEvent
           )
           cliRequestToWs.set(requestId, ws)
           ws.send(JSON.stringify({ type: 'ollama_ack', id: msg.id, requestId, sessionId }))
-          log.info(`[67] Paestro active in Flow — model: ${gen8Model}${is8b ? ' (8B lite)' : ''}, session: ${sessionId?.slice(0, 8)}`)
+          log.info(`[67] Paestro active in Flow — model: ${paestroModel}${is8b ? ' (8B lite)' : ''}, session: ${sessionId?.slice(0, 8)}`)
         } catch (e) {
           ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
         }

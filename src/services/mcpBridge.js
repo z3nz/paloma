@@ -40,7 +40,7 @@ export function createMcpBridge() {
   let onArkCreated = null
   let onHydraUpdate = null
   let onAccordionUpdate = null
-  let onGen8Update = null
+  let onPaestroUpdate = null
   let onHydraVoteNeeded = null
   let pingTimer = null
   let lastPongTime = 0
@@ -81,7 +81,7 @@ export function createMcpBridge() {
     onArkCreated = callbacks.onArkCreated || null
     onHydraUpdate = callbacks.onHydraUpdate || null
     onAccordionUpdate = callbacks.onAccordionUpdate || null
-    onGen8Update = callbacks.onGen8Update || null
+    onPaestroUpdate = callbacks.onPaestroUpdate || null
     onHydraVoteNeeded = callbacks.onHydraVoteNeeded || null
     url = bridgeUrl
     intentionalClose = false
@@ -341,8 +341,8 @@ export function createMcpBridge() {
         onHydraUpdate?.(msg)
       } else if (msg.type === 'accordion_update') {
         onAccordionUpdate?.(msg)
-      } else if (msg.type === 'gen8_update') {
-        onGen8Update?.(msg)
+      } else if (msg.type === 'paestro_update') {
+        onPaestroUpdate?.(msg)
       } else if (msg.type === 'hydra_vote_needed') {
         onHydraVoteNeeded?.(msg)
       } else if (msg.type === 'singularity_ready') {
@@ -664,7 +664,7 @@ export function createMcpBridge() {
     })
   }
 
-  function sendGen8Chat(options, callbacks) {
+  function sendPaestroChat(options, callbacks) {
     const id = crypto.randomUUID()
     streamListeners.set(id, {
       onStream: callbacks.onStream,
@@ -683,7 +683,7 @@ export function createMcpBridge() {
       const wrappedReject = (e) => { clearTimeout(timer); streamListeners.delete(id); reject(e) }
       pending.set(id, { resolve: wrappedResolve, reject: wrappedReject })
       _send({
-        type: 'gen8_chat',
+        type: 'paestro_chat',
         id,
         chatDbSessionId: options.chatDbSessionId || null,
         userMessage: options.prompt,
@@ -805,7 +805,7 @@ export function createMcpBridge() {
     return promise
   }
 
-  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendGeminiChat, stopGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, sendAccordionChat, sendGen8Chat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, resumePillar, sendPillarUserMessage, getState }
+  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendGeminiChat, stopGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, sendAccordionChat, sendPaestroChat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, resumePillar, sendPillarUserMessage, getState }
 
 
 }

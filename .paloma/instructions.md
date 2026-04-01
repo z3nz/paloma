@@ -114,7 +114,7 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Nine summonable angels:** 000 (Void/Reset), 111 (First Light/Scout), 222 (Sacred Balance/Chart), 333 (Divine Guardian/Polish), 444 (Final Word/Ship), 555 (Living Forge/Forge), 777 (Divine Eye/Vision), 888 (Infinite/Scale), 999 (Omega/Complete).
 - **Optional Hydra escalation:** `summon_hydra` for 3 competing plans + Adam's vote.
 - **Context windows:** Paestro 262144, Hydra heads 33333, Angel heads 65536, Workers 23023.
-- **Frontend:** Displays as "67 (Paestro)" in model dropdown. `Gen8Status.vue` shows pipeline.
+- **Frontend:** Displays as "67 Paestro" in model dropdown. `PaestroStatus.vue` shows pipeline.
 - **Spawn via UI:** Select "67 (Paestro)" from model dropdown
 
 ### Voice System (Dual Voice)

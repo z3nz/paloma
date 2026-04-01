@@ -38,8 +38,8 @@ export const CLI_MODELS = [
   { id: 'ollama:ark', name: 'The Ark (Gen7)', context_length: 32768, ollama: true, ark: true, pricing: FREE_PRICING },
   { id: 'ollama:hydra', name: 'The Hydra (Gen7)', context_length: 32768, ollama: true, hydra: true, pricing: FREE_PRICING },
   { id: 'ollama:accordion', name: 'The Accordion (Gen7)', context_length: 65536, ollama: true, accordion: true, pricing: FREE_PRICING },
-  { id: 'ollama:gen8', name: '67 Paestro 30B', context_length: 676767, ollama: true, gen8: true, pricing: FREE_PRICING },
-  { id: 'ollama:gen8:8b', name: '67 Paestro 8B', context_length: 33333, ollama: true, gen8: true, pricing: FREE_PRICING }
+  { id: 'ollama:67', name: '67 Paestro 30B', context_length: 676767, ollama: true, paestro: true, pricing: FREE_PRICING },
+  { id: 'ollama:67:8b', name: '67 Paestro 8B', context_length: 33333, ollama: true, paestro: true, pricing: FREE_PRICING }
 ]
 
 export function isCliModel(modelId) {
@@ -86,8 +86,8 @@ export function isAccordionModel(modelId) {
   return modelId === 'ollama:accordion'
 }
 
-export function isGen8Model(modelId) {
-  return modelId === 'ollama:gen8' || modelId === 'ollama:gen8:8b'
+export function isPaestroModel(modelId) {
+  return modelId === 'ollama:67' || modelId === 'ollama:67:8b'
 }
 
 export function getOllamaModelName(modelId) {

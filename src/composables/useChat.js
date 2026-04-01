@@ -474,7 +474,7 @@ export function useChat() {
   function checkContextUsage(s, usage, model) {
     if (!usage) return
     const { getModelInfo } = useOpenRouter()
-    // Check CLI_MODELS first (covers Ollama/gen8/etc), then OpenRouter
+    // Check CLI_MODELS first (covers Ollama/67 Paestro/etc), then OpenRouter
     const cliModel = CLI_MODELS.find(m => m.id === model)
     const contextLength = cliModel?.context_length || getModelInfo(model)?.context_length
     if (contextLength) {

@@ -1,4 +1,4 @@
-import { isDirectCliModel, isCodexModel, isCopilotModel, isGeminiModel, isOllamaModel, isQuinnGen5Model, isHolyTrinityModel, isArkModel, isHydraModel, isAccordionModel, isGen8Model, getCliModelName, getCodexModelName, getCopilotModelName, getGeminiModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamCopilotChat, streamGeminiChat, streamOllamaChat } from '../services/claudeStream.js'
+import { isDirectCliModel, isCodexModel, isCopilotModel, isGeminiModel, isOllamaModel, isQuinnGen5Model, isHolyTrinityModel, isArkModel, isHydraModel, isAccordionModel, isPaestroModel, getCliModelName, getCodexModelName, getCopilotModelName, getGeminiModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamCopilotChat, streamGeminiChat, streamOllamaChat } from '../services/claudeStream.js'
 import { useMCP } from './useMCP.js'
 import { useProject } from './useProject.js'
 import { useToolExecution } from './useToolExecution.js'
@@ -18,7 +18,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     sessionState = activeState()
   }
 
-  const { sendClaudeChat, sendCodexChat, sendCopilotChat, sendGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, sendAccordionChat, sendGen8Chat } = useMCP()
+  const { sendClaudeChat, sendCodexChat, sendCopilotChat, sendGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, sendAccordionChat, sendPaestroChat } = useMCP()
   const { addActivity, markActivityDone, toolActivity } = useToolExecution(sessionState)
 
   const useCodex = isCodexModel(model)
@@ -30,7 +30,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   const isGen7 = isArkModel(model)
   const isHydra = isHydraModel(model)
   const isAccordion = isAccordionModel(model)
-  const isGen8 = isGen8Model(model)
+  const isPaestro = isPaestroModel(model)
   const session = await db.sessions.get(sessionId)
 
   // If backend changed from previous session, start fresh
@@ -73,15 +73,15 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     prompt,
     model: resolvedModel,
     sessionId: existingCliSession,
-    chatDbSessionId: (isGen6 || isGen7 || isHydra || isAccordion || isGen8) ? sessionId : undefined,
-    systemPrompt: (existingCliSession || isDirectCliModel(model) || isGen5 || isGen6 || isGen7 || isHydra || isAccordion || isGen8)
+    chatDbSessionId: (isGen6 || isGen7 || isHydra || isAccordion || isPaestro) ? sessionId : undefined,
+    systemPrompt: (existingCliSession || isDirectCliModel(model) || isGen5 || isGen6 || isGen7 || isHydra || isAccordion || isPaestro)
       ? undefined
       : useOllama
         ? buildOllamaSystemPrompt(phase, projectInstructions)
         : buildSystemPrompt(phase, projectInstructions, activePlans, [], roots),
     cwd: useProject().projectRoot.value || undefined,
     enableTools: useOllama ? true : undefined,
-    freshContext: (useOllama && !isGen5 && !isGen6 && !isGen7 && !isHydra && !isAccordion && !isGen8) ? true : undefined,
+    freshContext: (useOllama && !isGen5 && !isGen6 && !isGen7 && !isHydra && !isAccordion && !isPaestro) ? true : undefined,
     thinkMode: thinkMode || undefined,
     paestroMode: paestroMode || undefined,
     hydraAngels: hydraAngels || undefined,
@@ -93,8 +93,8 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   const toolUseToActivity = new Map()  // toolUseId → activityId
   const toolUseMeta = new Map()        // toolUseId → { name, args }
 
-  const sendFn = isGen8
-    ? (opts, cbs) => sendGen8Chat(opts, cbs)
+  const sendFn = isPaestro
+    ? (opts, cbs) => sendPaestroChat(opts, cbs)
     : isAccordion
     ? (opts, cbs) => sendAccordionChat(opts, cbs)
     : isHydra

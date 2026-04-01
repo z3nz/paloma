@@ -35,7 +35,7 @@ const sessionTokens = computed(() => {
 export function useCostTracking() {
 
   function getContextUsage(modelId) {
-    // Check CLI_MODELS first (Ollama, Gen8/67, etc.), then OpenRouter
+    // Check CLI_MODELS first (Ollama, 67 Paestro, etc.), then OpenRouter
     const cliModel = CLI_MODELS.find(m => m.id === modelId)
     const contextLength = cliModel?.context_length || getModelInfo(modelId)?.context_length
     if (!contextLength) return null

@@ -74,7 +74,7 @@ const pendingHydraVote = ref(null) // { hydraId, task, plans: [{ headNumber, pla
 const accordionGroups = reactive(new Map()) // accordionId → { accordionId, phase, currentAngel, cycleCount, historyCount, maestroPillarId, chatDbSessionId }
 
 // 67 Paestro state
-const gen8Groups = reactive(new Map()) // gen8Id → { gen8Id, phase, hydraId, accordionId, cycleCount, paestroPillarId, chatDbSessionId }
+const paestroGroups = reactive(new Map()) // paestroId → { paestroId, phase, hydraId, accordionId, cycleCount, paestroPillarId, chatDbSessionId }
 
 const connected = ref(false)
 const connectionState = ref('disconnected') // 'disconnected' | 'connecting' | 'connected'
@@ -483,9 +483,9 @@ export function useMCP() {
           chatDbSessionId: msg.chatDbSessionId || null
         })
       },
-      onGen8Update(msg) {
-        gen8Groups.set(msg.gen8Id, {
-          gen8Id: msg.gen8Id,
+      onPaestroUpdate(msg) {
+        paestroGroups.set(msg.paestroId, {
+          paestroId: msg.paestroId,
           phase: msg.phase,
           hydraId: msg.hydraId || null,
           accordionId: msg.accordionId || null,
@@ -977,9 +977,9 @@ export function useMCP() {
     return bridge.sendAccordionChat(options, callbacks)
   }
 
-  function sendGen8Chat(options, callbacks) {
+  function sendPaestroChat(options, callbacks) {
     if (!bridge || !connected.value) throw new Error('Bridge not connected')
-    return bridge.sendGen8Chat(options, callbacks)
+    return bridge.sendPaestroChat(options, callbacks)
   }
 
   function submitHydraVote(hydraId, chosenHead, reasoning) {
@@ -1239,7 +1239,7 @@ export function useMCP() {
     sendArkChat,
     sendHydraChat,
     sendAccordionChat,
-    sendGen8Chat,
+    sendPaestroChat,
     submitHydraVote,
     pendingHydraVote,
     stopOllamaChat,
@@ -1267,7 +1267,7 @@ export function useMCP() {
     arkGroups,
     hydraGroups,
     accordionGroups,
-    gen8Groups
+    paestroGroups
   }
 }
 

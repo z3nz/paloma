@@ -58,7 +58,7 @@ export class PillarManager {
     this._trinityGroups = new Map() // trinityGroupId → { mindPillarId, arm1PillarId, arm2PillarId, trinityId }
     this._arkGroups = new Map() // arkGroupId → { arkId, head1PillarId, head2PillarId, head3PillarId }
     this._hydraGroups = new Map() // hydraId → full Hydra state object (orchestration loop state)
-    this._gen8Groups = new Map() // gen8Id → { paestroPillarId, phase, ... }
+    this._paestroGroups = new Map() // paestroId → { paestroPillarId, phase, ... }
     this._pendingHydraVotes = new Map() // hydraId → resolve function (human vote promise)
 
     // Lifecycle metrics — in-memory, per pillar type

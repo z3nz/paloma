@@ -1,11 +1,11 @@
 <template>
-  <div v-if="activeGen8" class="px-4 py-3 border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-sm space-y-2">
+  <div v-if="activePaestro" class="px-4 py-3 border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-sm space-y-2">
     <!-- Header -->
     <div class="flex items-center gap-3 flex-wrap">
       <span class="font-medium text-[var(--color-accent)]">🎼 67 — The Paestro</span>
       <span class="text-[var(--color-text-muted)]">{{ phaseLabel }}</span>
-      <span v-if="activeGen8.cycleCount > 0" class="text-[var(--color-text-muted)]">
-        Cycle {{ activeGen8.cycleCount }}
+      <span v-if="activePaestro.cycleCount > 0" class="text-[var(--color-text-muted)]">
+        Cycle {{ activePaestro.cycleCount }}
       </span>
     </div>
 
@@ -67,13 +67,13 @@
 import { computed } from 'vue'
 
 const props = defineProps({
-  gen8Groups: { type: Map, default: () => new Map() }
+  paestroGroups: { type: Map, default: () => new Map() }
 })
 
-const activeGen8 = computed(() => {
-  if (props.gen8Groups.size === 0) return null
+const activePaestro = computed(() => {
+  if (props.paestroGroups.size === 0) return null
   let last = null
-  for (const [, group] of props.gen8Groups) {
+  for (const [, group] of props.paestroGroups) {
     last = group
   }
   if (!last) return null
@@ -82,8 +82,8 @@ const activeGen8 = computed(() => {
 })
 
 const phaseLabel = computed(() => {
-  if (!activeGen8.value) return ''
-  switch (activeGen8.value.phase) {
+  if (!activePaestro.value) return ''
+  switch (activePaestro.value.phase) {
     case 'crafting': return 'Crafting prompt...'
     case 'hydra-planning': return 'Hydra planning...'
     case 'hydra-voting': return 'Waiting for your vote'
@@ -91,25 +91,25 @@ const phaseLabel = computed(() => {
     case 'accordion-active': return 'Accordion executing...'
     case 'assessing': return 'Assessing results...'
     case 'done': return 'Complete'
-    default: return activeGen8.value.phase
+    default: return activePaestro.value.phase
   }
 })
 
 const showHydra = computed(() => {
-  const p = activeGen8.value?.phase
+  const p = activePaestro.value?.phase
   return p === 'hydra-planning' || p === 'hydra-voting' || p === 'plan-received' || p === 'accordion-active' || p === 'assessing'
 })
 
 const showVote = computed(() => {
-  return activeGen8.value?.phase === 'hydra-voting'
+  return activePaestro.value?.phase === 'hydra-voting'
 })
 
 const showAccordion = computed(() => {
-  return activeGen8.value?.phase === 'accordion-active'
+  return activePaestro.value?.phase === 'accordion-active'
 })
 
 function stageClasses(stage) {
-  const p = activeGen8.value?.phase
+  const p = activePaestro.value?.phase
   if (stage === 'paestro') {
     if (p === 'crafting' || p === 'assessing') return 'border-[var(--color-accent)]/50 bg-[var(--color-accent)]/10'
     return 'border-[var(--color-border)] text-[var(--color-text-muted)]'
@@ -128,7 +128,7 @@ function stageClasses(stage) {
 
 function stageDot(stage) {
   const base = 'inline-block w-2 h-2 rounded-full'
-  const p = activeGen8.value?.phase
+  const p = activePaestro.value?.phase
   if (stage === 'paestro') {
     if (p === 'crafting' || p === 'assessing') return `${base} bg-[var(--color-accent)] animate-pulse`
     return `${base} bg-[var(--color-accent)]`

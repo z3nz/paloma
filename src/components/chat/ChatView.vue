@@ -19,7 +19,7 @@
     <ArkStatus :ark-groups="sessionArkGroups" />
     <HydraStatus :hydra-groups="sessionHydraGroups" />
     <AccordionStatus :accordion-groups="sessionAccordionGroups" />
-    <Gen8Status :gen8-groups="sessionGen8Groups" />
+    <PaestroStatus :paestro-groups="sessionPaestroGroups" />
     <PromptBuilder
       :session="session"
       :streaming="streaming"
@@ -80,7 +80,7 @@ import TrinityStatus from './TrinityStatus.vue'
 import ArkStatus from './ArkStatus.vue'
 import HydraStatus from './HydraStatus.vue'
 import AccordionStatus from './AccordionStatus.vue'
-import Gen8Status from './Gen8Status.vue'
+import PaestroStatus from './PaestroStatus.vue'
 import HydraVoteDialog from './HydraVoteDialog.vue'
 import { useChat } from '../../composables/useChat.js'
 import { useChanges } from '../../composables/useChanges.js'
@@ -111,7 +111,7 @@ const { voiceMode, isListening, startListening } = useVoiceInput()
 const { apiKey } = useSettings()
 const { dirHandle, projectRoot, projectInstructions, activePlans, roots, mcpConfig, refreshActivePlans } = useProject()
 const { search: searchFiles } = useFileIndex()
-const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool, pendingAutoResume, singularityGroups, trinityGroups, arkGroups, hydraGroups, accordionGroups, gen8Groups, pendingHydraVote, submitHydraVote } = useMCP()
+const { callMcpTool, pendingAskUser, respondToAskUser, pendingCliToolConfirmation, approveCliTool, denyCliTool, pendingAutoResume, singularityGroups, trinityGroups, arkGroups, hydraGroups, accordionGroups, paestroGroups, pendingHydraVote, submitHydraVote } = useMCP()
 
 // Filter trinity groups to only those belonging to the current chat session
 const sessionTrinityGroups = computed(() => {
@@ -154,11 +154,11 @@ const sessionAccordionGroups = computed(() => {
   return filtered
 })
 
-const sessionGen8Groups = computed(() => {
+const sessionPaestroGroups = computed(() => {
   const filtered = new Map()
-  for (const [gen8Id, group] of gen8Groups) {
+  for (const [paestroId, group] of paestroGroups) {
     if (group.chatDbSessionId === props.session?.id) {
-      filtered.set(gen8Id, group)
+      filtered.set(paestroId, group)
     }
   }
   return filtered
