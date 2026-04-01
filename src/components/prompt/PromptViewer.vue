@@ -61,7 +61,8 @@ import { ref, watch } from 'vue'
 import { useMCP } from '../../composables/useMCP.js'
 
 const props = defineProps({
-  visible: { type: Boolean, default: false }
+  visible: { type: Boolean, default: false },
+  paestroMode: { type: String, default: '67' }
 })
 
 defineEmits(['close'])
@@ -78,7 +79,8 @@ async function fetchPrompt() {
   loading.value = true
   error.value = null
   try {
-    const result = await getSystemPrompt(selectedRole.value, 'flow')
+    const mode = selectedRole.value === 'paestro' ? props.paestroMode : null
+    const result = await getSystemPrompt(selectedRole.value, 'flow', mode)
     promptData.value = result
   } catch (e) {
     error.value = e.message

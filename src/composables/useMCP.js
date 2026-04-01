@@ -1141,10 +1141,10 @@ export function useMCP() {
     }
   }
 
-  async function getSystemPrompt(singularityRole = 'paestro', pillar = 'flow') {
+  async function getSystemPrompt(singularityRole = 'paestro', pillar = 'flow', paestroMode = null) {
     if (!bridge || !connected.value) return null
     try {
-      return await bridge.getSystemPrompt(singularityRole, pillar)
+      return await bridge.getSystemPrompt(singularityRole, pillar, paestroMode)
     } catch {
       return null
     }

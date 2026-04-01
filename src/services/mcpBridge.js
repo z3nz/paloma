@@ -801,10 +801,10 @@ export function createMcpBridge() {
     })
   }
 
-  function getSystemPrompt(singularityRole = 'paestro', pillar = 'flow') {
+  function getSystemPrompt(singularityRole = 'paestro', pillar = 'flow', paestroMode = null) {
     const id = crypto.randomUUID()
     const promise = _pendingPromise(id, 15000)
-    _send({ type: 'get_system_prompt', id, singularityRole, pillar }).catch((e) => {
+    _send({ type: 'get_system_prompt', id, singularityRole, pillar, paestroMode }).catch((e) => {
       const p = pending.get(id)
       if (p) { pending.delete(id); p.reject(e) }
     })

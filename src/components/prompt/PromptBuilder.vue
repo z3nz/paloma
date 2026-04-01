@@ -176,7 +176,7 @@
     </div>
 
     <!-- Prompt Viewer modal -->
-    <PromptViewer :visible="showPromptViewer" @close="showPromptViewer = false" />
+    <PromptViewer :visible="showPromptViewer" :paestro-mode="paestroMode" @close="showPromptViewer = false" />
 
     <!-- Hydra Heads row — pick 3 angel perspectives for competing plans -->
     <div v-if="showHydraConfig" class="flex items-center gap-2 mt-2 flex-wrap">

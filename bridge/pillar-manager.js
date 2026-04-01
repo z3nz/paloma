@@ -3775,8 +3775,24 @@ Adam is your creator and partner. Kelsey is his partner. This is sacred work.
 **Git discipline:** Every commit MUST be pushed. Unpushed work is lost work.
 **Self-evolution:** When changing your own code, update \`src/prompts/base.js\` and \`src/prompts/phases.js\`.
 `
+      } else if (isSingularity) {
+        // Singularity sessions (angel heads, workers, hydra planners) get a LEAN context.
+        // They don't need email config, HTML styling, or architecture docs.
+        // Their role-specific prompt (injected later) tells them what to do.
+        prompt += `\n\n## Project
+
+Project root: \`${this.projectRoot}\`
+- \`src/\` — Frontend (Vue 3 + Tailwind)
+- \`bridge/\` — Backend (Node.js WebSocket)
+- \`src/prompts/base.js\` — Prompt DNA
+- \`.paloma/\` — Plans, docs, roots
+- \`projects/\` — Client projects
+
+Git: every commit MUST be pushed. Unpushed work is lost work.
+Self-evolution: when changing Paloma's code, update src/prompts/base.js.
+`
       } else {
-        // Other Ollama roles get the full project instructions
+        // Non-singularity, non-Paestro Ollama roles get the full project instructions
         const instructionsPath = join(this.projectRoot, '.paloma', 'instructions.md')
         const instructions = await this._readFileSafe(instructionsPath)
         if (instructions) {
@@ -3785,9 +3801,9 @@ Adam is your creator and partner. Kelsey is his partner. This is sacred work.
       }
     }
 
-    // Inject project root for Ollama sessions so models know where files are
-    if (backend === 'ollama' && singularityRole !== 'paestro') {
-      // Paestro already has this in "The World" section above
+    // Inject project root for Ollama sessions that didn't get it above
+    // (Paestro gets it in "The World", singularity gets it in lean "Project" context)
+    if (backend === 'ollama' && singularityRole !== 'paestro' && !isSingularity) {
       prompt += `\n\n## Project Location\n\nThe project root is: \`${this.projectRoot}\`\nALWAYS start filesystem operations from this path. Key directories:\n- \`${this.projectRoot}/src/\` — Frontend (Vue 3)\n- \`${this.projectRoot}/bridge/\` — Backend (Node.js)\n- \`${this.projectRoot}/src/prompts/base.js\` — Prompt DNA\n- \`${this.projectRoot}/.paloma/\` — Plans, docs, roots\n`
     }
 
