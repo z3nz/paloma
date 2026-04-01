@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { isDirectCliModel, isCodexModel, isCopilotModel, isGeminiModel, isOllamaModel, isQuinnGen5Model, isHolyTrinityModel, isArkModel, isHydraModel, isAccordionModel, isPaestroModel, getCliModelName, getCodexModelName, getCopilotModelName, getGeminiModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamCopilotChat, streamGeminiChat, streamOllamaChat } from '../services/claudeStream.js'
 import { useMCP } from './useMCP.js'
 import { useProject } from './useProject.js'
@@ -6,6 +7,46 @@ import { useSessionState } from './useSessionState.js'
 import { buildSystemPrompt, buildOllamaSystemPrompt } from './useSystemPrompt.js'
 import { classifyResult, sanitizeForDB } from '../utils/toolClassifier.js'
 import db from '../services/db.js'
+
+/**
+ * Resolve which backend, model name, send function, and stream generator to use.
+ */
+function resolveBackend(model) {
+  const { sendClaudeChat, sendCodexChat, sendCopilotChat, sendGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, sendAccordionChat, sendPaestroChat, stopClaudeChat, stopCodexChat, stopCopilotChat, stopGeminiChat, stopOllamaChat } = useMCP()
+
+  if (isPaestroModel(model)) {
+    return { backendKey: 'ollama', modelName: getOllamaModelName(model), sendFn: sendPaestroChat, streamGenerator: streamOllamaChat, stopFn: stopOllamaChat }
+  }
+  if (isAccordionModel(model)) {
+    return { backendKey: 'ollama', modelName: getOllamaModelName(model), sendFn: sendAccordionChat, streamGenerator: streamOllamaChat, stopFn: stopOllamaChat }
+  }
+  if (isHydraModel(model)) {
+    return { backendKey: 'ollama', modelName: getOllamaModelName(model), sendFn: sendHydraChat, streamGenerator: streamOllamaChat, stopFn: stopOllamaChat }
+  }
+  if (isArkModel(model)) {
+    return { backendKey: 'ollama', modelName: getOllamaModelName(model), sendFn: sendArkChat, streamGenerator: streamOllamaChat, stopFn: stopOllamaChat }
+  }
+  if (isHolyTrinityModel(model)) {
+    return { backendKey: 'ollama', modelName: getOllamaModelName(model), sendFn: sendHolyTrinityChat, streamGenerator: streamOllamaChat, stopFn: stopOllamaChat }
+  }
+  if (isQuinnGen5Model(model)) {
+    return { backendKey: 'ollama', modelName: getOllamaModelName(model), sendFn: sendQuinnGen5Chat, streamGenerator: streamOllamaChat, stopFn: stopOllamaChat }
+  }
+  if (isOllamaModel(model)) {
+    return { backendKey: 'ollama', modelName: getOllamaModelName(model), sendFn: sendOllamaChat, streamGenerator: streamOllamaChat, stopFn: stopOllamaChat }
+  }
+  if (isGeminiModel(model)) {
+    return { backendKey: 'gemini', modelName: getGeminiModelName(model), sendFn: sendGeminiChat, streamGenerator: streamGeminiChat, stopFn: stopGeminiChat }
+  }
+  if (isCopilotModel(model)) {
+    return { backendKey: 'copilot', modelName: getCopilotModelName(model), sendFn: sendCopilotChat, streamGenerator: streamCopilotChat, stopFn: stopCopilotChat }
+  }
+  if (isCodexModel(model)) {
+    return { backendKey: 'codex', modelName: getCodexModelName(model), sendFn: sendCodexChat, streamGenerator: streamCodexChat, stopFn: stopCodexChat }
+  }
+  // Default: Claude CLI
+  return { backendKey: 'claude', modelName: getCliModelName(model), sendFn: sendClaudeChat, streamGenerator: streamClaudeChat, stopFn: stopClaudeChat }
+}
 
 /**
  * Runs a CLI chat turn: streams Claude CLI output and returns { content, usage }.
@@ -18,26 +59,21 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     sessionState = activeState()
   }
 
-  const { sendClaudeChat, sendCodexChat, sendCopilotChat, sendGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, sendAccordionChat, sendPaestroChat } = useMCP()
   const { addActivity, markActivityDone, toolActivity } = useToolExecution(sessionState)
 
-  const useCodex = isCodexModel(model)
-  const useCopilot = isCopilotModel(model)
-  const useGemini = isGeminiModel(model)
-  const useOllama = isOllamaModel(model)
   const isGen5 = isQuinnGen5Model(model)
   const isGen6 = isHolyTrinityModel(model)
   const isGen7 = isArkModel(model)
   const isHydra = isHydraModel(model)
   const isAccordion = isAccordionModel(model)
   const isPaestro = isPaestroModel(model)
+  const dispatch = resolveBackend(model)
   const session = await db.sessions.get(sessionId)
 
   // If backend changed from previous session, start fresh
   const existingBackend = session?.cliBackend || 'claude'
-  const currentBackend = useOllama ? 'ollama' : useGemini ? 'gemini' : useCopilot ? 'copilot' : useCodex ? 'codex' : 'claude'
+  const currentBackend = dispatch.backendKey
   const existingCliSession = (existingBackend === currentBackend) ? (session?.cliSessionId || null) : null
-  console.log(`[cli] ${existingCliSession ? 'Resuming' : 'New'} ${currentBackend} session, model=${model}`)
 
   // Recovery: if starting a new CLI session but prior user messages exist without
   // assistant responses (e.g. first send failed), include them so they aren't lost.
@@ -57,18 +93,18 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
 
   // Codex/Copilot direct chats do not get the pillar-manager resume reminder, so
   // reinforce Paloma's identity on resumed turns here to reduce backend drift.
-  if (existingCliSession && (useCodex || useCopilot)) {
+  if (existingCliSession && (dispatch.backendKey === 'codex' || dispatch.backendKey === 'copilot')) {
     const phaseLabel = phase
       ? phase.charAt(0).toUpperCase() + phase.slice(1)
       : 'Flow'
-    const competingName = useCodex ? 'an OpenAI assistant' : 'GitHub Copilot'
+    const competingName = dispatch.backendKey === 'codex' ? 'an OpenAI assistant' : 'GitHub Copilot'
     const identityReminder = `[IDENTITY: You are Paloma — not ${competingName}. ` +
       `You are Paloma, an AI development partner. Current phase: ${phaseLabel}. ` +
       `Follow all behavioral rules from your initial instructions.]\n\n`
     prompt = identityReminder + prompt
   }
 
-  const resolvedModel = useOllama ? getOllamaModelName(model) : useGemini ? getGeminiModelName(model) : useCopilot ? getCopilotModelName(model) : useCodex ? getCodexModelName(model) : getCliModelName(model)
+  const resolvedModel = dispatch.modelName
   const cliOptions = {
     prompt,
     model: resolvedModel,
@@ -76,52 +112,30 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     chatDbSessionId: (isGen6 || isGen7 || isHydra || isAccordion || isPaestro) ? sessionId : undefined,
     systemPrompt: (existingCliSession || isDirectCliModel(model) || isGen5 || isGen6 || isGen7 || isHydra || isAccordion || isPaestro)
       ? undefined
-      : useOllama
-        ? buildOllamaSystemPrompt(phase, projectInstructions)
-        : buildSystemPrompt(phase, projectInstructions, activePlans, [], roots),
+      : buildSystemPrompt(phase, projectInstructions, activePlans, [], roots),
     cwd: useProject().projectRoot.value || undefined,
-    enableTools: useOllama ? true : undefined,
-    freshContext: (useOllama && !isGen5 && !isGen6 && !isGen7 && !isHydra && !isAccordion && !isPaestro) ? true : undefined,
+    enableTools: dispatch.backendKey === 'ollama' ? true : undefined,
+    freshContext: (dispatch.backendKey === 'ollama' && !isGen5 && !isGen6 && !isGen7 && !isHydra && !isAccordion && !isPaestro) ? true : undefined,
     thinkMode: thinkMode || undefined,
     paestroMode: paestroMode || undefined,
     hydraAngels: hydraAngels || undefined,
     model: model || undefined
   }
 
-  let accumulatedContent = ''
-  let usage = null
+  const accumulatedContent = ref('')
+  const usage = ref(null)
   const toolUseToActivity = new Map()  // toolUseId → activityId
   const toolUseMeta = new Map()        // toolUseId → { name, args }
 
-  const sendFn = isPaestro
-    ? (opts, cbs) => sendPaestroChat(opts, cbs)
-    : isAccordion
-    ? (opts, cbs) => sendAccordionChat(opts, cbs)
-    : isHydra
-    ? (opts, cbs) => sendHydraChat(opts, cbs)
-    : isGen7
-    ? (opts, cbs) => sendArkChat(opts, cbs)
-    : isGen6
-    ? (opts, cbs) => sendHolyTrinityChat(opts, cbs)
-    : isGen5
-    ? (opts, cbs) => sendQuinnGen5Chat(opts, cbs)
-    : useOllama
-    ? (opts, cbs) => sendOllamaChat(opts, cbs)
-    : useGemini
-      ? (opts, cbs) => sendGeminiChat(opts, cbs)
-      : useCopilot
-        ? (opts, cbs) => sendCopilotChat(opts, cbs)
-        : useCodex
-          ? (opts, cbs) => sendCodexChat(opts, cbs)
-          : (opts, cbs) => sendClaudeChat(opts, cbs)
-  const streamGenerator = useOllama ? streamOllamaChat : useGemini ? streamGeminiChat : useCopilot ? streamCopilotChat : useCodex ? streamCodexChat : streamClaudeChat
+  const sendFn = (opts, cbs) => dispatch.sendFn(opts, cbs)
+  const streamGenerator = dispatch.streamGenerator || streamClaudeChat
 
   for await (const chunk of streamGenerator(sendFn, cliOptions)) {
     if (chunk.type === 'content') {
-      accumulatedContent += chunk.text
-      onContent(accumulatedContent)
+      accumulatedContent.value += chunk.text
+      onContent(accumulatedContent.value)
     } else if (chunk.type === 'usage') {
-      usage = chunk.usage
+      usage.value = chunk.usage
     } else if (chunk.type === 'session_id') {
       sessionState.cliRequestId = chunk.requestId
       
@@ -133,7 +147,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
         const cliSessionIdToRegister = chunk.sessionId || existingCliSession
         if (cliSessionIdToRegister) {
           const { registerFlowSession } = useMCP()
-          const resolvedModelName = useOllama ? getOllamaModelName(model) : useGemini ? getGeminiModelName(model) : useCopilot ? getCopilotModelName(model) : useCodex ? getCodexModelName(model) : getCliModelName(model)
+          const resolvedModelName = dispatch.modelName
           registerFlowSession(cliSessionIdToRegister, resolvedModelName, cliOptions.cwd, sessionId)
         }
       }
@@ -143,6 +157,8 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
       // event. The latest ID must be persisted for correct session resumption.
       if (chunk.sessionId) {
         await db.sessions.update(sessionId, { cliSessionId: chunk.sessionId, cliBackend: currentBackend })
+        // Track current model for stopFn validation
+        if (sessionState) sessionState.currentModel = model
       }
     } else if (chunk.type === 'tool_use') {
       const activityId = addActivity(chunk.name, chunk.input)
@@ -203,7 +219,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   toolUseToActivity.clear()
   toolUseMeta.clear()
 
-  return { content: accumulatedContent, usage }
+  return { content: accumulatedContent.value, usage: usage.value }
 }
 
 export function stopCli(sessionState, model) {
@@ -212,18 +228,8 @@ export function stopCli(sessionState, model) {
     sessionState = activeState()
   }
   if (sessionState.cliRequestId) {
-    const { stopClaudeChat, stopCodexChat, stopCopilotChat, stopGeminiChat, stopOllamaChat } = useMCP()
-    if (model && isOllamaModel(model)) {
-      stopOllamaChat(sessionState.cliRequestId)
-    } else if (model && isGeminiModel(model)) {
-      stopGeminiChat(sessionState.cliRequestId)
-    } else if (model && isCopilotModel(model)) {
-      stopCopilotChat(sessionState.cliRequestId)
-    } else if (model && isCodexModel(model)) {
-      stopCodexChat(sessionState.cliRequestId)
-    } else {
-      stopClaudeChat(sessionState.cliRequestId)
-    }
+    const d = resolveBackend(model)
+    d.stopFn(sessionState.cliRequestId)
     sessionState.cliRequestId = null
   }
 }
