@@ -11,7 +11,7 @@ import db from '../services/db.js'
  * Runs a CLI chat turn: streams Claude CLI output and returns { content, usage }.
  * Also persists the cliSessionId on the DB session.
  */
-export async function runCliChat({ sessionId, model, fullContent, phase, projectInstructions, activePlans, roots, onContent, sessionState, thinkMode, paestroMode }) {
+export async function runCliChat({ sessionId, model, fullContent, phase, projectInstructions, activePlans, roots, onContent, sessionState, thinkMode, paestroMode, hydraAngels }) {
   // If no sessionState, fall back to active
   if (!sessionState) {
     const { activeState } = useSessionState()
@@ -84,6 +84,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     freshContext: (useOllama && !isGen5 && !isGen6 && !isGen7 && !isHydra && !isAccordion && !isGen8) ? true : undefined,
     thinkMode: thinkMode || undefined,
     paestroMode: paestroMode || undefined,
+    hydraAngels: hydraAngels || undefined,
     model: model || undefined
   }
 

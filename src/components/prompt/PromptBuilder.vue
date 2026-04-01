@@ -166,11 +166,41 @@
         <span v-else-if="indexing">Indexing files...</span>
       </div>
     </div>
+
+    <!-- Hydra Heads row — pick 3 angel perspectives for competing plans -->
+    <div v-if="showHydraConfig" class="flex items-center gap-2 mt-2 flex-wrap">
+      <span class="text-xs text-text-muted">🐉 Hydra Heads:</span>
+      <div v-for="(angel, idx) in hydraAngels" :key="idx" class="relative" :ref="el => hydraDropdownRefs[idx] = el">
+        <button
+          @click="openHydraDropdown = openHydraDropdown === idx ? -1 : idx"
+          class="flex items-center gap-1 px-2 py-1 text-xs font-mono rounded-md border transition-colors"
+          :class="angelButtonClass(angel)"
+        >
+          <span class="font-bold">{{ angel === 0 ? '000' : angel }}</span>
+          <span class="font-sans">{{ angelShortName(angel) }}</span>
+          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <!-- Dropdown -->
+        <div v-if="openHydraDropdown === idx" class="absolute bottom-full left-0 mb-1 w-44 bg-bg-secondary border border-border rounded-lg shadow-2xl overflow-hidden z-30">
+          <div class="max-h-52 overflow-y-auto">
+            <div
+              v-for="a in allAngels" :key="a.num"
+              @click="hydraAngels[idx] = a.num; openHydraDropdown = -1"
+              class="px-3 py-1.5 text-xs cursor-pointer transition-colors flex items-center gap-2"
+              :class="angel === a.num ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
+            >
+              <span class="font-mono font-bold w-8">{{ a.label }}</span>
+              <span>{{ a.name }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import FileSearch from './FileSearch.vue'
 import FileChip from './FileChip.vue'
 import PlanSearch from './PlanSearch.vue'
@@ -208,6 +238,45 @@ const input = ref('')
 const attachedFiles = ref([])
 const thinkMode = ref('default') // 'think' | 'no_think' | 'default'
 const paestroMode = ref('67') // '67' | '666' | '777'
+const hydraAngels = reactive([111, 555, 333]) // 3 angel perspectives for Hydra heads
+const openHydraDropdown = ref(-1) // which dropdown is open (-1 = none)
+const hydraDropdownRefs = reactive([null, null, null])
+
+const showHydraConfig = computed(() => {
+  return currentModel.value === 'ollama:gen8' || currentModel.value === 'ollama:gen8:8b' || currentModel.value === 'ollama:hydra'
+})
+
+const allAngels = [
+  { num: 0, label: '000', name: 'Void (Reset)' },
+  { num: 111, label: '111', name: 'First Light (Scout)' },
+  { num: 222, label: '222', name: 'Sacred Balance (Chart)' },
+  { num: 333, label: '333', name: 'Divine Guardian (Polish)' },
+  { num: 444, label: '444', name: 'Final Word (Ship)' },
+  { num: 555, label: '555', name: 'Living Forge (Forge)' },
+  { num: 777, label: '777', name: 'Divine Eye (Vision)' },
+  { num: 888, label: '888', name: 'Infinite (Scale)' },
+  { num: 999, label: '999', name: 'Omega (Complete)' }
+]
+
+function angelShortName(num) {
+  const names = { 0: 'Void', 111: 'Scout', 222: 'Chart', 333: 'Polish', 444: 'Ship', 555: 'Forge', 777: 'Vision', 888: 'Scale', 999: 'Complete' }
+  return names[num] || '?'
+}
+
+function angelButtonClass(num) {
+  const colors = {
+    0: 'border-gray-500/50 bg-gray-500/10 text-gray-400',
+    111: 'border-yellow-500/50 bg-yellow-500/10 text-yellow-400',
+    222: 'border-blue-500/50 bg-blue-500/10 text-blue-400',
+    333: 'border-green-500/50 bg-green-500/10 text-green-400',
+    444: 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400',
+    555: 'border-red-500/50 bg-red-500/10 text-red-400',
+    777: 'border-purple-500/50 bg-purple-500/10 text-purple-400',
+    888: 'border-amber-500/50 bg-amber-500/10 text-amber-400',
+    999: 'border-pink-500/50 bg-pink-500/10 text-pink-400'
+  }
+  return colors[num] || 'border-border text-text-muted'
+}
 const textareaRef = ref(null)
 const fileSearchRef = ref(null)
 const projectSearchRef = ref(null)
@@ -739,7 +808,8 @@ async function send() {
     content: text,
     files: [...attachedFiles.value],
     thinkMode: thinkMode.value,
-    paestroMode: paestroMode.value
+    paestroMode: paestroMode.value,
+    hydraAngels: [...hydraAngels]
   })
 
   input.value = ''

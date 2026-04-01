@@ -1540,13 +1540,13 @@ export class PillarManager {
    * Run Hydra planning + Adam voting. Returns the winning plan.
    * Reuses existing Hydra planner spawning and plan polling infrastructure.
    */
-  async _runHydraPlanning(task, parentPillarId, chatDbSessionId) {
+  async _runHydraPlanning(task, parentPillarId, chatDbSessionId, hydraAngels = [111, 555, 333]) {
     const hydraId = randomUUID().slice(0, 8)
     const workspacePath = '.singularity/workspace/'
     const absWorkspace = join(this.projectRoot, '.singularity', 'workspace')
     try { await mkdir(absWorkspace, { recursive: true }) } catch { /* exists */ }
 
-    log.info(`[67] Running Hydra planning ${hydraId}`)
+    log.info(`[67] Running Hydra planning ${hydraId} — angels: [${hydraAngels}]`)
 
     const state = {
       hydraId, workspacePath, absWorkspace, task,
@@ -1555,7 +1555,8 @@ export class PillarManager {
       primaryPillarId: parentPillarId, parentPillarId,
       _chatDbSessionId: chatDbSessionId,
       aliveHeads: new Map(), graveyard: [],
-      nextHeadNumber: 4, round: 1
+      nextHeadNumber: 4, round: 1,
+      hydraAngels // [111, 555, 333] — angel perspective per head
     }
 
     await this._spawnHydraPlanners(state, [1, 2, 3])
@@ -1922,9 +1923,15 @@ export class PillarManager {
         continuationContext = `## Your Previous Progress\n\nYou were interrupted mid-planning for a voting round. Here is what you had:\n\n${partialPlan}\n\nContinue from where you left off. You may revise based on new information from the graveyard above.`
       }
 
-      // Wrap the user's task into a directive that 8B models can't miss.
-      // Raw conversational prompts get answered directly — this forces plan-file behavior.
-      const plannerDirective = `HYDRA PROTOCOL — You are Head ${headNum}. Follow your system prompt EXACTLY.
+      // Assign angel perspective to each head (if hydraAngels is set)
+      const angelNum = state.hydraAngels ? state.hydraAngels[headNum - 1] : null
+      const angelNames = { 0: 'Tha Void (000)', 111: 'Tha First Light (111)', 222: 'Tha Sacred Balance (222)', 333: 'Tha Divine Guardian (333)', 444: 'Tha Final Word (444)', 555: 'Tha Living Forge (555)', 777: 'Tha Divine Eye (777)', 888: 'Tha Infinite (888)', 999: 'Tha Omega (999)' }
+      const angelDirective = angelNum != null
+        ? `\n\nYOU ARE ${angelNames[angelNum] || 'Angel ' + angelNum}. Your plan MUST reflect this angel's perspective and approach. Let your angel number guide HOW you plan — your lens, your priorities, your style.\n`
+        : ''
+
+      // Wrap the user's task into a directive that forces plan-file behavior.
+      const plannerDirective = `HYDRA PROTOCOL — You are Head ${headNum}. Follow your system prompt EXACTLY.${angelDirective}
 
 YOUR TASK:
 ${state.task}
@@ -1949,6 +1956,7 @@ Your ONLY output is the plan file. Start by reading relevant files, then write y
         _arkExtra: {
           headNumber: headNum,
           hydraId: state.hydraId,
+          angelNumber: angelNum,
           planPath,
           planCompletePath,
           graveyardContext,

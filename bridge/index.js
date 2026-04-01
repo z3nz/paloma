@@ -990,6 +990,9 @@ async function main() {
         try {
           if (!pillarManager) throw new Error('PillarManager not initialized')
 
+          // Store hydra angel config from UI for summon_hydra calls
+          const hydraAngels = msg.hydraAngels || [111, 555, 333]
+
           // Build system prompt
           const systemPrompt = await pillarManager._buildSystemPrompt('flow', {
             singularityRole: 'paestro', backend: 'ollama'
@@ -1159,8 +1162,8 @@ async function main() {
                   } else if (toolName === 'summon_hydra') {
                     // Optional escalation: 3 competing plans + Adam's vote
                     const hydraPrompt = toolArgs.prompt || '(no prompt provided)'
-                    log.info(`[gen9] Paestro summoning Hydra — prompt: ${hydraPrompt.slice(0, 100)}...`)
-                    const result = await pillarManager._runHydraPlanning(hydraPrompt, null, msg.chatDbSessionId)
+                    log.info(`[67] Paestro summoning Hydra with angels [${hydraAngels}] — prompt: ${hydraPrompt.slice(0, 100)}...`)
+                    const result = await pillarManager._runHydraPlanning(hydraPrompt, null, msg.chatDbSessionId, hydraAngels)
                     if (result.error) {
                       content = `Hydra planning failed: ${result.error}`
                     } else {

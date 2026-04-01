@@ -293,7 +293,7 @@ watch(pendingAutoResume, async (resume) => {
   }
 })
 
-async function handleSend({ content, files, thinkMode, paestroMode }) {
+async function handleSend({ content, files, thinkMode, paestroMode, hydraAngels }) {
   if (!props.session || !content.trim()) return
 
   // Check for slash commands — execute locally without API call
@@ -383,7 +383,8 @@ async function handleSend({ content, files, thinkMode, paestroMode }) {
     mcpConfig.value,
     roots.value,
     thinkMode,
-    paestroMode
+    paestroMode,
+    hydraAngels
   )
 
   if (title) {

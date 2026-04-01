@@ -690,6 +690,7 @@ export function createMcpBridge() {
         modelVariant: options.model || null,
         thinkMode: options.thinkMode || null,
         paestroMode: options.paestroMode || null,
+        hydraAngels: options.hydraAngels || null,
         sessionId: options.sessionId || null
       }).catch((e) => {
         clearTimeout(timer)
