@@ -73,3 +73,25 @@ Lessons from shipping verifesto.com backend on Railway (2026-03-26).
 - **Insight:** Django 4.0+ requires `CSRF_TRUSTED_ORIGINS` to include the full origin (with scheme) of any domain that POSTs to Django. `ALLOWED_HOSTS` is not enough.
 - **Action:** Add `CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',')` to settings. Set the Railway env var: `CSRF_TRUSTED_ORIGINS=https://api.verifesto.com`.
 - **Applied:** YES — in Verifesto's settings.py (commit 10e197937).
+
+---
+
+### Lesson: Django session auth for DRF + Vue SPA — the complete pattern
+- **Context:** Building the Verifesto client portal (2026-03-31). Needed secure auth for a Vue 3 SPA talking to a DRF backend, without JWTs or third-party auth libraries.
+- **Insight:** Django's built-in session auth works cleanly for SPAs when you follow these rules:
+  1. Login endpoint must be `@csrf_exempt` (no session exists yet, so CSRF is meaningless pre-auth). Use `@api_view(['POST'])` + `@csrf_exempt` together.
+  2. All other endpoints get CSRF protection automatically via `SessionAuthentication` in DRF.
+  3. Frontend reads the `csrftoken` cookie (set by Django) and sends `X-CSRFToken` header on all non-GET requests.
+  4. `SESSION_COOKIE_SAMESITE = 'Lax'` and `SESSION_COOKIE_HTTPONLY = True` in settings.
+  5. In dev, Vite proxy (`/api → localhost:8000`) keeps everything same-origin so cookies flow correctly.
+  6. Vue composable `useAuth` should use three-state: `null` (not yet checked), `false` (unauthenticated), `object` (authenticated user). Router guard awaits `checkAuth()` only when `user.value === null`.
+- **Action:** Use this pattern as the default for any Django + Vue SPA that needs simple auth. Only reach for JWT if you need stateless auth (mobile clients, third-party API consumers).
+- **Applied:** YES — implemented in verifesto-studios portal app (commit 186cf6e).
+
+---
+
+### Lesson: Adding Vue Router to an existing single-view Vue app
+- **Context:** The Verifesto frontend was a single-view app (App.vue = intake form). Adding the portal required routing without breaking the existing form.
+- **Insight:** The migration is mechanical and safe: (1) install vue-router, (2) move existing App.vue logic into `views/IntakeView.vue` verbatim, (3) replace App.vue with `<router-view />`, (4) register `{ path: '/', component: IntakeView }` as the first route. The existing form continues to work at `/` with zero behavior change. New routes are purely additive.
+- **Action:** When adding routing to an existing Vue app, always extract the existing view first before adding new routes. Never refactor the existing logic at the same time — separate commits if possible.
+- **Applied:** YES — verifesto-studios frontend (commit 186cf6e).
