@@ -3588,6 +3588,7 @@ This is informational — Adam is communicating directly with the pillar. Decide
 
     // Preference order for main sessions (highest capability first)
     const PREFERENCES = [
+      m => m.includes('qwen3.5') && !m.includes('0.8b') && !m.includes('2b') && !m.includes('4b'),  // qwen3.5 large (MLX fast)
       m => m.includes('qwen3-coder') && !m.includes('7b'),
       m => m.includes('qwen3-coder'),
       m => m.includes('qwen2.5-coder') && !m.includes('7b'),
@@ -3605,16 +3606,16 @@ This is informational — Adam is communicating directly with the pillar. Decide
 
   /**
    * Select the best model for the Paestro (676767).
-   * Prefers qwen3-coder Q8 (highest quality) > qwen3-coder (any) > qwen3 32B > best available.
-   * The Paestro is the orchestrator — it needs the best coding + agentic model available.
+   * Prefers qwen3.5:35b (MLX-accelerated, 2x speed) > qwen3-coder Q8 > qwen3-coder > best available.
    */
   _pickPaestroModel() {
     const models = this.health?.status?.ollama?.models || []
     const PREFERENCES = [
-      m => m.includes('qwen3-coder') && (m.includes('q8') || m.includes('Q8')),  // Q8 = highest quality (30b-a3b-q8_0)
-      m => m.includes('qwen3-coder') && !m.includes('7b'),       // Any qwen3-coder 30B
+      m => m.includes('qwen3.5') && m.includes('35b'),           // qwen3.5:35b MoE — MLX blazing speed
+      m => m.includes('qwen3-coder') && (m.includes('q8') || m.includes('Q8')),  // Q8 highest quality
+      m => m.includes('qwen3.5') && m.includes('27b'),           // qwen3.5:27b dense — MLX fast
+      m => m.includes('qwen3-coder') && !m.includes('7b'),       // qwen3-coder 30B MoE
       m => m.includes('qwen3') && m.includes('32b'),             // qwen3:32b dense
-      m => m.includes('qwen3-coder'),                            // Any qwen3-coder
       m => m.includes('qwen2.5-coder') && !m.includes('7b'),    // qwen2.5-coder 32B
     ]
     for (const test of PREFERENCES) {
@@ -3630,11 +3631,11 @@ This is informational — Adam is communicating directly with the pillar. Decide
   _pickSmallestModel() {
     const models = this.health?.status?.ollama?.models || []
     const PREFERENCES = [
-      m => m.includes('0.6b'),
-      m => m.includes('1.5b') || m.includes('1.7b'),
-      m => m.includes('3b'),
-      m => m.includes('7b') && m.includes('coder'),
-      m => m.includes('7b')
+      m => m.includes('0.6b') || m.includes('0.8b'),
+      m => m.includes('1.5b') || m.includes('1.7b') || m.includes(':2b'),
+      m => m.includes(':4b'),
+      m => m.includes('qwen2.5-coder:7b') || m.includes('qwen3.5:9b'),
+      m => m.includes(':7b') || m.includes(':8b') || m.includes(':9b'),
     ]
     for (const test of PREFERENCES) {
       const match = models.find(test)
@@ -3652,21 +3653,24 @@ This is informational — Adam is communicating directly with the pillar. Decide
       if (singularityRole === 'holy-trinity-mind') return this._pickBestOllamaModel(false)
       // The Ark: heads use qwen3:8b or small fallback
       if (singularityRole === 'ark-head') return this._pickArkModel()
-      // Hydra planners: prefer qwen3-coder 30B MoE (only 3B active — fast, shared weights with Paestro/angels)
+      // Hydra planners: prefer qwen3.5:9b (MLX fast, reasoning-capable) > qwen3-coder 30B > 8B fallback
       if (singularityRole === 'hydra-planner' || singularityRole === 'hydra-voter') {
         const models = this.health?.status?.ollama?.models || []
+        const qwen35_9b = models.find(m => m.includes('qwen3.5') && m.includes('9b'))
+        if (qwen35_9b) return qwen35_9b
         const coderMoe = models.find(m => m.includes('qwen3-coder') && !m.includes('7b'))
         if (coderMoe) return coderMoe
         return this._pickArkModel() // fallback to 8B
       }
       // Hydra workers: 7B for execution
       if (singularityRole === 'hydra-worker') return this._pickBestOllamaModel(true)
-      // 67 Paestro: best coding model (prefers qwen3-coder Q8)
+      // 67 Paestro: best model (prefers qwen3.5:35b MLX)
       if (singularityRole === 'paestro') return this._pickPaestroModel()
-      // Accordion heads (angel heads): prefer coder models for code tasks
+      // Accordion heads (angel heads): prefer qwen3.5:9b (MLX fast) > qwen3-coder 30B > 8B
       if (singularityRole === 'accordion-head') {
         const models = this.health?.status?.ollama?.models || []
-        // Prefer qwen3-coder 30B MoE (only 3B active — fast AND smart)
+        const qwen35_9b = models.find(m => m.includes('qwen3.5') && m.includes('9b'))
+        if (qwen35_9b) return qwen35_9b
         const coderMoe = models.find(m => m.includes('qwen3-coder') && !m.includes('7b'))
         if (coderMoe) return coderMoe
         return this._pickArkModel() // fallback to 8B

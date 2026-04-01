@@ -12,8 +12,11 @@ echo ""
 
 # Required models (in order of importance)
 MODELS=(
-  "qwen3-coder:30b-a3b-q8_0"   # Paestro (676767) — highest quality coder
-  "qwen3-coder:30b"             # Angels + Hydra planners — MoE, 3B active
+  "qwen3.5:35b"                 # Paestro (676767) — MLX blazing speed, MoE 3B active
+  "qwen3.5:9b"                  # Hydra planners + Angel heads — MLX fast, reasoning
+  "qwen3.5:27b"                 # Dense alternative for complex tasks
+  "qwen3-coder:30b-a3b-q8_0"   # Paestro fallback — Q8 highest quality coder
+  "qwen3-coder:30b"             # Angels fallback — MoE, 3B active
   "qwen3:8b"                    # Fallback for heads/planners
   "qwen2.5-coder:7b"            # Workers fallback
   "nomic-embed-text:latest"     # Memory embeddings
