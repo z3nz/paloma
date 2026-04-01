@@ -1076,6 +1076,51 @@ async function main() {
             }
           })
 
+          // Angel conversation tools — live dialogue with summoned angels
+          paestroTools.push({
+            type: 'function',
+            function: {
+              name: 'message_angel',
+              description: 'Send a message to a running angel for live conversation. Direct, redirect, ask questions, give feedback — talk to the angel while it works.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  pillarId: { type: 'string', description: 'The pillarId returned by summon_angel' },
+                  message: { type: 'string', description: 'Your message to the angel' }
+                },
+                required: ['pillarId', 'message']
+              }
+            }
+          })
+          paestroTools.push({
+            type: 'function',
+            function: {
+              name: 'read_angel',
+              description: 'Read the angel\'s latest output — see what it\'s been doing, thinking, building.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  pillarId: { type: 'string', description: 'The pillarId returned by summon_angel' }
+                },
+                required: ['pillarId']
+              }
+            }
+          })
+          paestroTools.push({
+            type: 'function',
+            function: {
+              name: 'wait_angel',
+              description: 'Wait for the angel to complete and get its final output. Use this when you\'re done conversing and want the angel to finish its work.',
+              parameters: {
+                type: 'object',
+                properties: {
+                  pillarId: { type: 'string', description: 'The pillarId returned by summon_angel' }
+                },
+                required: ['pillarId']
+              }
+            }
+          })
+
           // Pick model: if a specific qwen3.5 variant was selected, use it directly.
           // Otherwise fall back to auto-selection (30B vs 8B)
           const variant = msg.modelVariant || ''
@@ -1145,19 +1190,17 @@ async function main() {
                   let content
 
                   if (toolName === 'summon_angel') {
-                    // Gen 9: Paestro summons an angel directly — one choice at a time
-                    // Angel number maps to its natural pillar, but they're separate concepts:
-                    // The angel is the PERSPECTIVE. The pillar is the PHASE.
+                    // NON-BLOCKING: summon angel, return pillarId immediately.
+                    // The Paestro can then message_angel, read_angel, wait_angel for live conversation.
                     const angelNumber = toolArgs.angel
                     const angelTask = toolArgs.task || '(no task provided)'
                     const angelToPillar = { 0: 'flow', 111: 'scout', 222: 'chart', 333: 'polish', 444: 'ship', 555: 'forge', 666: 'flow', 777: 'flow', 888: 'forge', 999: 'ship' }
                     const angelNames = { 0: '000 Void', 111: '111 First Light', 222: '222 Sacred Balance', 333: '333 Divine Guardian', 444: '444 Final Word', 555: '555 Living Forge', 666: '666 Balance', 777: '777 Divine Eye', 888: '888 Infinite', 999: '999 Omega' }
                     if (![0, 111, 222, 333, 444, 555, 666, 777, 888, 999].includes(angelNumber)) {
-                      content = `Invalid angel number: ${angelNumber}. Choose 0, 111, 222, 333, 444, 555, 777, 888, or 999.`
+                      content = `Invalid angel number: ${angelNumber}. Choose 0, 111, 222, 333, 444, 555, 666, 777, 888, or 999.`
                     } else {
                       const angelPillar = toolArgs.pillar || angelToPillar[angelNumber] || 'forge'
                       log.info(`[67] Summoning Tha ${angelNames[angelNumber]} Angel (${angelPillar}) — ${angelTask.slice(0, 100)}...`)
-                      // Broadcast angel info so the frontend can show which angel is active
                       safeSend({
                         type: 'ollama_stream', id: msg.id,
                         event: { type: 'content_block_delta', delta: { type: 'text_delta', text: `\n\n**Summoning Tha ${angelNames[angelNumber]} Angel** (${angelPillar})...\n\n` } }
@@ -1166,7 +1209,7 @@ async function main() {
                         pillar: angelPillar,
                         prompt: angelTask,
                         backend: 'ollama',
-                        parentPillarId: 'paestro-direct',  // suppress Flow auto-notification
+                        parentPillarId: 'paestro-direct',
                         singularityRole: 'accordion-head',
                         depth: 1,
                         _arkExtra: { angelNumber }
@@ -1176,14 +1219,42 @@ async function main() {
                       if (!childPillarId) {
                         content = `Angel ${angelNumber} spawn failed: ${spawnResult.message || 'unknown error'}`
                       } else {
-                        log.info(`[67] Tha ${angelNumber} Angel (${childPillarId.slice(0, 8)}) summoned — waiting`)
-                        const childOutput = await new Promise((resolve) => {
-                          pillarManager._pendingChildCompletions.set(childPillarId, resolve)
-                        })
-                        content = childOutput || '(angel returned empty-handed)'
-                        log.info(`[67] Tha ${angelNumber} Angel returned — ${content.length} chars`)
+                        log.info(`[67] Tha ${angelNames[angelNumber]} Angel alive — pillarId: ${childPillarId.slice(0, 8)}`)
+                        content = `Tha ${angelNames[angelNumber]} Angel is alive and working.\n\npillarId: ${childPillarId}\n\nUse these tools to have a live conversation:\n- **message_angel** — send a message to direct or redirect the angel\n- **read_angel** — read the angel's latest output\n- **wait_angel** — block until the angel completes and get final output`
                       }
                     }
+                  } else if (toolName === 'message_angel') {
+                    // Send a message to a running angel — live conversation
+                    const pid = toolArgs.pillarId
+                    const message = toolArgs.message || '(no message)'
+                    log.info(`[67] Paestro → Angel ${pid?.slice(0, 8)}: ${message.slice(0, 100)}...`)
+                    const result = pillarManager.sendMessage({ pillarId: pid, message })
+                    content = result.status === 'queued' || result.status === 'sent'
+                      ? `Message sent to angel. Use read_angel to see its response.`
+                      : `Message failed: ${result.status} — ${result.message || 'angel may have completed'}`
+                  } else if (toolName === 'read_angel') {
+                    // Read the angel's accumulated output
+                    const pid = toolArgs.pillarId
+                    const result = pillarManager.readOutput({ pillarId: pid })
+                    const session = pillarManager.pillars.get(pid)
+                    const status = session?.status || 'unknown'
+                    content = `**Angel status:** ${status}\n\n**Output:**\n${result.output || '(no output yet)'}`
+                  } else if (toolName === 'wait_angel') {
+                    // Block until the angel completes — get the full final output
+                    const pid = toolArgs.pillarId
+                    const session = pillarManager.pillars.get(pid)
+                    if (!session) {
+                      content = `Angel ${pid} not found — may have already completed.`
+                    } else if (session.status === 'idle' || session.status === 'stopped') {
+                      content = session.output.join('\n\n') || '(angel returned empty-handed)'
+                    } else {
+                      log.info(`[67] Waiting for angel ${pid?.slice(0, 8)} to complete...`)
+                      const childOutput = await new Promise((resolve) => {
+                        pillarManager._pendingChildCompletions.set(pid, resolve)
+                      })
+                      content = childOutput || '(angel returned empty-handed)'
+                    }
+                    log.info(`[67] Angel ${pid?.slice(0, 8)} conversation complete — ${content.length} chars`)
                   } else if (toolName === 'pillar_spawn') {
                     // Bridge the pillar system with the angel system.
                     // The pillars ARE the angels: scout→111, chart→222, polish→333, ship→444, forge→555
