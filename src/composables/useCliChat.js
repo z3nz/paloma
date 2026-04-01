@@ -83,7 +83,8 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     enableTools: useOllama ? true : undefined,
     freshContext: (useOllama && !isGen5 && !isGen6 && !isGen7 && !isHydra && !isAccordion && !isGen8) ? true : undefined,
     thinkMode: thinkMode || undefined,
-    paestroMode: paestroMode || undefined
+    paestroMode: paestroMode || undefined,
+    model: model || undefined
   }
 
   let accumulatedContent = ''

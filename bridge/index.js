@@ -1042,8 +1042,9 @@ async function main() {
             }
           })
 
-          // Pick the best coding model for the Paestro (prefers qwen3-coder Q8)
-          const gen8Model = pillarManager._pickPaestroModel()
+          // Pick model based on variant: 8B for lighter machines, 30B Q8 for full power
+          const is8b = msg.modelVariant === 'ollama:gen8:8b'
+          const gen8Model = is8b ? pillarManager._pickArkModel() : pillarManager._pickPaestroModel()
 
           let toolRounds = 0
           const MAX_GEN8_TOOL_ROUNDS = 50
@@ -1233,13 +1234,13 @@ async function main() {
               systemPrompt,
               cwd: process.cwd(),
               tools: gen8Tools,
-              numCtx: 676767
+              numCtx: is8b ? 33333 : 676767
             },
             handleGen8Event
           )
           cliRequestToWs.set(requestId, ws)
           ws.send(JSON.stringify({ type: 'ollama_ack', id: msg.id, requestId, sessionId }))
-          log.info(`[67] Paestro active in Flow — model: ${gen8Model}, session: ${sessionId?.slice(0, 8)}`)
+          log.info(`[67] Paestro active in Flow — model: ${gen8Model}${is8b ? ' (8B lite)' : ''}, session: ${sessionId?.slice(0, 8)}`)
         } catch (e) {
           ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
         }

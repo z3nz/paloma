@@ -687,6 +687,7 @@ export function createMcpBridge() {
         id,
         chatDbSessionId: options.chatDbSessionId || null,
         userMessage: options.prompt,
+        modelVariant: options.model || null,
         thinkMode: options.thinkMode || null,
         paestroMode: options.paestroMode || null,
         sessionId: options.sessionId || null
