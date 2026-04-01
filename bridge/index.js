@@ -984,7 +984,7 @@ async function main() {
         } catch (e) {
           ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
         }
-      } else if (msg.type === 'paestro_chat') {
+      } else if (msg.type === 'paestro_chat' || msg.type === 'gen8_chat') {
         // 67 Paestro: direct Ollama session (stays in current chat, IS Flow)
         // The Paestro runs inline — summon_hydra and launch_accordion are handled here
         try {
@@ -1045,7 +1045,7 @@ async function main() {
           })
 
           // Pick model based on variant: 8B for lighter machines, 30B Q8 for full power
-          const is8b = msg.modelVariant === 'ollama:67:8b'
+          const is8b = msg.modelVariant === 'ollama:67:8b' || msg.modelVariant === 'ollama:gen8:8b'
           const paestroModel = is8b ? pillarManager._pickArkModel() : pillarManager._pickPaestroModel()
 
           let toolRounds = 0

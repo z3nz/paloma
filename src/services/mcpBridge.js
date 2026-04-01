@@ -341,7 +341,7 @@ export function createMcpBridge() {
         onHydraUpdate?.(msg)
       } else if (msg.type === 'accordion_update') {
         onAccordionUpdate?.(msg)
-      } else if (msg.type === 'paestro_update') {
+      } else if (msg.type === 'paestro_update' || msg.type === 'gen8_update') {
         onPaestroUpdate?.(msg)
       } else if (msg.type === 'hydra_vote_needed') {
         onHydraVoteNeeded?.(msg)

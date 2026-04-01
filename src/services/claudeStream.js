@@ -87,7 +87,7 @@ export function isAccordionModel(modelId) {
 }
 
 export function isPaestroModel(modelId) {
-  return modelId === 'ollama:67' || modelId === 'ollama:67:8b'
+  return modelId === 'ollama:67' || modelId === 'ollama:67:8b' || modelId === 'ollama:gen8' || modelId === 'ollama:gen8:8b'
 }
 
 export function getOllamaModelName(modelId) {
@@ -96,6 +96,8 @@ export function getOllamaModelName(modelId) {
   if (modelId === 'ollama:holy-trinity') return 'holy-trinity'
   if (modelId === 'ollama:ark') return 'ark'
   if (modelId === 'ollama:hydra') return 'hydra'
+  if (modelId === 'ollama:67' || modelId === 'ollama:67:8b') return '67'  // Paestro — model picked by bridge
+  if (modelId === 'ollama:gen8' || modelId === 'ollama:gen8:8b') return '67'  // legacy compat
   return modelId?.replace(/^ollama:/, '') || 'qwen2.5-coder:7b'
 }
 
