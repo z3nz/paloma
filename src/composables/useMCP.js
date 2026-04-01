@@ -1159,6 +1159,67 @@ export function useMCP() {
     }
   }
 
+  async function carryForward(sessionId) {
+    if (!bridge || !connected.value) throw new Error('Bridge not connected')
+
+    // 1. Gather all messages from the session
+    const messages = await db.messages
+      .where('sessionId')
+      .equals(sessionId)
+      .sortBy('timestamp')
+
+    const session = await db.sessions.get(sessionId)
+    const title = session?.title || 'Untitled'
+
+    // 2. Build the carry-forward document
+    let doc = `# Carry Forward — ${title}\n\n`
+    doc += `> Session: ${sessionId} | Model: ${session?.model || '?'} | Date: ${new Date().toISOString()}\n`
+    doc += `> This is a compressed context from a previous conversation. Read it to continue the work.\n\n---\n\n`
+
+    // Track files created/modified during the session
+    const filesReferenced = new Set()
+
+    for (const m of messages) {
+      if (m.role === 'user') {
+        doc += `## Adam\n\n${m.content}\n\n`
+      } else if (m.role === 'assistant' && m.content) {
+        doc += `## Paloma\n\n${m.content}\n\n`
+      } else if (m.role === 'tool' && m.toolName) {
+        // Compact tool results — just show name + key info
+        const toolShort = m.toolName.replace('filesystem__', '').replace('git__', '').replace('shell__', '')
+        const resultPreview = (m.content || '').slice(0, 300)
+        doc += `> **Tool: ${toolShort}**${m.toolArgs?.path ? ` — \`${m.toolArgs.path}\`` : ''}\n> ${resultPreview}${m.content?.length > 300 ? '...' : ''}\n\n`
+        // Track file paths
+        if (m.toolArgs?.path) filesReferenced.add(m.toolArgs.path)
+      }
+    }
+
+    // Add referenced files section
+    if (filesReferenced.size > 0) {
+      doc += `---\n\n## Files Referenced\n\n`
+      for (const f of filesReferenced) {
+        doc += `- \`${f}\`\n`
+      }
+      doc += '\n'
+    }
+
+    // 3. Save to .paloma/docs/
+    const slug = title.slice(0, 40).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    const filename = `carry-forward-${slug}-${sessionId}.md`
+    const filepath = `.paloma/docs/${filename}`
+
+    try {
+      await bridge.callTool('mcp__paloma__filesystem__write_file', { path: filepath, content: doc })
+    } catch {
+      // Fallback: try without MCP prefix
+      try {
+        await bridge.callTool('filesystem', 'write_file', { path: filepath, content: doc })
+      } catch { /* best effort */ }
+    }
+
+    return { filepath, filename, messageCount: messages.length, filesReferenced: [...filesReferenced] }
+  }
+
   async function exportChats(projectPath) {
     if (!bridge || !connected.value) {
       throw new Error('MCP bridge not connected')
@@ -1257,6 +1318,7 @@ export function useMCP() {
     denyCliTool,
     resolveProjectPath,
     getSystemPrompt,
+    carryForward,
     exportChats,
     getEnabledTools,
     getAutoExecuteServers,

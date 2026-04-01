@@ -169,6 +169,15 @@
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="inline -mt-0.5 mr-0.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           Prompt
         </button>
+        <button
+          @click="handleCarryForward"
+          :disabled="carryingForward"
+          class="px-2 py-1 rounded border border-border text-text-muted hover:text-text-primary hover:border-border transition-colors"
+          title="Save conversation context and start a new chat"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="inline -mt-0.5 mr-0.5"><path d="M7 17l9.2-9.2M17 17V7H7"/></svg>
+          {{ carryingForward ? 'Saving...' : 'Carry Forward' }}
+        </button>
         <span v-if="voiceErrorMessage" class="text-warning">{{ voiceErrorMessage }}</span>
         <span v-else-if="modelsError" class="text-warning" title="Using cached/fallback model list">Models: offline</span>
         <span v-else-if="indexing">Indexing files...</span>
@@ -233,12 +242,12 @@ const props = defineProps({
   streaming: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['send', 'stop', 'update-session', 'transition-phase'])
+const emit = defineEmits(['send', 'stop', 'update-session', 'transition-phase', 'carry-forward'])
 
 const { search, indexing } = useFileIndex()
 const { models, modelsError } = useOpenRouter()
 const { switchProject, listProjects, projectName: currentProject, projectRoot: currentProjectRoot } = useProject()
-const { callMcpTool, resolveProjectPath, connected: mcpConnected } = useMCP()
+const { callMcpTool, resolveProjectPath, carryForward, connected: mcpConnected } = useMCP()
 
 const {
   supported: voiceSupported,
@@ -251,6 +260,7 @@ const input = ref('')
 const attachedFiles = ref([])
 const thinkMode = ref('default') // 'think' | 'no_think' | 'default'
 const showPromptViewer = ref(false)
+const carryingForward = ref(false)
 const paestroMode = ref('67') // '67' | '666' | '777'
 const hydraAngels = reactive([111, 555, 333]) // 3 angel perspectives for Hydra heads
 const openHydraDropdown = ref(-1) // which dropdown is open (-1 = none)
@@ -369,6 +379,25 @@ const micButtonClasses = computed(() => {
   if (isListening.value) return 'bg-accent text-white voice-pulse'
   return 'bg-accent/20 text-accent'
 })
+
+async function handleCarryForward() {
+  if (!props.session?.id || carryingForward.value) return
+  carryingForward.value = true
+  try {
+    const result = await carryForward(props.session.id)
+    if (result?.filepath) {
+      emit('carry-forward', {
+        filepath: result.filepath,
+        messageCount: result.messageCount,
+        filesReferenced: result.filesReferenced
+      })
+    }
+  } catch (e) {
+    console.error('[carry-forward] Failed:', e.message)
+  } finally {
+    carryingForward.value = false
+  }
+}
 
 const voiceErrorMessage = computed(() => {
   switch (voiceError.value) {

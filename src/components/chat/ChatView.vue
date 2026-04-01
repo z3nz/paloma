@@ -27,6 +27,7 @@
       @stop="stopStreaming"
       @update-session="handleUpdateSession"
       @transition-phase="handleTransitionPhase"
+      @carry-forward="handleCarryForward"
     />
 
     <DiffPreview
@@ -398,6 +399,37 @@ function handleUpdateSession(updates) {
 
 function handleTransitionPhase({ phase, fromPhase }) {
   emit('transition-phase', { phase, fromPhase, sessionId: props.session?.id })
+}
+
+async function handleCarryForward({ filepath, messageCount, filesReferenced }) {
+  // Create a new session with the carry-forward context injected as the first message
+  const model = props.session?.model || 'ollama:qwen3.5:35b'
+  const phase = props.session?.phase || 'flow'
+  const contextMsg = `Please read the carry-forward context document at \`${filepath}\` to continue where we left off. It contains ${messageCount} messages from our previous conversation${filesReferenced?.length ? ` and references ${filesReferenced.length} files` : ''}. Read it, understand the context, and let me know you're ready to continue.`
+
+  // Create new session in DB
+  const newSession = {
+    title: 'Carry Forward',
+    model,
+    phase,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  }
+  const newId = await db.sessions.add(newSession)
+  newSession.id = newId
+
+  // Save the context message as the first user message
+  const userMsg = {
+    sessionId: newId,
+    role: 'user',
+    content: contextMsg,
+    files: [],
+    timestamp: Date.now()
+  }
+  await db.messages.add(userMsg)
+
+  // Navigate to the new session
+  emit('update-session', newId, newSession)
 }
 
 /** Read a file via MCP, returns content string or null */
