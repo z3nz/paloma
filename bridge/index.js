@@ -460,6 +460,26 @@ async function main() {
         } catch (e) {
           ws.send(JSON.stringify({ type: 'error', id: msg.id, message: e.message }))
         }
+      } else if (msg.type === 'get_system_prompt') {
+        // Fetch the full system prompt for a given model/role — for the prompt viewer
+        try {
+          if (!pillarManager) throw new Error('PillarManager not initialized')
+          const role = msg.singularityRole || 'paestro'
+          const pillar = msg.pillar || 'flow'
+          const prompt = await pillarManager._buildSystemPrompt(pillar, {
+            singularityRole: role, backend: 'ollama'
+          })
+          ws.send(JSON.stringify({
+            type: 'system_prompt_result', id: msg.id,
+            prompt,
+            role,
+            pillar,
+            length: prompt.length,
+            approxTokens: Math.round(prompt.length / 4)
+          }))
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'error', id: msg.id, message: e.message }))
+        }
       } else if (msg.type === 'resolve_path') {
         // Find a directory by name under $HOME (max 3 levels deep)
         const target = msg.name

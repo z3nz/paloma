@@ -139,6 +139,12 @@ export function createMcpBridge() {
           pending.delete(msg.id)
           p.resolve({ content: msg.content, isError: msg.isError })
         }
+      } else if (msg.type === 'system_prompt_result' && msg.id) {
+        const p = pending.get(msg.id)
+        if (p) {
+          pending.delete(msg.id)
+          p.resolve({ prompt: msg.prompt, role: msg.role, pillar: msg.pillar, length: msg.length, approxTokens: msg.approxTokens })
+        }
       } else if (msg.type === 'export_result' && msg.id) {
         const p = pending.get(msg.id)
         if (p) {
@@ -795,6 +801,16 @@ export function createMcpBridge() {
     })
   }
 
+  function getSystemPrompt(singularityRole = 'paestro', pillar = 'flow') {
+    const id = crypto.randomUUID()
+    const promise = _pendingPromise(id, 15000)
+    _send({ type: 'get_system_prompt', id, singularityRole, pillar }).catch((e) => {
+      const p = pending.get(id)
+      if (p) { pending.delete(id); p.reject(e) }
+    })
+    return promise
+  }
+
   function sendPillarUserMessage(pillarId, message) {
     const id = crypto.randomUUID()
     const promise = _pendingPromise(id, 10000)
@@ -805,7 +821,7 @@ export function createMcpBridge() {
     return promise
   }
 
-  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendGeminiChat, stopGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, sendAccordionChat, sendPaestroChat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, resumePillar, sendPillarUserMessage, getState }
+  return { connect, disconnect, discover, callTool, sendClaudeChat, stopClaudeChat, sendCodexChat, stopCodexChat, sendCopilotChat, stopCopilotChat, sendGeminiChat, stopGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, sendAccordionChat, sendPaestroChat, stopOllamaChat, exportChats, resolveProjectPath, respondToAskUser, respondToToolConfirmation, sendPillarDbSessionId, registerFlowSession, listPillars, resumePillar, sendPillarUserMessage, getSystemPrompt, getState }
 
 
 }

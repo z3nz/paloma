@@ -1141,6 +1141,15 @@ export function useMCP() {
     }
   }
 
+  async function getSystemPrompt(singularityRole = 'paestro', pillar = 'flow') {
+    if (!bridge || !connected.value) return null
+    try {
+      return await bridge.getSystemPrompt(singularityRole, pillar)
+    } catch {
+      return null
+    }
+  }
+
   async function resolveProjectPath(name) {
     if (!bridge || !connected.value) return null
     try {
@@ -1247,6 +1256,7 @@ export function useMCP() {
     approveCliTool,
     denyCliTool,
     resolveProjectPath,
+    getSystemPrompt,
     exportChats,
     getEnabledTools,
     getAutoExecuteServers,

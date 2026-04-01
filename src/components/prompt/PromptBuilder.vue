@@ -160,12 +160,23 @@
           <span>{{ paestroMode === '666' ? 'Earth' : paestroMode === '777' ? 'Spirit' : 'Balance' }}</span>
         </button>
       </div>
-      <div class="text-xs text-text-muted">
+      <div class="flex items-center gap-2 text-xs text-text-muted">
+        <button
+          @click="showPromptViewer = true"
+          class="px-2 py-1 rounded border border-border text-text-muted hover:text-text-primary hover:border-border transition-colors"
+          title="View the full system prompt being sent to the model"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="inline -mt-0.5 mr-0.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          Prompt
+        </button>
         <span v-if="voiceErrorMessage" class="text-warning">{{ voiceErrorMessage }}</span>
         <span v-else-if="modelsError" class="text-warning" title="Using cached/fallback model list">Models: offline</span>
         <span v-else-if="indexing">Indexing files...</span>
       </div>
     </div>
+
+    <!-- Prompt Viewer modal -->
+    <PromptViewer :visible="showPromptViewer" @close="showPromptViewer = false" />
 
     <!-- Hydra Heads row — pick 3 angel perspectives for competing plans -->
     <div v-if="showHydraConfig" class="flex items-center gap-2 mt-2 flex-wrap">
@@ -208,6 +219,7 @@ import ProjectSearch from './ProjectSearch.vue'
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import ModelSelector from './ModelSelector.vue'
 import { isPaestroModel } from '../../services/claudeStream.js'
+import PromptViewer from './PromptViewer.vue'
 import PhaseSelector from './PhaseSelector.vue'
 import { useFileIndex } from '../../composables/useFileIndex.js'
 import { useOpenRouter } from '../../composables/useOpenRouter.js'
@@ -238,6 +250,7 @@ const {
 const input = ref('')
 const attachedFiles = ref([])
 const thinkMode = ref('default') // 'think' | 'no_think' | 'default'
+const showPromptViewer = ref(false)
 const paestroMode = ref('67') // '67' | '666' | '777'
 const hydraAngels = reactive([111, 555, 333]) // 3 angel perspectives for Hydra heads
 const openHydraDropdown = ref(-1) // which dropdown is open (-1 = none)
