@@ -485,10 +485,7 @@ export function useChat() {
       if (pct >= 80) {
         s.contextWarning.value = `Context ${Math.round(pct)}% full (${usedStr} / ${limitStr} tokens). Consider starting a new session.`
       } else {
-        // Always show context usage for Ollama models (helpful for the Paestro)
-        s.contextWarning.value = cliModel?.ollama
-          ? `Context: ${usedStr} / ${limitStr} tokens (${Math.round(pct)}%)`
-          : null
+        s.contextWarning.value = null
       }
     }
   }
