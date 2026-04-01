@@ -1155,7 +1155,7 @@ async function main() {
                         pillar: angelPillar,
                         prompt: angelTask,
                         backend: 'ollama',
-                        parentPillarId: null,
+                        parentPillarId: 'paestro-direct',  // suppress Flow auto-notification
                         singularityRole: 'accordion-head',
                         depth: 1,
                         _arkExtra: { angelNumber }
@@ -1186,7 +1186,7 @@ async function main() {
                       pillar: requestedPillar,
                       prompt: angelTask,
                       backend: 'ollama',
-                      parentPillarId: null,
+                      parentPillarId: 'paestro-direct',  // suppress Flow auto-notification
                       singularityRole: 'accordion-head',
                       depth: 1,
                       _arkExtra: { angelNumber: angelNum }
