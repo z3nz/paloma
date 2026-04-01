@@ -73,7 +73,7 @@ const pendingHydraVote = ref(null) // { hydraId, task, plans: [{ headNumber, pla
 // Gen7 Accordion state
 const accordionGroups = reactive(new Map()) // accordionId → { accordionId, phase, currentAngel, cycleCount, historyCount, maestroPillarId, chatDbSessionId }
 
-// Gen 8 Paestro state
+// 67 Paestro state
 const gen8Groups = reactive(new Map()) // gen8Id → { gen8Id, phase, hydraId, accordionId, cycleCount, paestroPillarId, chatDbSessionId }
 
 const connected = ref(false)

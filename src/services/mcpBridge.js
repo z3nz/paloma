@@ -676,7 +676,7 @@ export function createMcpBridge() {
         if (pending.has(id)) {
           pending.delete(id)
           streamListeners.delete(id)
-          reject(new Error('Bridge did not acknowledge Gen 8 message'))
+          reject(new Error('Bridge did not acknowledge 67 Paestro message'))
         }
       }, CHAT_ACK_TIMEOUT)
       const wrappedResolve = (v) => { clearTimeout(timer); resolve(v) }
