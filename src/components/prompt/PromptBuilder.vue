@@ -146,7 +146,7 @@
         </button>
         <!-- Paestro 666/777 mode toggle (only visible for 67 model) -->
         <button
-          v-if="currentModel === 'ollama:67'"
+          v-if="isPaestroModel(currentModel)"
           @click="paestroMode = paestroMode === '67' ? '666' : paestroMode === '666' ? '777' : '67'"
           class="flex items-center gap-1 px-2 py-1 text-xs rounded-md border transition-colors"
           :class="paestroMode === '666'
@@ -207,6 +207,7 @@ import PlanSearch from './PlanSearch.vue'
 import ProjectSearch from './ProjectSearch.vue'
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import ModelSelector from './ModelSelector.vue'
+import { isPaestroModel } from '../../services/claudeStream.js'
 import PhaseSelector from './PhaseSelector.vue'
 import { useFileIndex } from '../../composables/useFileIndex.js'
 import { useOpenRouter } from '../../composables/useOpenRouter.js'
@@ -243,7 +244,7 @@ const openHydraDropdown = ref(-1) // which dropdown is open (-1 = none)
 const hydraDropdownRefs = reactive([null, null, null])
 
 const showHydraConfig = computed(() => {
-  return currentModel.value === 'ollama:67' || currentModel.value === 'ollama:67:8b' || currentModel.value === 'ollama:hydra'
+  return isPaestroModel(currentModel.value) || currentModel.value === 'ollama:hydra'
 })
 
 const allAngels = [
