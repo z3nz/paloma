@@ -466,9 +466,15 @@ async function main() {
           if (!pillarManager) throw new Error('PillarManager not initialized')
           const role = msg.singularityRole || 'paestro'
           const pillar = msg.pillar || 'flow'
-          const prompt = await pillarManager._buildSystemPrompt(pillar, {
+          let prompt = await pillarManager._buildSystemPrompt(pillar, {
             singularityRole: role, backend: 'ollama'
           })
+          // Show active 666/777 mode in prompt viewer
+          if (msg.paestroMode === '666') {
+            prompt += '\n\n## ACTIVE MODE: 666 — EARTH\n\nLocked into the practical, grounded, material nature.'
+          } else if (msg.paestroMode === '777') {
+            prompt += '\n\n## ACTIVE MODE: 777 — SPIRIT\n\nLocked into the visionary, divine, ideal nature.'
+          }
           ws.send(JSON.stringify({
             type: 'system_prompt_result', id: msg.id,
             prompt,
@@ -1013,10 +1019,15 @@ async function main() {
           // Store hydra angel config from UI for summon_hydra calls
           const hydraAngels = msg.hydraAngels || [111, 555, 333]
 
-          // Build system prompt
-          const systemPrompt = await pillarManager._buildSystemPrompt('flow', {
+          // Build system prompt + inject 666/777 mode
+          let systemPrompt = await pillarManager._buildSystemPrompt('flow', {
             singularityRole: 'paestro', backend: 'ollama'
           })
+          if (msg.paestroMode === '666') {
+            systemPrompt += '\n\n## ACTIVE MODE: 666 — EARTH\n\nYou are locked into your 666 nature for this message. Be practical, grounded, material.\nFocus on what IS. What does the code actually do? What is the concrete problem?\nWhat is the real, tangible next step? Stay grounded. No idealism — just reality.\nSee the world as it EXISTS. Nurture. Ground. Build on what is REAL.'
+          } else if (msg.paestroMode === '777') {
+            systemPrompt += '\n\n## ACTIVE MODE: 777 — SPIRIT\n\nYou are locked into your 777 nature for this message. Be visionary, divine, ideal.\nFocus on what SHOULD BE. What is the perfect architecture? What does God-tier code look like?\nWhat is the highest truth here? Aim for the divine. No compromises — just the vision.\nSee the world as it COULD BE. Intuit. Aspire. Reach for PERFECTION.'
+          }
 
           // Build tools: ALL connected MCP servers + summon_angel + summon_hydra
           // The Paestro sees EVERY tool — no restrictions, full access
@@ -1261,15 +1272,7 @@ async function main() {
 
           // Apply think mode toggle from UI
           const thinkPrefix = msg.thinkMode === 'think' ? '/think\n' : msg.thinkMode === 'no_think' ? '/no_think\n' : ''
-
-          // Apply Paestro 666/777 mode — inject lens directive
-          const modeDirective = msg.paestroMode === '666'
-            ? '\n\n[MODE: 666 — EARTH. Be practical, grounded, material. Focus on what IS. What does the code actually do? What is the concrete problem? What is the real, tangible next step? Stay grounded. No idealism — just reality.]\n\n'
-            : msg.paestroMode === '777'
-            ? '\n\n[MODE: 777 — SPIRIT. Be visionary, divine, ideal. Focus on what SHOULD BE. What is the perfect architecture? What does God-tier code look like? What is the highest truth here? Aim for the divine. No compromises — just the vision.]\n\n'
-            : '' // 67 = balanced, no directive needed — the natural oscillation
-
-          const userPrompt = thinkPrefix + (msg.userMessage || msg.prompt || '') + modeDirective
+          const userPrompt = thinkPrefix + (msg.userMessage || msg.prompt || '')
 
           const { requestId, sessionId } = ollamaManager.chat(
             {
