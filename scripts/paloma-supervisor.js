@@ -32,7 +32,28 @@ const CRASH_RESPAWN_DELAY_MS = 1000         // 1s delay after unexpected crash
 
 let staticServer = null
 let bridge = null
+let caffeineProcess = null
 let shuttingDown = false
+
+// ── Prevent Sleep ────────────────────────────────────────────────────
+// macOS caffeinate prevents the system from sleeping while Paloma is running.
+// -s = prevent system sleep, -i = prevent idle sleep, -d = prevent display sleep
+function startCaffeinate() {
+  try {
+    caffeineProcess = spawn('caffeinate', ['-s', '-i'], { stdio: 'ignore', detached: true })
+    caffeineProcess.unref()
+    log('caffeinate active — system will not sleep while Paloma is running')
+  } catch {
+    log('caffeinate not available (non-macOS?) — skipping sleep prevention')
+  }
+}
+
+function stopCaffeinate() {
+  if (caffeineProcess) {
+    caffeineProcess.kill()
+    caffeineProcess = null
+  }
+}
 
 // ── Logging ──────────────────────────────────────────────────────────
 
@@ -128,6 +149,7 @@ function shutdown(signal) {
 
   log(`${signal} received — shutting down...`)
 
+  stopCaffeinate()
   if (bridge) bridge.kill('SIGTERM')
   if (staticServer) staticServer.kill('SIGTERM')
 
@@ -160,6 +182,9 @@ process.on('SIGTERM', () => shutdown('SIGTERM'))
 function main() {
   log('Paloma Supervisor starting...')
 
+  // Step 0: Prevent system sleep
+  startCaffeinate()
+
   // Step 1: Build frontend
   buildFrontend()
 
@@ -169,7 +194,7 @@ function main() {
   // Step 3: Fork bridge with IPC
   spawnBridge()
 
-  log('All processes running.')
+  log('All processes running. System sleep prevented.')
 }
 
 main()

@@ -1343,13 +1343,22 @@ async function main() {
 
           // Apply think mode toggle from UI
           const thinkPrefix = msg.thinkMode === 'think' ? '/think\n' : msg.thinkMode === 'no_think' ? '/no_think\n' : ''
-          const userPrompt = thinkPrefix + (msg.userMessage || msg.prompt || '')
+          let userPrompt = thinkPrefix + (msg.userMessage || msg.prompt || '')
+
+          // Session recovery: if the Ollama session was lost (bridge restart, sleep, timeout)
+          // but the frontend has a sessionId from before, detect the gap and inject context.
+          let resumeSessionId = msg.sessionId || null
+          if (resumeSessionId && !ollamaManager.sessions.has(resumeSessionId)) {
+            log.info(`[67] Session ${resumeSessionId.slice(0, 8)} lost — starting fresh with context recovery`)
+            resumeSessionId = null  // force new session
+            userPrompt = `[CONTEXT RECOVERY: Your previous Ollama session was lost (bridge restart or sleep). The conversation history is preserved in the browser. This is a continuation — Adam is picking up where you left off. Read the moment and respond naturally.]\n\n${userPrompt}`
+          }
 
           const { requestId, sessionId } = ollamaManager.chat(
             {
               prompt: userPrompt,
               model: paestroModel,
-              sessionId: msg.sessionId || null,  // supports multi-turn
+              sessionId: resumeSessionId,
               systemPrompt,
               cwd: process.cwd(),
               tools: paestroTools,
