@@ -161,6 +161,7 @@ export class OllamaManager {
         model: session.model,
         messages: [...session.messages],
         stream: true,
+        keep_alive: -1,  // NEVER unload — prevent "fetch failed" during long tool calls
         options: { num_ctx: session.numCtx || this.defaultNumCtx }
       }
 

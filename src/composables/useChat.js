@@ -442,11 +442,13 @@ export function useChat() {
   }
 
   async function saveAssistantMessage(sessionId, s, content, toolCalls, usage, model, toolActivitySnapshot, interrupted = false) {
-    // Dedupe guard: don't save if the last message has the same content (prevents double-save on stop)
-    const lastMsg = s.messages.value[s.messages.value.length - 1]
-    if (lastMsg?.role === 'assistant' && lastMsg?.content === content) {
+    // Dedupe guard: don't save if any recent assistant message has the same content.
+    // Tool results can slip between duplicates, so check the last 5 messages, not just the last one.
+    const recentMsgs = s.messages.value.slice(-5)
+    const duplicate = recentMsgs.find(m => m.role === 'assistant' && m.content === content)
+    if (duplicate) {
       console.log('[chat] Skipping duplicate assistant message save')
-      return lastMsg
+      return duplicate
     }
 
     const raw = {
