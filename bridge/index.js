@@ -995,14 +995,13 @@ async function main() {
             singularityRole: 'paestro', backend: 'ollama'
           })
 
-          // Build tools: ALL allowed MCP servers + summon_angel + summon_hydra
-          // The Paestro gets the same tools as any Ollama session — filesystem, git, shell, web, search, memory, voice, fs-extra
+          // Build tools: ALL connected MCP servers + summon_angel + summon_hydra
+          // The Paestro sees EVERY tool — no restrictions, full access
           const gen8Tools = []
           const gen8ToolRouteMap = new Map()
           const mcpServers = manager.getTools()
           for (const [serverName, serverInfo] of Object.entries(mcpServers)) {
             if (serverInfo.status !== 'connected') continue
-            if (!OLLAMA_ALLOWED_SERVERS.has(serverName)) continue
             for (const tool of serverInfo.tools) {
               const ollamaName = `${serverName}__${tool.name}`
               gen8Tools.push({
