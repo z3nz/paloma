@@ -1044,9 +1044,20 @@ async function main() {
             }
           })
 
-          // Pick model based on variant: 8B for lighter machines, 30B Q8 for full power
-          const is8b = msg.modelVariant === 'ollama:67:8b' || msg.modelVariant === 'ollama:gen8:8b'
-          const paestroModel = is8b ? pillarManager._pickArkModel() : pillarManager._pickPaestroModel()
+          // Pick model: if a specific qwen3.5 variant was selected, use it directly.
+          // Otherwise fall back to auto-selection (30B vs 8B)
+          const variant = msg.modelVariant || ''
+          let paestroModel
+          let paestroCtx = 676767
+          if (variant.startsWith('ollama:qwen3.5:')) {
+            paestroModel = variant.replace('ollama:', '')  // 'qwen3.5:35b' etc
+            paestroCtx = variant.includes('9b') ? 66667 : 676767
+          } else if (variant === 'ollama:67:8b' || variant === 'ollama:gen8:8b') {
+            paestroModel = pillarManager._pickArkModel()
+            paestroCtx = 33333
+          } else {
+            paestroModel = pillarManager._pickPaestroModel()
+          }
 
           let toolRounds = 0
           const MAX_PAESTRO_TOOL_ROUNDS = 50
@@ -1236,13 +1247,13 @@ async function main() {
               systemPrompt,
               cwd: process.cwd(),
               tools: paestroTools,
-              numCtx: is8b ? 33333 : 676767
+              numCtx: paestroCtx
             },
             handlePaestroEvent
           )
           cliRequestToWs.set(requestId, ws)
           ws.send(JSON.stringify({ type: 'ollama_ack', id: msg.id, requestId, sessionId }))
-          log.info(`[67] Paestro active in Flow — model: ${paestroModel}${is8b ? ' (8B lite)' : ''}, session: ${sessionId?.slice(0, 8)}`)
+          log.info(`[67] Paestro active in Flow — model: ${paestroModel}, ctx: ${paestroCtx}, session: ${sessionId?.slice(0, 8)}`)
         } catch (e) {
           ws.send(JSON.stringify({ type: 'ollama_error', id: msg.id, error: e.message }))
         }

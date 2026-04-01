@@ -31,9 +31,9 @@ export const CLI_MODELS = [
   { id: 'gemini-cli:gemini-2.5-flash', name: 'Gemini 2.5 Flash', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
   { id: 'gemini-cli:gemini-2.0-flash', name: 'Gemini 2.0 Flash', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
   { id: 'gemini-cli:gemini-exp', name: 'Gemini Experimental', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
-  { id: 'ollama:qwen3.5:35b', name: 'Qwen 3.5 35B (MLX)', context_length: 262144, ollama: true, pricing: FREE_PRICING },
-  { id: 'ollama:qwen3.5:27b', name: 'Qwen 3.5 27B (MLX)', context_length: 262144, ollama: true, pricing: FREE_PRICING },
-  { id: 'ollama:qwen3.5:9b', name: 'Qwen 3.5 9B (MLX)', context_length: 262144, ollama: true, pricing: FREE_PRICING },
+  { id: 'ollama:qwen3.5:35b', name: '67 Paestro (Qwen 3.5 35B)', context_length: 676767, ollama: true, paestro: true, pricing: FREE_PRICING },
+  { id: 'ollama:qwen3.5:27b', name: '67 Paestro (Qwen 3.5 27B)', context_length: 676767, ollama: true, paestro: true, pricing: FREE_PRICING },
+  { id: 'ollama:qwen3.5:9b', name: '67 Paestro (Qwen 3.5 9B)', context_length: 66667, ollama: true, paestro: true, pricing: FREE_PRICING },
   { id: 'ollama:qwen2.5-coder:32b', name: 'Qwen 2.5 Coder 32B', context_length: 32768, ollama: true, pricing: FREE_PRICING },
   { id: 'ollama:qwen2.5-coder:7b', name: 'Qwen 2.5 Coder 7B', context_length: 32768, ollama: true, pricing: FREE_PRICING },
   { id: 'ollama:quinn-gen5', name: 'Quinn Gen5', context_length: 40960, ollama: true, gen5: true, pricing: FREE_PRICING },
@@ -90,7 +90,12 @@ export function isAccordionModel(modelId) {
 }
 
 export function isPaestroModel(modelId) {
-  return modelId === 'ollama:67' || modelId === 'ollama:67:8b' || modelId === 'ollama:gen8' || modelId === 'ollama:gen8:8b'
+  if (!modelId) return false
+  if (modelId === 'ollama:67' || modelId === 'ollama:67:8b') return true
+  if (modelId === 'ollama:gen8' || modelId === 'ollama:gen8:8b') return true  // legacy compat
+  // All qwen3.5 Paestro variants
+  if (modelId.startsWith('ollama:qwen3.5:')) return true
+  return false
 }
 
 export function getOllamaModelName(modelId) {
