@@ -270,7 +270,7 @@ export function createMcpBridge() {
         const listener = streamListeners.get(msg.id)
         if (listener) {
           streamListeners.delete(msg.id)
-          listener.onDone?.(msg.sessionId, msg.exitCode)
+          listener.onDone?.(msg.sessionId, msg.exitCode, msg.usage)
         }
       } else if (msg.type === 'ollama_error' && msg.id) {
         const errorMsg = msg.error || msg.event?.error || 'Unknown Ollama error'

@@ -1,6 +1,7 @@
 import { computed } from 'vue'
 import { useChat } from './useChat.js'
 import { useOpenRouter } from './useOpenRouter.js'
+import { CLI_MODELS } from '../services/claudeStream.js'
 import db from '../services/db.js'
 
 // Singleton state — computed once, shared across all callers
@@ -34,18 +35,17 @@ const sessionTokens = computed(() => {
 export function useCostTracking() {
 
   function getContextUsage(modelId) {
-    const model = getModelInfo(modelId)
-    if (!model?.context_length) return null
+    // Check CLI_MODELS first (Ollama, Gen8/67, etc.), then OpenRouter
+    const cliModel = CLI_MODELS.find(m => m.id === modelId)
+    const contextLength = cliModel?.context_length || getModelInfo(modelId)?.context_length
+    if (!contextLength) return null
     const lastAssistant = [...messages.value].reverse().find(m => m.role === 'assistant' && m.usage)
     if (!lastAssistant) return null
-    // promptTokens on the last response = entire conversation history sent to the model,
-    // plus completionTokens = total context consumed after that response.
-    // This is the best approximation of current context window usage.
     const used = (lastAssistant.usage.promptTokens || 0) + (lastAssistant.usage.completionTokens || 0)
     return {
       used,
-      limit: model.context_length,
-      percentage: (used / model.context_length) * 100
+      limit: contextLength,
+      percentage: (used / contextLength) * 100
     }
   }
 

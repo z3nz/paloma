@@ -190,6 +190,8 @@ export class OllamaManager {
       let buffer = ''
       let fullAssistantText = ''
       let collectedToolCalls = []
+      let promptTokens = 0
+      let completionTokens = 0
 
       // Buffer state for suppressing tool calls in the stream
       let streamBuffer = ''
@@ -267,6 +269,9 @@ export class OllamaManager {
             }
 
             if (chunk.done) {
+              // Capture token usage from the final chunk
+              if (chunk.prompt_eval_count) promptTokens = chunk.prompt_eval_count
+              if (chunk.eval_count) completionTokens = chunk.eval_count
               break
             }
           } catch {
@@ -424,7 +429,10 @@ export class OllamaManager {
       }
 
       this.requests.delete(requestId)
-      onEvent({ type: 'ollama_done', requestId, sessionId, exitCode: 0 })
+      onEvent({
+        type: 'ollama_done', requestId, sessionId, exitCode: 0,
+        usage: { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens }
+      })
 
     } catch (err) {
       this.requests.delete(requestId)

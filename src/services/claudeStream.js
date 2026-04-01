@@ -415,8 +415,8 @@ export async function* streamOllamaChat(sendFn, options) {
     onStream(event) {
       push(event)
     },
-    onDone(sid, exitCode) {
-      push({ type: 'result', subtype: 'done', sessionId: sid, exitCode })
+    onDone(sid, exitCode, usage) {
+      push({ type: 'result', subtype: 'done', sessionId: sid, exitCode, usage })
       done = true
       if (resolve) { resolve(); resolve = null }
     },
@@ -442,13 +442,15 @@ export async function* streamOllamaChat(sendFn, options) {
           yield { type: 'content', text: event.delta.text }
         }
       } else if (event.type === 'tool_use') {
-        // Bridge emits tool_use when Ollama calls a tool
         const tu = event.tool_use || {}
         yield { type: 'tool_use', id: tu.id, name: tu.name, input: tu.input || {} }
       } else if (event.type === 'tool_result') {
-        // Bridge emits tool_result after executing the tool
         yield { type: 'tool_result', toolUseId: event.toolUseId, content: event.content }
       } else if (event.type === 'result' && event.subtype === 'done') {
+        // Yield usage data so useChat can track context
+        if (event.usage) {
+          yield { type: 'usage', usage: event.usage }
+        }
         continue
       }
     }

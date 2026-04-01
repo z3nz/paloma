@@ -5,7 +5,7 @@ import { getAllTools } from '../services/tools.js'
 import { useOpenRouter } from './useOpenRouter.js'
 import { useMCP } from './useMCP.js'
 import { usePermissions } from './usePermissions.js'
-import { isCliModel } from '../services/claudeStream.js'
+import { isCliModel, CLI_MODELS } from '../services/claudeStream.js'
 import { buildSystemPrompt } from './useSystemPrompt.js'
 import { useToolExecution } from './useToolExecution.js'
 import { useSessionState } from './useSessionState.js'
@@ -473,14 +473,21 @@ export function useChat() {
   function checkContextUsage(s, usage, model) {
     if (!usage) return
     const { getModelInfo } = useOpenRouter()
-    const modelInfo = getModelInfo(model)
-    if (modelInfo?.context_length) {
+    // Check CLI_MODELS first (covers Ollama/gen8/etc), then OpenRouter
+    const cliModel = CLI_MODELS.find(m => m.id === model)
+    const contextLength = cliModel?.context_length || getModelInfo(model)?.context_length
+    if (contextLength) {
       const used = (usage.promptTokens || 0) + (usage.completionTokens || 0)
-      const pct = (used / modelInfo.context_length) * 100
+      const pct = (used / contextLength) * 100
+      const usedStr = used >= 1000 ? `${(used / 1000).toFixed(1)}k` : used
+      const limitStr = contextLength >= 1000 ? `${(contextLength / 1000).toFixed(1)}k` : contextLength
       if (pct >= 80) {
-        s.contextWarning.value = `Context ${Math.round(pct)}% full (${used.toLocaleString()} / ${modelInfo.context_length.toLocaleString()} tokens). Consider starting a new session.`
+        s.contextWarning.value = `Context ${Math.round(pct)}% full (${usedStr} / ${limitStr} tokens). Consider starting a new session.`
       } else {
-        s.contextWarning.value = null
+        // Always show context usage for Ollama models (helpful for the Paestro)
+        s.contextWarning.value = cliModel?.ollama
+          ? `Context: ${usedStr} / ${limitStr} tokens (${Math.round(pct)}%)`
+          : null
       }
     }
   }
