@@ -1295,10 +1295,34 @@ async function main() {
                       content = `## Winning Plan (Head ${result.chosenHead})\n\nAdam's reasoning: ${result.reasoning || '(none)'}\n\n${result.plan}`
                     }
                   } else {
-                    // MCP filesystem tool
-                    const route = paestroToolRouteMap.get(toolName)
+                    // MCP tool — try exact match first, then resolve common name mismatches.
+                    // Models often call "shell__pwd" when the actual tool is "shell__shell_pwd"
+                    // because the MCP tool name already includes the server prefix (shell_pwd).
+                    let route = paestroToolRouteMap.get(toolName)
                     if (!route) {
-                      content = `Error: Unknown tool "${toolName}"`
+                      // Try: server__tool → server__server_tool (e.g. shell__pwd → shell__shell_pwd)
+                      const sep = toolName.indexOf('__')
+                      if (sep > 0) {
+                        const server = toolName.slice(0, sep)
+                        const tool = toolName.slice(sep + 2)
+                        const prefixed = `${server}__${server}_${tool}`
+                        route = paestroToolRouteMap.get(prefixed)
+                        if (route) log.info(`[67] Tool name resolved: ${toolName} → ${prefixed}`)
+                      }
+                    }
+                    if (!route) {
+                      // Last resort: fuzzy match — find any tool ending with the requested name
+                      const suffix = '__' + toolName.split('__').pop()
+                      for (const [key, val] of paestroToolRouteMap) {
+                        if (key.endsWith(suffix) || key.endsWith('_' + toolName.split('__').pop())) {
+                          route = val
+                          log.info(`[67] Tool name fuzzy matched: ${toolName} → ${key}`)
+                          break
+                        }
+                      }
+                    }
+                    if (!route) {
+                      content = `Error: Unknown tool "${toolName}". Available tools include: ${[...paestroToolRouteMap.keys()].slice(0, 20).join(', ')}`
                     } else {
                       const result = await manager.callTool(route.server, route.tool, toolArgs)
                       content = result.content?.map(c => c.text || JSON.stringify(c)).join('\n') || ''
