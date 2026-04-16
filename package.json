@@ -36,7 +36,7 @@
     "@thelord/mcp-cloudflare": "^1.6.0",
     "dexie": "^4.3.0",
     "diff": "^8.0.3",
-    "dompurify": "^3.3.3",
+    "dompurify": "^3.4.0",
     "express": "^5.1.0",
     "fuse.js": "^7.1.0",
     "googleapis": "^144.0.0",
