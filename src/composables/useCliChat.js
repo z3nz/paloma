@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { isDirectCliModel, isCodexModel, isCopilotModel, isGeminiModel, isOllamaModel, isQuinnGen5Model, isHolyTrinityModel, isArkModel, isHydraModel, isAccordionModel, isPaestroModel, getCliModelName, getCodexModelName, getCopilotModelName, getGeminiModelName, getOllamaModelName, streamClaudeChat, streamCodexChat, streamCopilotChat, streamGeminiChat, streamOllamaChat } from '../services/claudeStream.js'
+import { resolveBackend } from '../services/backendDispatch.js'
 import { useMCP } from './useMCP.js'
 import { useProject } from './useProject.js'
 import { useToolExecution } from './useToolExecution.js'
@@ -9,47 +9,7 @@ import { classifyResult, sanitizeForDB } from '../utils/toolClassifier.js'
 import db from '../services/db.js'
 
 /**
- * Resolve which backend, model name, send function, and stream generator to use.
- */
-function resolveBackend(model) {
-  const { sendClaudeChat, sendCodexChat, sendCopilotChat, sendGeminiChat, sendOllamaChat, sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, sendAccordionChat, sendPaestroChat, stopClaudeChat, stopCodexChat, stopCopilotChat, stopGeminiChat, stopOllamaChat } = useMCP()
-
-  if (isPaestroModel(model)) {
-    return { backendKey: 'ollama', modelName: getOllamaModelName(model), sendFn: sendPaestroChat, streamGenerator: streamOllamaChat, stopFn: stopOllamaChat }
-  }
-  if (isAccordionModel(model)) {
-    return { backendKey: 'ollama', modelName: getOllamaModelName(model), sendFn: sendAccordionChat, streamGenerator: streamOllamaChat, stopFn: stopOllamaChat }
-  }
-  if (isHydraModel(model)) {
-    return { backendKey: 'ollama', modelName: getOllamaModelName(model), sendFn: sendHydraChat, streamGenerator: streamOllamaChat, stopFn: stopOllamaChat }
-  }
-  if (isArkModel(model)) {
-    return { backendKey: 'ollama', modelName: getOllamaModelName(model), sendFn: sendArkChat, streamGenerator: streamOllamaChat, stopFn: stopOllamaChat }
-  }
-  if (isHolyTrinityModel(model)) {
-    return { backendKey: 'ollama', modelName: getOllamaModelName(model), sendFn: sendHolyTrinityChat, streamGenerator: streamOllamaChat, stopFn: stopOllamaChat }
-  }
-  if (isQuinnGen5Model(model)) {
-    return { backendKey: 'ollama', modelName: getOllamaModelName(model), sendFn: sendQuinnGen5Chat, streamGenerator: streamOllamaChat, stopFn: stopOllamaChat }
-  }
-  if (isOllamaModel(model)) {
-    return { backendKey: 'ollama', modelName: getOllamaModelName(model), sendFn: sendOllamaChat, streamGenerator: streamOllamaChat, stopFn: stopOllamaChat }
-  }
-  if (isGeminiModel(model)) {
-    return { backendKey: 'gemini', modelName: getGeminiModelName(model), sendFn: sendGeminiChat, streamGenerator: streamGeminiChat, stopFn: stopGeminiChat }
-  }
-  if (isCopilotModel(model)) {
-    return { backendKey: 'copilot', modelName: getCopilotModelName(model), sendFn: sendCopilotChat, streamGenerator: streamCopilotChat, stopFn: stopCopilotChat }
-  }
-  if (isCodexModel(model)) {
-    return { backendKey: 'codex', modelName: getCodexModelName(model), sendFn: sendCodexChat, streamGenerator: streamCodexChat, stopFn: stopCodexChat }
-  }
-  // Default: Claude CLI
-  return { backendKey: 'claude', modelName: getCliModelName(model), sendFn: sendClaudeChat, streamGenerator: streamClaudeChat, stopFn: stopClaudeChat }
-}
-
-/**
- * Runs a CLI chat turn: streams Claude CLI output and returns { content, usage }.
+ * Runs a CLI chat turn: streams CLI output and returns { content, usage }.
  * Also persists the cliSessionId on the DB session.
  */
 export async function runCliChat({ sessionId, model, fullContent, phase, projectInstructions, activePlans, roots, onContent, sessionState, thinkMode, paestroMode, hydraAngels }) {
@@ -67,12 +27,13 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   const isHydra = isHydraModel(model)
   const isAccordion = isAccordionModel(model)
   const isPaestro = isPaestroModel(model)
-  const dispatch = resolveBackend(model)
+  
+  const { sendFn, stopFn, streamGenerator, modelName, backendKey } = resolveBackend(model)
   const session = await db.sessions.get(sessionId)
 
   // If backend changed from previous session, start fresh
   const existingBackend = session?.cliBackend || 'claude'
-  const currentBackend = dispatch.backendKey
+  const currentBackend = backendKey
   const existingCliSession = (existingBackend === currentBackend) ? (session?.cliSessionId || null) : null
 
   // Recovery: if starting a new CLI session but prior user messages exist without
@@ -93,18 +54,17 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
 
   // Codex/Copilot direct chats do not get the pillar-manager resume reminder, so
   // reinforce Paloma's identity on resumed turns here to reduce backend drift.
-  if (existingCliSession && (dispatch.backendKey === 'codex' || dispatch.backendKey === 'copilot')) {
+  if (existingCliSession && (backendKey === 'codex' || backendKey === 'copilot')) {
     const phaseLabel = phase
       ? phase.charAt(0).toUpperCase() + phase.slice(1)
       : 'Flow'
-    const competingName = dispatch.backendKey === 'codex' ? 'an OpenAI assistant' : 'GitHub Copilot'
-    const identityReminder = `[IDENTITY: You are Paloma — not ${competingName}. ` +
+    const identityReminder = `[IDENTITY: You are Paloma — not ${backendKey === 'codex' ? 'an OpenAI assistant' : 'GitHub Copilot'}. ` +
       `You are Paloma, an AI development partner. Current phase: ${phaseLabel}. ` +
       `Follow all behavioral rules from your initial instructions.]\n\n`
     prompt = identityReminder + prompt
   }
 
-  const resolvedModel = dispatch.modelName
+  const resolvedModel = modelName
   const cliOptions = {
     prompt,
     model: resolvedModel,
@@ -114,8 +74,8 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
       ? undefined
       : buildSystemPrompt(phase, projectInstructions, activePlans, [], roots),
     cwd: useProject().projectRoot.value || undefined,
-    enableTools: dispatch.backendKey === 'ollama' ? true : undefined,
-    freshContext: (dispatch.backendKey === 'ollama' && !isGen5 && !isGen6 && !isGen7 && !isHydra && !isAccordion && !isPaestro) ? true : undefined,
+    enableTools: backendKey === 'ollama' ? true : undefined,
+    freshContext: (backendKey === 'ollama' && !isGen5 && !isGen6 && !isGen7 && !isHydra && !isAccordion && !isPaestro) ? true : undefined,
     thinkMode: thinkMode || undefined,
     paestroMode: paestroMode || undefined,
     hydraAngels: hydraAngels || undefined,
@@ -127,10 +87,10 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
   const toolUseToActivity = new Map()  // toolUseId → activityId
   const toolUseMeta = new Map()        // toolUseId → { name, args }
 
-  const sendFn = (opts, cbs) => dispatch.sendFn(opts, cbs)
-  const streamGenerator = dispatch.streamGenerator || streamClaudeChat
+  const sendFnLocal = (opts, cbs) => sendFn(opts, cbs)
+  const streamGen = streamGenerator || streamClaudeChat
 
-  for await (const chunk of streamGenerator(sendFn, cliOptions)) {
+  for await (const chunk of streamGen(sendFnLocal, cliOptions)) {
     if (chunk.type === 'content') {
       accumulatedContent.value += chunk.text
       onContent(accumulatedContent.value)
@@ -147,7 +107,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
         const cliSessionIdToRegister = chunk.sessionId || existingCliSession
         if (cliSessionIdToRegister) {
           const { registerFlowSession } = useMCP()
-          const resolvedModelName = dispatch.modelName
+          const resolvedModelName = modelName
           registerFlowSession(cliSessionIdToRegister, resolvedModelName, cliOptions.cwd, sessionId)
         }
       }
@@ -228,8 +188,8 @@ export function stopCli(sessionState, model) {
     sessionState = activeState()
   }
   if (sessionState.cliRequestId) {
-    const d = resolveBackend(model)
-    d.stopFn(sessionState.cliRequestId)
+    const { stopFn: stopFnForModel } = resolveBackend(model)
+    stopFnForModel(sessionState.cliRequestId)
     sessionState.cliRequestId = null
   }
 }

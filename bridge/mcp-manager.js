@@ -68,17 +68,22 @@ export class McpManager {
     if (!entry) throw new Error(`Unknown server: ${serverName}`)
     if (entry.status !== 'connected') throw new Error(`Server ${serverName} is not connected (status: ${entry.status})`)
 
-    let timer
+    const controller = new AbortController()
+    const { signal } = controller
+
+    let timeoutId = null
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        controller.abort()
+        reject(new Error(`MCP server ${serverName}.${toolName} timed out after ${Math.round(timeout / 1000)}s`))
+      }, timeout)
+    })
+
     try {
-      const result = await Promise.race([
-        entry.client.callTool({ name: toolName, arguments: args }),
-        new Promise((_, reject) => {
-          timer = setTimeout(() => reject(new Error(`MCP server ${serverName}.${toolName} timed out after ${Math.round(timeout / 1000)}s`)), timeout)
-        })
-      ])
+      const result = await Promise.race([timeoutPromise, entry.client.callTool({ name: toolName, arguments: args, signal })])
       return result
     } finally {
-      clearTimeout(timer)
+      clearTimeout(timeoutId)
     }
   }
 

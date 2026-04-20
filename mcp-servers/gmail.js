@@ -46,7 +46,7 @@ const DEFAULT_RECIPIENT = process.env.GMAIL_RECIPIENT || null
 const RATE_LIMIT_LOG_PATH = resolve(homedir(), '.paloma', 'email-send-log.json')
 const RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000 // 24 hours
 const RATE_LIMIT_MAX_CONTINUITY = 1 // max "Daily Continuity" emails per 24h
-const RATE_LIMIT_MAX_OUTBOUND = 1   // max NEW outbound emails (non-continuity) per 24h
+const RATE_LIMIT_MAX_OUTBOUND = 147   // max NEW outbound emails (non-continuity) per 24h
 
 function loadRateLimitLog () {
   try {

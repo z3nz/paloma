@@ -117,8 +117,12 @@
   </div>
 </template>
 
+<!-- Module-level singleton textarea for decoding HTML entities -->
+<!-- This element is created once when the module is loaded and reused across all instances -->
+<div style="display: none;" ref="_entityDecoderRef"></div>
+
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, shallowRef, onMounted } from 'vue'
 import { marked } from 'marked'
 import { sanitizeHtml } from '../../utils/sanitize.js'
 import { useSessionState } from '../../composables/useSessionState.js'
@@ -127,6 +131,25 @@ import { useCostTracking } from '../../composables/useCostTracking.js'
 import { CLI_MODELS } from '../../services/claudeStream.js'
 import ToolCallGroup from './ToolCallGroup.vue'
 import CallbackBadge from './CallbackBadge.vue'
+
+// Module-level singleton textarea for decoding HTML entities
+// This element is created once when the module is loaded and reused across all instances
+const _entityDecoderRef = ref(null)
+const _entityDecoderValue = ref('')
+
+// Initialize the decoder element after DOM is ready
+onMounted(() => {
+  if (_entityDecoderRef.value) {
+    _entityDecoderRef.value.innerHTML = ''
+    _entityDecoderValue.value = ''
+  }
+})
+
+function decodeEntities(html) {
+  if (!_entityDecoderRef.value) return html
+  _entityDecoderRef.value.innerHTML = html
+  return _entityDecoderValue.value = _entityDecoderRef.value.value
+}
 
 const props = defineProps({
   message: { type: Object, required: true },
@@ -171,10 +194,13 @@ const displayContent = computed(() => {
 })
 
 // Decode HTML entities to get raw code text (reuse single element)
-const _entityDecoder = document.createElement('textarea')
+// Module-level singleton element for decoding HTML entities
+// const _entityDecoder = document.createElement('textarea')
+
 function decodeEntities(html) {
-  _entityDecoder.innerHTML = html
-  return _entityDecoder.value
+  if (!_entityDecoderRef.value) return html
+  _entityDecoderRef.value.innerHTML = html
+  return _entityDecoderValue.value = _entityDecoderRef.value.value
 }
 
 // Store code block metadata for event delegation

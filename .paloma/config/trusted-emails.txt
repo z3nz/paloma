@@ -1,0 +1,10 @@
+# Trusted Emails Configuration
+# Paloma processes emails from these addresses without spam filtering
+# Format: one email per line
+
+# Core Verifesto team
+paloma@verifesto.com
+kelynglow@gmail.com
+
+# Adam's personal emails
+hello@adamtrager.com
