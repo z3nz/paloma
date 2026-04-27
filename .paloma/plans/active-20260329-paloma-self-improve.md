@@ -31,11 +31,12 @@ If an MCP server process crashes, it stays dead until bridge restart. Fix: add h
 
 ## Work Units
 
-### WU-1: Quick Fixes (Flow direct)
-- Fix MCP Manager timeout leak
-- Fix decodeEntities textarea reuse
-- Create backend dispatch utility
-**Files:** `bridge/mcp-manager.js`, `src/components/chat/MessageItem.vue`, `src/services/backendDispatch.js` (new), `src/composables/useCliChat.js`
+### WU-1: Quick Fixes ✅ COMPLETED (2026-04-25)
+- Fixed MCP Manager timeout leak — `Promise.race` + `finally { clearTimeout }` pattern
+- Fixed decodeEntities — lazy-initialized module-level singleton textarea
+- Created backend dispatch utility — `src/services/backendDispatch.js` with full lookup table
+**Files:** `bridge/mcp-manager.js`, `src/components/chat/MessageItem.vue`, `src/services/backendDispatch.js`, `src/composables/useCliChat.js`
+**Note:** A subsequent Forge session (flow-spawned-548) overwrote these files with broken versions (syntax errors, duplicate declarations, empty stubs). The working committed versions were restored on 2026-04-25.
 
 ### WU-2: Bridge Route Extraction (Forge)
 - Extract HTTP route handlers from index.js into modular files

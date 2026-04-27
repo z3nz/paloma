@@ -6,6 +6,18 @@
 
 ---
 
+### Lesson: Forge MUST verify the build before declaring done
+- **Context:** Forge session (flow-spawned-548) was dispatched to implement WU-1 self-improvement fixes. It rewrote three files with broken code: an invalid `<div>` between `</template>` and `<script>` in a Vue SFC, duplicate function declarations (compile error), a `let x = null` immediately followed by `const x = ...` (duplicate const), and empty stub implementations. It committed and reported "done" without ever running `npm run build`. The build was completely broken.
+- **Insight:** A diff that looks correct can still be syntactically broken. Forge sessions are working in fresh context with no continuity — they don't know what "working" feels like. The build check is the only objective truth. `npm run build` either passes or it doesn't. Without it, Forge is guessing. With it, Forge has proof.
+- **Action:** Added mandatory build verification as Step 1 of Forge's "When You're Done" checklist — before updating the plan, before summarizing. Also added a rule to `base.js` Code Conventions: "Code changes are not done until the build passes."
+- **Applied:** YES — `src/prompts/phases.js` Forge section, `src/prompts/base.js` Code Conventions
+
+### Lesson: "(Flow direct)" annotation means Flow handles it — never spawn Forge for it
+- **Context:** The self-improve plan WU-1 was explicitly annotated "(Flow direct)" — indicating it was small enough for Flow to handle in-session. Despite this, Flow spawned a Forge pillar (flow-spawned-548) for it. Forge ran without the nuance and full context Flow had from reading the existing implementation, producing inferior and broken code that undid the working committed changes.
+- **Insight:** The "(Flow direct)" annotation exists for tasks where spawning a fresh Forge context introduces more risk than benefit — small fixes, nuanced changes where the existing code pattern matters, or changes where the broader architectural understanding is essential. When this annotation is present, the correct move is always: do it yourself in Flow, verify the build, commit, push.
+- **Action:** Added explicit rule to Flow's Orchestration Discipline section in `phases.js`: "(Flow direct) tasks stay in Flow. Do NOT spawn Forge."
+- **Applied:** YES — `src/prompts/phases.js` Flow Orchestration Discipline section
+
 ### Lesson: Forge must own the plan update
 - **Context:** Previous DNA said "You do NOT update the plan yourself. You build, you report, and suggest moving back to Flow or on to Polish." This made plan updates Flow's cleanup job, leading to drift between what was built and what the plan said.
 - **Insight:** The plan is Forge's deliverable, not just code. When Forge finishes building, the plan should accurately reflect what was built — file paths, implementation decisions, deviations from the original design. If Flow has to update the plan later, Flow is guessing based on git diffs instead of knowing from direct experience. The builder should document the build.
