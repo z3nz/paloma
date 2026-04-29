@@ -103,7 +103,8 @@ export class BackendHealth {
     await this._generateMachineProfile()
 
     // Ensure canonical Ollama model set: remove superseded, pull missing
-    await this.ensureOllamaModels()
+    // Fire-and-forget so bridge starts immediately — model management runs in background
+    this.ensureOllamaModels().catch(e => log.warn(`ensureOllamaModels error: ${e.message}`))
 
     return this.getSummary()
   }
@@ -370,18 +371,19 @@ export class BackendHealth {
 
   /**
    * Ensure the canonical Ollama model set is installed.
-   * Removes superseded models synchronously, then fires off background pulls for missing preferred models.
-   * Safe to call at startup — deletions are fast, pulls are non-blocking.
+   * Everything runs in the background via setImmediate — bridge starts immediately.
+   * Deletions of superseded models and pulls of missing models are fully non-blocking.
    */
   async ensureOllamaModels() {
     if (!this.status.ollama?.available) return
 
     const base = process.env.OLLAMA_HOST || 'http://localhost:11434'
-    const installed = this.status.ollama.models || []
 
-    // Remove superseded models — fast local DELETE, do synchronously before startup completes
-    for (const model of SUPERSEDED_MODELS) {
-      if (installed.includes(model)) {
+    // Remove superseded models in background — runs after bridge is up
+    setImmediate(async () => {
+      const installed = [...(this.status.ollama.models || [])]
+      for (const model of SUPERSEDED_MODELS) {
+        if (!installed.includes(model)) continue
         try {
           const res = await fetch(`${base}/api/delete`, {
             method: 'DELETE',
@@ -390,26 +392,26 @@ export class BackendHealth {
             signal: AbortSignal.timeout(10000)
           })
           if (res.ok) {
-            log.info(`Removed superseded model: ${model}`)
+            log.info(`[ollama] Removed superseded model: ${model}`)
             const idx = this.status.ollama.models.indexOf(model)
             if (idx !== -1) this.status.ollama.models.splice(idx, 1)
           } else {
-            log.warn(`Could not remove ${model}: ${res.status}`)
+            log.warn(`[ollama] Could not remove ${model}: ${res.status}`)
           }
         } catch (e) {
-          log.warn(`Failed to remove ${model}: ${e.message}`)
+          log.warn(`[ollama] Failed to remove ${model}: ${e.message}`)
         }
       }
-    }
+    })
 
     // Pull missing preferred models in background — large models take minutes
     const currentInstalled = this.status.ollama.models
     const missing = PREFERRED_MODELS.filter(m => !currentInstalled.includes(m))
     if (missing.length === 0) return
 
-    log.info(`Scheduling background pull for: ${missing.join(', ')}`)
+    log.info(`Background pull queued for: ${missing.join(', ')}`)
 
-    // Sequential pulls to avoid saturating bandwidth — fire and forget
+    // Sequential pulls to avoid saturating bandwidth — fully non-blocking
     setImmediate(async () => {
       const base2 = process.env.OLLAMA_HOST || 'http://localhost:11434'
       for (const model of missing) {
@@ -422,7 +424,7 @@ export class BackendHealth {
               const freshData = await freshRes.json()
               const nowInstalled = (freshData.models || []).map(m => m.name || m.model)
               if (nowInstalled.includes(model)) {
-                log.info(`${model} already installed, skipping pull`)
+                log.info(`[ollama] ${model} already installed, skipping pull`)
                 if (!this.status.ollama.models.includes(model)) this.status.ollama.models.push(model)
                 continue
               }
@@ -431,25 +433,52 @@ export class BackendHealth {
             // ignore — proceed with pull attempt
           }
 
-          log.info(`Pulling ${model} (this may take several minutes)...`)
+          log.info(`[ollama] Pulling ${model} in background...`)
           const res = await fetch(`${base2}/api/pull`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model, stream: false })
+            body: JSON.stringify({ model, stream: true })
             // No timeout — large models can take 30+ minutes on slow connections
           })
-          if (res.ok) {
-            log.info(`✓ Pulled ${model}`)
-            if (!this.status.ollama.models.includes(model)) {
-              this.status.ollama.models.push(model)
+          if (!res.ok) {
+            const body = await res.text().catch(() => '')
+            log.warn(`[ollama] Pull failed for ${model}: ${res.status} ${body.slice(0, 200)}`)
+            continue
+          }
+
+          // Consume NDJSON stream — each chunk is a progress event
+          let success = false
+          let lastStatus = ''
+          const decoder = new TextDecoder()
+          for await (const chunk of res.body) {
+            const text = decoder.decode(chunk, { stream: true })
+            for (const line of text.split('\n')) {
+              if (!line.trim()) continue
+              try {
+                const evt = JSON.parse(line)
+                if (evt.status && evt.status !== lastStatus) {
+                  lastStatus = evt.status
+                  if (evt.total && evt.completed) {
+                    const pct = Math.round((evt.completed / evt.total) * 100)
+                    log.info(`[ollama] ${model}: ${evt.status} ${pct}%`)
+                  } else {
+                    log.info(`[ollama] ${model}: ${evt.status}`)
+                  }
+                }
+                if (evt.status === 'success') success = true
+              } catch { /* non-JSON line, ignore */ }
             }
+          }
+
+          if (success) {
+            log.info(`[ollama] ✓ ${model} pulled successfully`)
+            if (!this.status.ollama.models.includes(model)) this.status.ollama.models.push(model)
             await this._generateMachineProfile()
           } else {
-            const body = await res.text().catch(() => '')
-            log.warn(`Pull failed for ${model}: ${res.status} ${body.slice(0, 200)}`)
+            log.warn(`[ollama] Pull stream ended without success for ${model}`)
           }
         } catch (e) {
-          log.warn(`Error pulling ${model}: ${e.message}`)
+          log.warn(`[ollama] Error pulling ${model}: ${e.message}`)
         }
       }
     })
