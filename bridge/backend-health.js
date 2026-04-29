@@ -16,7 +16,7 @@ const FALLBACK_CHAIN = ['claude', 'copilot', 'gemini', 'codex', 'ollama']
  * Pull missing, remove superseded. Background pulls don't block startup.
  */
 const PREFERRED_MODELS = [
-  'gemma4:27b',               // native tool calling architecture (Apr 2026) — zero dropped calls
+  'gemma4:26b',               // native tool calling architecture (Apr 2026) — zero dropped calls
   'qwen3.5:35b',              // best large model — MLX-accelerated on Apple Silicon
   'qwen3.5:9b',               // best small/worker model
   'nomic-embed-text:latest',  // required for memory MCP server embeddings

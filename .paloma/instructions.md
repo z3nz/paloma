@@ -61,7 +61,7 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 Managed automatically by `bridge/backend-health.js` on every startup. No manual `ollama pull` needed.
 
 **Preferred (auto-pulled if missing):**
-- `gemma4:27b` — native tool calling architecture (Apr 2026), zero dropped function calls
+- `gemma4:26b` — native tool calling architecture (Apr 2026), zero dropped function calls
 - `qwen3.5:35b` — best large model, MLX-accelerated on Apple Silicon
 - `qwen3.5:9b` — best small/worker model
 - `nomic-embed-text:latest` — required for memory MCP server embeddings
