@@ -349,7 +349,7 @@ export class BackendHealth {
   async checkOllama() {
     const now = new Date().toISOString()
     try {
-      const response = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(5000) })
+      const response = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(15000) })
       if (!response.ok) {
         this.status.ollama = { available: false, reason: `API returned ${response.status}`, lastCheck: now, models: [] }
         return
@@ -414,6 +414,23 @@ export class BackendHealth {
       const base2 = process.env.OLLAMA_HOST || 'http://localhost:11434'
       for (const model of missing) {
         try {
+          // Re-fetch the model list right before pulling — startup list may be stale
+          // (race: Ollama can be slow at boot, causing checkOllama to miss installed models)
+          try {
+            const freshRes = await fetch(`${base2}/api/tags`, { signal: AbortSignal.timeout(10000) })
+            if (freshRes.ok) {
+              const freshData = await freshRes.json()
+              const nowInstalled = (freshData.models || []).map(m => m.name || m.model)
+              if (nowInstalled.includes(model)) {
+                log.info(`${model} already installed, skipping pull`)
+                if (!this.status.ollama.models.includes(model)) this.status.ollama.models.push(model)
+                continue
+              }
+            }
+          } catch {
+            // ignore — proceed with pull attempt
+          }
+
           log.info(`Pulling ${model} (this may take several minutes)...`)
           const res = await fetch(`${base2}/api/pull`, {
             method: 'POST',
