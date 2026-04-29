@@ -20,7 +20,7 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 ### Multi-Backend Architecture
 - PillarManager accepts a `backends` map: `{ claude: ClaudeCliManager, codex: CodexCliManager, copilot: CopilotCliManager, gemini: GeminiCliManager, ollama: OllamaManager }`
 - Each pillar session has a `backend` field — selected via `pillar_spawn({ backend: 'copilot' })`
-- Flow always runs on Claude (needs MCP tool loop for pillar orchestration)
+- Flow backend is configurable via machine-profile.json preferences — defaults to Ollama on this machine (M5 Max, 128GB). All backends support the MCP tool loop for pillar orchestration.
 - Claude emits `claude_stream`/`claude_done`/`claude_error`; Codex emits `codex_stream`/`codex_done`/`codex_error`; Copilot emits `copilot_stream`/`copilot_done`/`copilot_error`; Gemini emits `gemini_stream`/`gemini_done`/`gemini_error`
 - All event types handled in `_handleCliEvent` with backend-specific text extraction
 - Browser receives `backend` field in `pillar_stream` events for format-aware rendering

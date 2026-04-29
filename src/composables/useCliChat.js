@@ -6,6 +6,16 @@ import { useToolExecution } from './useToolExecution.js'
 import { useSessionState } from './useSessionState.js'
 import { buildSystemPrompt, buildOllamaSystemPrompt } from './useSystemPrompt.js'
 import { classifyResult, sanitizeForDB } from '../utils/toolClassifier.js'
+import {
+  isQuinnGen5Model,
+  isHolyTrinityModel,
+  isArkModel,
+  isHydraModel,
+  isAccordionModel,
+  isPaestroModel,
+  isDirectCliModel,
+  streamClaudeChat
+} from '../services/claudeStream.js'
 import db from '../services/db.js'
 
 /**

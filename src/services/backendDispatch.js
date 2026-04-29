@@ -90,12 +90,16 @@ export function resolveBackend(model) {
   const modelInfo = MODEL_INFO[model]
   
   if (modelInfo) {
+    const resolvedModelName = typeof modelInfo.name === 'function'
+      ? modelInfo.name(model)
+      : modelInfo.name
+
     // Model found in lookup table - return directly
     return {
       sendFn: (opts, cbs) => modelInfo.send(opts, cbs),
       stopFn: modelInfo.stop,
       streamGenerator: modelInfo.send,
-      modelName: modelInfo.name(model),
+      modelName: resolvedModelName,
       backendKey: modelInfo.backend
     }
   }

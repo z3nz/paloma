@@ -348,7 +348,7 @@ export class PillarManager {
             : (singularityRole === 'quinn' || singularityRole === 'quinn-gen4' || singularityRole === 'quinn-legacy' || singularityRole === 'quinn-fresh' || singularityRole === 'voice' || singularityRole === 'thinker') ? 65536
             : (singularityRole === 'quinn-gen5') ? 40960
             : (singularityRole === 'worker') ? 32768
-            : null,
+            : this.health?.machineProfile?.preferences?.ollamaNumCtx || null,
       _voiceStreamBuffer: '',       // Voice only: buffer for <to-thinker> tag detection
       _receivedThinkerMessages: 0   // Voice only: count of [THINKER] messages received
     }
@@ -1311,7 +1311,7 @@ export class PillarManager {
     const voiceResult = await this.spawn({
       pillar,
       prompt,
-      model: model || 'qwen3-coder:30b',
+      model: model || this._pickBestOllamaModel(false),
       flowRequestId,
       planFile,
       backend,
@@ -1329,7 +1329,7 @@ export class PillarManager {
     const thinkerResult = await this.spawn({
       pillar,
       prompt: `Adam asks: ${prompt}\n\nBegin exploring. Use your tools to research this question, then send your findings to Voice.`,
-      model: model || 'qwen3-coder:30b',
+      model: model || this._pickBestOllamaModel(false),
       flowRequestId,
       planFile,
       backend,
@@ -3582,13 +3582,20 @@ This is informational — Adam is communicating directly with the pillar. Decide
 
     // Sub-workers prefer small/fast models
     if (preferSmall) {
-      const small = models.find(m => m.includes('7b') || m.includes('3b') || m.includes('mini'))
+      const small =
+        models.find(m => m.includes('qwen3.5') && (m.includes(':9b') || m.includes('-9b'))) ||  // qwen3.5:9b — reasoning-capable small
+        models.find(m => m.includes('7b') || m.includes('3b') || m.includes('mini'))
       if (small) return small
     }
 
     // Preference order for main sessions (highest capability first)
     const PREFERENCES = [
-      m => m.includes('qwen3.5') && !m.includes('0.8b') && !m.includes('2b') && !m.includes('4b'),  // qwen3.5 large (MLX fast)
+      m => m.includes('qwen3.5-coder') && !m.includes('0.8b') && !m.includes('7b'),             // Qwen3.5-Coder (native tool calling, gold standard)
+      m => (m.includes('gemma4') || m.includes('gemma-4')) && !m.includes('2b') && !m.includes('4b'),  // Gemma 4 (native tool calling architecture)
+      m => m.includes('qwen3.5') && m.includes('35b'),                                           // qwen3.5:35b MoE — MLX blazing speed
+      m => m.includes('qwen3-coder') && (m.includes('q8') || m.includes('Q8')),                  // qwen3-coder Q8 — highest quant quality
+      m => m.includes('llama4') && !m.includes('7b') && !m.includes('8b'),                      // Llama 4 Scout (native tool calling)
+      m => m.includes('qwen3.5') && !m.includes('0.8b') && !m.includes('2b') && !m.includes('4b'),
       m => m.includes('qwen3-coder') && !m.includes('7b'),
       m => m.includes('qwen3-coder'),
       m => m.includes('qwen2.5-coder') && !m.includes('7b'),
@@ -3611,12 +3618,13 @@ This is informational — Adam is communicating directly with the pillar. Decide
   _pickPaestroModel() {
     const models = this.health?.status?.ollama?.models || []
     const PREFERENCES = [
-      m => m.includes('qwen3.5') && m.includes('35b'),           // qwen3.5:35b MoE — MLX blazing speed
-      m => m.includes('qwen3-coder') && (m.includes('q8') || m.includes('Q8')),  // Q8 highest quality
-      m => m.includes('qwen3.5') && m.includes('27b'),           // qwen3.5:27b dense — MLX fast
-      m => m.includes('qwen3-coder') && !m.includes('7b'),       // qwen3-coder 30B MoE
-      m => m.includes('qwen3') && m.includes('32b'),             // qwen3:32b dense
-      m => m.includes('qwen2.5-coder') && !m.includes('7b'),    // qwen2.5-coder 32B
+      m => m.includes('qwen3.5-coder') && !m.includes('7b'),                         // Qwen3.5-Coder — best tool calling
+      m => m.includes('qwen3.5') && m.includes('35b'),                               // qwen3.5:35b MoE — MLX blazing speed
+      m => m.includes('qwen3-coder') && (m.includes('q8') || m.includes('Q8')),      // qwen3-coder Q8 — highest quant quality
+      m => m.includes('qwen3.5') && m.includes('27b'),                               // qwen3.5:27b dense — MLX fast
+      m => m.includes('qwen3-coder') && !m.includes('7b'),                           // qwen3-coder 30B MoE
+      m => m.includes('qwen3') && m.includes('32b'),                                 // qwen3:32b dense
+      m => m.includes('qwen2.5-coder') && !m.includes('7b'),                         // qwen2.5-coder 32B
     ]
     for (const test of PREFERENCES) {
       const match = models.find(test)
