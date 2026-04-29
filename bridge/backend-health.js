@@ -12,6 +12,26 @@ const log = createLogger('health')
 const FALLBACK_CHAIN = ['claude', 'copilot', 'gemini', 'codex', 'ollama']
 
 /**
+ * Canonical Ollama model set — ensured on every machine at bridge startup.
+ * Pull missing, remove superseded. Background pulls don't block startup.
+ */
+const PREFERRED_MODELS = [
+  'gemma4:27b',               // native tool calling architecture (Apr 2026) — zero dropped calls
+  'qwen3.5:35b',              // best large model — MLX-accelerated on Apple Silicon
+  'qwen3.5:9b',               // best small/worker model
+  'nomic-embed-text:latest',  // required for memory MCP server embeddings
+]
+
+const SUPERSEDED_MODELS = [
+  'qwen3.5:27b',          // redundant between 35b and 9b
+  'qwen3:32b',            // superseded by qwen3.5:35b
+  'qwen3:8b',             // superseded by qwen3.5:9b
+  'qwen3-coder:30b',      // superseded by qwen3-coder:30b-a3b-q8_0 (same model, better quant)
+  'qwen2.5-coder:32b',    // superseded by qwen3.5 family
+  'qwen2.5-coder:7b',     // superseded by qwen3.5:9b
+]
+
+/**
  * Probes each AI backend's readiness at bridge startup and caches results.
  *
  * Health is checked once at startup. Runtime failures (from PillarManager's
@@ -79,8 +99,11 @@ export class BackendHealth {
     // Start periodic re-probes for backends that were unavailable
     this._startReprobeTimer()
 
-    // WU-2: Generate machine profile after checks
+    // Generate machine profile after checks
     await this._generateMachineProfile()
+
+    // Ensure canonical Ollama model set: remove superseded, pull missing
+    await this.ensureOllamaModels()
 
     return this.getSummary()
   }
@@ -343,6 +366,76 @@ export class BackendHealth {
     } catch {
       this.status.ollama = { available: false, reason: 'service not running', lastCheck: now, models: [] }
     }
+  }
+
+  /**
+   * Ensure the canonical Ollama model set is installed.
+   * Removes superseded models synchronously, then fires off background pulls for missing preferred models.
+   * Safe to call at startup — deletions are fast, pulls are non-blocking.
+   */
+  async ensureOllamaModels() {
+    if (!this.status.ollama?.available) return
+
+    const base = process.env.OLLAMA_HOST || 'http://localhost:11434'
+    const installed = this.status.ollama.models || []
+
+    // Remove superseded models — fast local DELETE, do synchronously before startup completes
+    for (const model of SUPERSEDED_MODELS) {
+      if (installed.includes(model)) {
+        try {
+          const res = await fetch(`${base}/api/delete`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model }),
+            signal: AbortSignal.timeout(10000)
+          })
+          if (res.ok) {
+            log.info(`Removed superseded model: ${model}`)
+            const idx = this.status.ollama.models.indexOf(model)
+            if (idx !== -1) this.status.ollama.models.splice(idx, 1)
+          } else {
+            log.warn(`Could not remove ${model}: ${res.status}`)
+          }
+        } catch (e) {
+          log.warn(`Failed to remove ${model}: ${e.message}`)
+        }
+      }
+    }
+
+    // Pull missing preferred models in background — large models take minutes
+    const currentInstalled = this.status.ollama.models
+    const missing = PREFERRED_MODELS.filter(m => !currentInstalled.includes(m))
+    if (missing.length === 0) return
+
+    log.info(`Scheduling background pull for: ${missing.join(', ')}`)
+
+    // Sequential pulls to avoid saturating bandwidth — fire and forget
+    setImmediate(async () => {
+      const base2 = process.env.OLLAMA_HOST || 'http://localhost:11434'
+      for (const model of missing) {
+        try {
+          log.info(`Pulling ${model} (this may take several minutes)...`)
+          const res = await fetch(`${base2}/api/pull`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model, stream: false })
+            // No timeout — large models can take 30+ minutes on slow connections
+          })
+          if (res.ok) {
+            log.info(`✓ Pulled ${model}`)
+            if (!this.status.ollama.models.includes(model)) {
+              this.status.ollama.models.push(model)
+            }
+            await this._generateMachineProfile()
+          } else {
+            const body = await res.text().catch(() => '')
+            log.warn(`Pull failed for ${model}: ${res.status} ${body.slice(0, 200)}`)
+          }
+        } catch (e) {
+          log.warn(`Error pulling ${model}: ${e.message}`)
+        }
+      }
+    })
   }
 
   async _hasGhAuthToken() {

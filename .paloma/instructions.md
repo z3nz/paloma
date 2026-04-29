@@ -57,6 +57,19 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - Plan document on disk is the source of truth for orchestration state
 - **Ollama spawn queue:** When MAX_CONCURRENT_OLLAMA (4) is hit, new spawns queue in FIFO with `status: 'queued'` instead of being rejected. Dequeues automatically when slots open. Deadlock prevention excludes parents waiting on children from active count.
 
+### Ollama Canonical Model Set
+Managed automatically by `bridge/backend-health.js` on every startup. No manual `ollama pull` needed.
+
+**Preferred (auto-pulled if missing):**
+- `gemma4:27b` — native tool calling architecture (Apr 2026), zero dropped function calls
+- `qwen3.5:35b` — best large model, MLX-accelerated on Apple Silicon
+- `qwen3.5:9b` — best small/worker model
+- `nomic-embed-text:latest` — required for memory MCP server embeddings
+
+**Superseded (auto-removed if found):** `qwen3.5:27b`, `qwen3:32b`, `qwen3:8b`, `qwen3-coder:30b`, `qwen2.5-coder:32b`, `qwen2.5-coder:7b`
+
+To update this list: edit `PREFERRED_MODELS` / `SUPERSEDED_MODELS` in `bridge/backend-health.js`.
+
 ### Ollama Eval & Training System
 - **Eval runner:** `scripts/ollama-eval/runner.js` — runs eval tasks against Ollama models, scores responses
 - **Eval tasks:** `.paloma/ollama-training/evals/` — 79 tasks across 6 categories (tool-use, instruction-following, code-gen, bug-finding, code-review, paloma-specific)
@@ -64,7 +77,7 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Data pipeline:** `scripts/ollama-eval/data-collector.js` — extract high-scoring responses, generate Claude gold answers, split train/test/valid
 - **MCP automation:** `mcp-servers/ollama-eval.js` — 6 tools (`ollama_eval_run`, `ollama_eval_compare`, `ollama_prompt_create`, `ollama_prompt_history`, `ollama_data_stats`, `ollama_train_start`) wrapping the eval/training scripts for conversational use
 - **Improvement levels:** L0 system prompt → L1 few-shot → L2 parameters → L3 QLoRA fine-tuning (sequential gates, exhaust cheap improvements first)
-- **Sacred rule:** Stock `qwen2.5-coder:32b` is NEVER modified. All improvements create derivatives (`paloma-coder:vN`). Every eval includes stock baseline.
+- **Sacred rule:** The stock baseline model is NEVER modified. All improvements create derivatives (`paloma-coder:vN`). Every eval includes stock baseline. Current baseline: `qwen3.5:35b` (replaced qwen2.5-coder:32b which is now removed).
 
 ### Singularity Architecture — The Choice Principle
 - **The singularity is a choice engine.** Every layer of the architecture exists to give a mind the best possible context to make the best possible decision.
