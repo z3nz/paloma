@@ -141,6 +141,14 @@ if [ -f "$SETTINGS_FILE" ]; then
 fi
 POSTIZ_KEY="${POSTIZ_KEY:-CONFIGURE_AFTER_DOCKER_SETUP}"
 
+# Optional social-poster MCP server. Only register it when this checkout has
+# the server file; otherwise bridge startup logs a module-not-found error.
+SOCIAL_POSTER_SERVER="$PALOMA_DIR/projects/social-poster/server.js"
+SOCIAL_POSTER_BLOCK=""
+if [ -f "$SOCIAL_POSTER_SERVER" ]; then
+  SOCIAL_POSTER_BLOCK=$(printf ',\n    "social-poster": {\n      "command": "node",\n      "args": ["%s"],\n      "env": {\n        "POSTIZ_API_URL": "http://localhost:4007",\n        "POSTIZ_API_KEY": "%s"\n      }\n    }' "$SOCIAL_POSTER_SERVER" "$POSTIZ_KEY")
+fi
+
 # Check if codex CLI is available
 CODEX_BLOCK=""
 if command -v codex &>/dev/null; then
@@ -212,15 +220,7 @@ cat > "$SETTINGS_FILE" <<ENDJSON
         "GMAIL_RECIPIENT": "$GMAIL_RECIPIENT",
         "GMAIL_SENDER": "adambookpro.paloma@verifesto.com"
       }
-    },
-    "social-poster": {
-      "command": "node",
-      "args": ["$PALOMA_DIR/projects/social-poster/server.js"],
-      "env": {
-        "POSTIZ_API_URL": "http://localhost:4007",
-        "POSTIZ_API_KEY": "$POSTIZ_KEY"
-      }
-    }$CODEX_BLOCK
+    }$SOCIAL_POSTER_BLOCK$CODEX_BLOCK
   }
 }
 ENDJSON
@@ -309,7 +309,11 @@ echo "      - brave-search (web search)"
 echo "      - ollama (local AI models)"
 echo "      - cloudflare-dns (DNS management)"
 echo "      - gmail (email send/receive)"
-echo "      - social-poster (cross-platform social media)"
+if [ -f "$SOCIAL_POSTER_SERVER" ]; then
+  echo "      - social-poster (cross-platform social media)"
+else
+  echo "      - social-poster skipped (server not found)"
+fi
 if command -v codex &>/dev/null; then
   echo "      - codex (OpenAI Codex MCP)"
 fi

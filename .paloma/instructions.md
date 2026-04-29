@@ -140,6 +140,7 @@ Paloma is a Vue 3 + Vite SPA with a Node.js WebSocket bridge that connects to AI
 - **Tools:** `memory_store`, `memory_recall`, `memory_list`, `memory_forget`, `memory_update`, `memory_stats`
 
 ### Social Poster (Cross-Platform Social Media)
+- **Optional sibling project:** `projects/social-poster/` is not guaranteed to exist in every checkout. `scripts/setup-mcp.sh` registers the MCP server only when `projects/social-poster/server.js` is present, and `.paloma/mcp.json` should not enable `social-poster` on machines without that file.
 - **MCP Server:** `projects/social-poster/server.js` — 4 tools for cross-platform social media posting via Postiz
 - **Backend:** Self-hosted Postiz instance (`docker compose up` in `projects/social-poster/`)
 - **Tools:** `social_post` (immediate posting), `social_schedule` (future-dated), `social_list_accounts` (connected platforms), `social_analytics` (post history)

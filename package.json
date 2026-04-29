@@ -7,7 +7,7 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "start": "bash scripts/paloma-sync.sh && npm install && bash scripts/setup-mcp.sh && bash scripts/pull-models.sh && node scripts/paloma-supervisor.js",
+    "start": "bash scripts/paloma-sync.sh && npm install && bash scripts/setup-mcp.sh && node scripts/paloma-supervisor.js",
     "supervisor": "node scripts/paloma-supervisor.js",
     "first-run": "bash scripts/first-run.sh",
     "setup": "bash scripts/setup-mcp.sh",
@@ -19,7 +19,7 @@
     "preview": "vite preview",
     "doctor": "node scripts/paloma-doctor.js",
     "pull-models": "bash scripts/pull-models.sh",
-    "test": "node --test tests/",
+    "test": "node --test tests/*.test.js bridge/__tests__/*.test.js",
     "test:email": "node --test tests/email-watcher.test.js"
   },
   "bin": {

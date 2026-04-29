@@ -270,12 +270,12 @@ function checkAiBackends() {
     },
     {
       name: 'GitHub Copilot',
-      cmd: 'gh copilot --version 2>/dev/null',
-      install: 'gh extension install github/gh-copilot',
+      cmd: 'which copilot 2>/dev/null || gh copilot --version 2>/dev/null',
+      install: 'Install Copilot CLI and run: copilot login',
     },
     {
       name: 'Gemini CLI',
-      cmd: 'gemini --version 2>/dev/null',
+      cmd: 'which gemini 2>/dev/null',
       install: 'npm install -g @google/gemini-cli',
     },
     {
@@ -370,9 +370,14 @@ function checkMcpConfig() {
   }
 
   // Check mcp.json (permissions)
-  const mcpJsonPath = join(PALOMA_HOME, 'mcp.json')
-  if (existsSync(mcpJsonPath)) {
+  const mcpJsonCandidates = [
+    appDir ? join(appDir, '.paloma', 'mcp.json') : null,
+    join(PALOMA_HOME, 'mcp.json')
+  ].filter(Boolean)
+  const mcpJsonPath = mcpJsonCandidates.find(p => existsSync(p))
+  if (mcpJsonPath) {
     pass('mcp.json (permissions) exists')
+    info(`Using: ${mcpJsonPath}`)
   } else {
     info('mcp.json (permissions) not found — will use defaults')
   }
