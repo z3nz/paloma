@@ -359,11 +359,10 @@ export class BackendHealth {
       const data = await response.json()
       const models = (data.models || []).map(m => m.name || m.model)
 
-      if (models.length > 0) {
-        this.status.ollama = { available: true, reason: `${models.length} model(s) available`, lastCheck: now, models }
-      } else {
-        this.status.ollama = { available: false, reason: 'no models installed', lastCheck: now, models: [] }
-      }
+      // Mark available if Ollama is reachable regardless of model count.
+      // ensureOllamaModels will pull any missing preferred models in the background.
+      const reason = models.length > 0 ? `${models.length} model(s) available` : 'running (no models yet)'
+      this.status.ollama = { available: true, reason, lastCheck: now, models }
     } catch {
       this.status.ollama = { available: false, reason: 'service not running', lastCheck: now, models: [] }
     }
@@ -416,10 +415,11 @@ export class BackendHealth {
       const base2 = process.env.OLLAMA_HOST || 'http://localhost:11434'
       for (const model of missing) {
         try {
-          // Re-fetch the model list right before pulling — startup list may be stale
-          // (race: Ollama can be slow at boot, causing checkOllama to miss installed models)
+          // Always re-check before pulling — startup list may be stale if Ollama was slow at boot.
+          // If we can't get a fresh list, SKIP this model — never pull speculatively.
+          let confirmed = false
           try {
-            const freshRes = await fetch(`${base2}/api/tags`, { signal: AbortSignal.timeout(10000) })
+            const freshRes = await fetch(`${base2}/api/tags`, { signal: AbortSignal.timeout(15000) })
             if (freshRes.ok) {
               const freshData = await freshRes.json()
               const nowInstalled = (freshData.models || []).map(m => m.name || m.model)
@@ -428,9 +428,15 @@ export class BackendHealth {
                 if (!this.status.ollama.models.includes(model)) this.status.ollama.models.push(model)
                 continue
               }
+              confirmed = true // list fetched successfully, model genuinely missing
             }
           } catch {
-            // ignore — proceed with pull attempt
+            log.warn(`[ollama] Could not verify model list before pulling ${model} — skipping to avoid spurious download`)
+            continue
+          }
+          if (!confirmed) {
+            log.warn(`[ollama] Ollama returned non-ok status for /api/tags — skipping pull of ${model}`)
+            continue
           }
 
           log.info(`[ollama] Pulling ${model} in background...`)

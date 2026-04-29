@@ -1,25 +1,22 @@
 #!/bin/bash
-# pull-models.sh — Ensure all required Ollama models are installed
-# Run after git pull to keep models consistent across machines.
+# pull-models.sh — Manually ensure the canonical Ollama model set is installed.
+# NOTE: This script is NOT run on startup — bridge/backend-health.js handles
+#       model management automatically in the background on every restart.
 #
-# Usage: ./scripts/pull-models.sh
-# Or:    npm run pull-models
+# Run manually only when you need to force a fresh pull:
+#   npm run pull-models
 
 set -e
 
-echo "🎼 Pulling Ollama models for Paloma 676767..."
+echo "🎼 Pulling canonical Ollama models for Paloma..."
 echo ""
 
-# Required models (in order of importance)
+# Canonical preferred models — keep in sync with PREFERRED_MODELS in bridge/backend-health.js
 MODELS=(
-  "qwen3.5:35b"                 # Paestro (676767) — MLX blazing speed, MoE 3B active
-  "qwen3.5:9b"                  # Hydra planners + Angel heads — MLX fast, reasoning
-  "qwen3.5:27b"                 # Dense alternative for complex tasks
-  "qwen3-coder:30b-a3b-q8_0"   # Paestro fallback — Q8 highest quality coder
-  "qwen3-coder:30b"             # Angels fallback — MoE, 3B active
-  "qwen3:8b"                    # Fallback for heads/planners
-  "qwen2.5-coder:7b"            # Workers fallback
-  "nomic-embed-text:latest"     # Memory embeddings
+  "gemma4:26b"              # native tool calling architecture (Apr 2026), zero dropped function calls
+  "qwen3.5:35b"             # best large model — MLX-accelerated on Apple Silicon
+  "qwen3.5:9b"              # best small/worker model
+  "nomic-embed-text:latest" # required for memory MCP server embeddings
 )
 
 # Check if Ollama is running
@@ -47,4 +44,4 @@ for model in "${MODELS[@]}"; do
 done
 
 echo ""
-echo "🎼 All models aligned. 676767."
+echo "🎼 All canonical models installed. 676767."
