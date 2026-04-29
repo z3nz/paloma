@@ -39,7 +39,7 @@
     "dompurify": "^3.3.3",
     "express": "^5.1.0",
     "fuse.js": "^7.1.0",
-    "googleapis": "^144.0.0",
+    "googleapis": "^171.4.0",
     "highlight.js": "^11.11.1",
     "ignore": "^7.0.5",
     "marked": "^17.0.1",
