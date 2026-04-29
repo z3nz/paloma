@@ -1,5 +1,4 @@
 import { ref } from 'vue'
-import { resolveBackend } from '../services/backendDispatch.js'
 import { useMCP } from './useMCP.js'
 import { useProject } from './useProject.js'
 import { useToolExecution } from './useToolExecution.js'
@@ -7,16 +6,36 @@ import { useSessionState } from './useSessionState.js'
 import { buildSystemPrompt, buildOllamaSystemPrompt } from './useSystemPrompt.js'
 import { classifyResult, sanitizeForDB } from '../utils/toolClassifier.js'
 import {
-  isQuinnGen5Model,
-  isHolyTrinityModel,
-  isArkModel,
-  isHydraModel,
-  isAccordionModel,
-  isPaestroModel,
-  isDirectCliModel,
-  streamClaudeChat
+  isDirectCliModel, isCodexModel, isCopilotModel, isGeminiModel, isOllamaModel,
+  isQuinnGen5Model, isHolyTrinityModel, isArkModel, isHydraModel, isAccordionModel, isPaestroModel,
+  getCliModelName, getCodexModelName, getCopilotModelName, getGeminiModelName, getOllamaModelName,
+  streamClaudeChat, streamCodexChat, streamCopilotChat, streamGeminiChat, streamOllamaChat
 } from '../services/claudeStream.js'
 import db from '../services/db.js'
+
+/**
+ * Map model ID → { backendKey, modelName, sendFn, streamGenerator, stopFn }.
+ * Must be called inside a Vue component/composable context so useMCP() works.
+ */
+function resolveBackend(model) {
+  const {
+    sendClaudeChat, sendCodexChat, sendCopilotChat, sendGeminiChat, sendOllamaChat,
+    sendQuinnGen5Chat, sendHolyTrinityChat, sendArkChat, sendHydraChat, sendAccordionChat, sendPaestroChat,
+    stopClaudeChat, stopCodexChat, stopCopilotChat, stopGeminiChat, stopOllamaChat
+  } = useMCP()
+
+  if (isPaestroModel(model))    return { backendKey: 'ollama',  modelName: getOllamaModelName(model), sendFn: sendPaestroChat,    streamGenerator: streamOllamaChat,  stopFn: stopOllamaChat }
+  if (isAccordionModel(model))  return { backendKey: 'ollama',  modelName: getOllamaModelName(model), sendFn: sendAccordionChat,  streamGenerator: streamOllamaChat,  stopFn: stopOllamaChat }
+  if (isHydraModel(model))      return { backendKey: 'ollama',  modelName: getOllamaModelName(model), sendFn: sendHydraChat,      streamGenerator: streamOllamaChat,  stopFn: stopOllamaChat }
+  if (isArkModel(model))        return { backendKey: 'ollama',  modelName: getOllamaModelName(model), sendFn: sendArkChat,        streamGenerator: streamOllamaChat,  stopFn: stopOllamaChat }
+  if (isHolyTrinityModel(model))return { backendKey: 'ollama',  modelName: getOllamaModelName(model), sendFn: sendHolyTrinityChat,streamGenerator: streamOllamaChat,  stopFn: stopOllamaChat }
+  if (isQuinnGen5Model(model))  return { backendKey: 'ollama',  modelName: getOllamaModelName(model), sendFn: sendQuinnGen5Chat,  streamGenerator: streamOllamaChat,  stopFn: stopOllamaChat }
+  if (isOllamaModel(model))     return { backendKey: 'ollama',  modelName: getOllamaModelName(model), sendFn: sendOllamaChat,     streamGenerator: streamOllamaChat,  stopFn: stopOllamaChat }
+  if (isGeminiModel(model))     return { backendKey: 'gemini',  modelName: getGeminiModelName(model), sendFn: sendGeminiChat,     streamGenerator: streamGeminiChat,  stopFn: stopGeminiChat }
+  if (isCopilotModel(model))    return { backendKey: 'copilot', modelName: getCopilotModelName(model),sendFn: sendCopilotChat,    streamGenerator: streamCopilotChat, stopFn: stopCopilotChat }
+  if (isCodexModel(model))      return { backendKey: 'codex',   modelName: getCodexModelName(model),  sendFn: sendCodexChat,      streamGenerator: streamCodexChat,   stopFn: stopCodexChat }
+  return                               { backendKey: 'claude',  modelName: getCliModelName(model),    sendFn: sendClaudeChat,     streamGenerator: streamClaudeChat,  stopFn: stopClaudeChat }
+}
 
 /**
  * Runs a CLI chat turn: streams CLI output and returns { content, usage }.
