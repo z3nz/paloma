@@ -42,7 +42,9 @@ export const CLI_MODELS = [
   { id: 'ollama:hydra', name: 'The Hydra (Gen7)', context_length: 32768, ollama: true, hydra: true, pricing: FREE_PRICING },
   { id: 'ollama:accordion', name: 'The Accordion (Gen7)', context_length: 65536, ollama: true, accordion: true, pricing: FREE_PRICING },
   { id: 'ollama:67', name: '67 Paestro 30B', context_length: 676767, ollama: true, paestro: true, pricing: FREE_PRICING },
-  { id: 'ollama:67:8b', name: '67 Paestro 8B', context_length: 33333, ollama: true, paestro: true, pricing: FREE_PRICING }
+  { id: 'ollama:67:8b', name: '67 Paestro 8B', context_length: 33333, ollama: true, paestro: true, pricing: FREE_PRICING },
+  // Gemma 4 models (Google DeepMind) - only 26B is available
+  { id: 'ollama:gemma4:26b', name: 'Gemma 4 26B', context_length: 131072, ollama: true, pricing: FREE_PRICING }
 ]
 
 export function isCliModel(modelId) {

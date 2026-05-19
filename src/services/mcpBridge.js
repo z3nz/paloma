@@ -693,7 +693,7 @@ export function createMcpBridge() {
         id,
         chatDbSessionId: options.chatDbSessionId || null,
         userMessage: options.prompt,
-        modelVariant: options.model || null,
+        modelVariant: options.modelVariant || options.model || null,
         thinkMode: options.thinkMode || null,
         paestroMode: options.paestroMode || null,
         hydraAngels: options.hydraAngels || null,

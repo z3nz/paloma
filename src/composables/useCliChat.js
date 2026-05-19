@@ -128,7 +128,7 @@ export async function runCliChat({ sessionId, model, fullContent, phase, project
     thinkMode: thinkMode || undefined,
     paestroMode: paestroMode || undefined,
     hydraAngels: hydraAngels || undefined,
-    model: model || undefined
+    modelVariant: model || undefined
   }
 
   const accumulatedContent = ref('')
