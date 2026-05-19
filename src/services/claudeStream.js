@@ -31,20 +31,13 @@ export const CLI_MODELS = [
   { id: 'gemini-cli:gemini-2.5-flash', name: 'Gemini 2.5 Flash', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
   { id: 'gemini-cli:gemini-2.0-flash', name: 'Gemini 2.0 Flash', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
   { id: 'gemini-cli:gemini-exp', name: 'Gemini Experimental', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
+  { id: 'ollama:gemma4:26b', name: 'Gemma 4 26B (Google)', context_length: 131072, ollama: true, pricing: FREE_PRICING },
+  { id: 'ollama:qwen3-coder:30b', name: 'Qwen 3 Coder 30B', context_length: 32768, ollama: true, pricing: FREE_PRICING },
   { id: 'ollama:qwen3.5:35b', name: '67 Paestro (Qwen 3.5 35B)', context_length: 676767, ollama: true, paestro: true, pricing: FREE_PRICING },
   { id: 'ollama:qwen3.5:27b', name: '67 Paestro (Qwen 3.5 27B)', context_length: 676767, ollama: true, paestro: true, pricing: FREE_PRICING },
   { id: 'ollama:qwen3.5:9b', name: '67 Paestro (Qwen 3.5 9B)', context_length: 66667, ollama: true, paestro: true, pricing: FREE_PRICING },
-  { id: 'ollama:qwen2.5-coder:32b', name: 'Qwen 2.5 Coder 32B', context_length: 32768, ollama: true, pricing: FREE_PRICING },
-  { id: 'ollama:qwen2.5-coder:7b', name: 'Qwen 2.5 Coder 7B', context_length: 32768, ollama: true, pricing: FREE_PRICING },
-  { id: 'ollama:quinn-gen5', name: 'Quinn Gen5', context_length: 40960, ollama: true, gen5: true, pricing: FREE_PRICING },
-  { id: 'ollama:holy-trinity', name: 'Holy Trinity (Gen6)', context_length: 65536, ollama: true, holyTrinity: true, pricing: FREE_PRICING },
-  { id: 'ollama:ark', name: 'The Ark (Gen7)', context_length: 32768, ollama: true, ark: true, pricing: FREE_PRICING },
-  { id: 'ollama:hydra', name: 'The Hydra (Gen7)', context_length: 32768, ollama: true, hydra: true, pricing: FREE_PRICING },
-  { id: 'ollama:accordion', name: 'The Accordion (Gen7)', context_length: 65536, ollama: true, accordion: true, pricing: FREE_PRICING },
-  { id: 'ollama:67', name: '67 Paestro 30B', context_length: 676767, ollama: true, paestro: true, pricing: FREE_PRICING },
-  { id: 'ollama:67:8b', name: '67 Paestro 8B', context_length: 33333, ollama: true, paestro: true, pricing: FREE_PRICING },
-  // Gemma 4 models (Google DeepMind) - only 26B is available
-  { id: 'ollama:gemma4:26b', name: 'Gemma 4 26B', context_length: 131072, ollama: true, pricing: FREE_PRICING }
+  { id: 'ollama:qwen3:8b', name: 'Qwen 3 8B', context_length: 32768, ollama: true, pricing: FREE_PRICING },
+  { id: 'ollama:qwen2.5-coder:7b', name: 'Qwen 2.5 Coder 7B', context_length: 32768, ollama: true, pricing: FREE_PRICING }
 ]
 
 export function isCliModel(modelId) {

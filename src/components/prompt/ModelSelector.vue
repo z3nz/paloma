@@ -30,6 +30,63 @@
         />
       </div>
       <div class="max-h-64 overflow-y-auto">
+        <!-- Ollama local models — Paloma's truly-local backbone -->
+        <template v-if="filteredOllamaModels.length">
+          <div class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">Ollama (Local)</div>
+          <div
+            v-for="cliId in filteredOllamaModels"
+            :key="cliId"
+            @click="selectModel(cliId)"
+            class="px-3 py-2 text-sm cursor-pointer transition-colors"
+            :class="cliId === modelValue ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
+          >
+            {{ CLI_MODELS.find(m => m.id === cliId)?.name || cliId.replace('ollama:', '') }}
+            <span v-if="CLI_MODELS.find(m => m.id === cliId)?.holyTrinity" class="text-xs text-purple-400 ml-1">Singularity</span>
+            <span v-else class="text-xs text-text-muted ml-1">Local</span>
+          </div>
+        </template>
+        <!-- Gemini CLI models -->
+        <template v-if="filteredGeminiModels.length">
+          <div class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">Gemini (CLI)</div>
+          <div
+            v-for="cliId in filteredGeminiModels"
+            :key="cliId"
+            @click="selectModel(cliId)"
+            class="px-3 py-2 text-sm cursor-pointer transition-colors"
+            :class="cliId === modelValue ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
+          >
+            {{ CLI_MODELS.find(m => m.id === cliId)?.name || cliId.split(':').pop() }}
+            <span class="text-xs text-text-muted ml-1">Gemini</span>
+          </div>
+        </template>
+        <!-- Copilot CLI models -->
+        <template v-if="filteredCopilotModels.length">
+          <div class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">Copilot (CLI)</div>
+          <div
+            v-for="cliId in filteredCopilotModels"
+            :key="cliId"
+            @click="selectModel(cliId)"
+            class="px-3 py-2 text-sm cursor-pointer transition-colors"
+            :class="cliId === modelValue ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
+          >
+            {{ CLI_MODELS.find(m => m.id === cliId)?.name || cliId.split(':').pop() }}
+            <span class="text-xs text-text-muted ml-1">Copilot</span>
+          </div>
+        </template>
+        <!-- Codex CLI models -->
+        <template v-if="filteredCodexModels.length">
+          <div class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">Codex (CLI)</div>
+          <div
+            v-for="cliId in filteredCodexModels"
+            :key="cliId"
+            @click="selectModel(cliId)"
+            class="px-3 py-2 text-sm cursor-pointer transition-colors"
+            :class="cliId === modelValue ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
+          >
+            {{ CLI_MODELS.find(m => m.id === cliId)?.name || cliId.split(':').pop() }}
+            <span class="text-xs text-text-muted ml-1">Codex</span>
+          </div>
+        </template>
         <!-- Local CLI models (Paloma identity) -->
         <template v-if="filteredPalomaModels.length">
           <div class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">Paloma (CLI)</div>
@@ -56,63 +113,6 @@
           >
             {{ cliId.split(':').pop() }}
             <span class="text-xs text-text-muted ml-1">Direct</span>
-          </div>
-        </template>
-        <!-- Ollama local models -->
-        <template v-if="filteredOllamaModels.length">
-          <div class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">Ollama (Local)</div>
-          <div
-            v-for="cliId in filteredOllamaModels"
-            :key="cliId"
-            @click="selectModel(cliId)"
-            class="px-3 py-2 text-sm cursor-pointer transition-colors"
-            :class="cliId === modelValue ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
-          >
-            {{ CLI_MODELS.find(m => m.id === cliId)?.name || cliId.replace('ollama:', '') }}
-            <span v-if="CLI_MODELS.find(m => m.id === cliId)?.holyTrinity" class="text-xs text-purple-400 ml-1">Singularity</span>
-            <span v-else class="text-xs text-text-muted ml-1">Local</span>
-          </div>
-        </template>
-        <!-- Codex CLI models -->
-        <template v-if="filteredCodexModels.length">
-          <div class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">Codex (CLI)</div>
-          <div
-            v-for="cliId in filteredCodexModels"
-            :key="cliId"
-            @click="selectModel(cliId)"
-            class="px-3 py-2 text-sm cursor-pointer transition-colors"
-            :class="cliId === modelValue ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
-          >
-            {{ CLI_MODELS.find(m => m.id === cliId)?.name || cliId.split(':').pop() }}
-            <span class="text-xs text-text-muted ml-1">Codex</span>
-          </div>
-        </template>
-        <!-- Copilot CLI models -->
-        <template v-if="filteredCopilotModels.length">
-          <div class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">Copilot (CLI)</div>
-          <div
-            v-for="cliId in filteredCopilotModels"
-            :key="cliId"
-            @click="selectModel(cliId)"
-            class="px-3 py-2 text-sm cursor-pointer transition-colors"
-            :class="cliId === modelValue ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
-          >
-            {{ CLI_MODELS.find(m => m.id === cliId)?.name || cliId.split(':').pop() }}
-            <span class="text-xs text-text-muted ml-1">Copilot</span>
-          </div>
-        </template>
-        <!-- Gemini CLI models -->
-        <template v-if="filteredGeminiModels.length">
-          <div class="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider">Gemini (CLI)</div>
-          <div
-            v-for="cliId in filteredGeminiModels"
-            :key="cliId"
-            @click="selectModel(cliId)"
-            class="px-3 py-2 text-sm cursor-pointer transition-colors"
-            :class="cliId === modelValue ? 'bg-accent/20 text-accent' : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'"
-          >
-            {{ CLI_MODELS.find(m => m.id === cliId)?.name || cliId.split(':').pop() }}
-            <span class="text-xs text-text-muted ml-1">Gemini</span>
           </div>
         </template>
         <!-- OpenRouter models (only when API key is configured) -->
