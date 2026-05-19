@@ -46,7 +46,7 @@
     "mongodb": "^7.1.0",
     "tailwindcss": "4.0",
     "vue": "^3.5.24",
-    "ws": "^8.18.0"
+    "ws": "^8.20.1"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.4",
