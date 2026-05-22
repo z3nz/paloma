@@ -31,6 +31,7 @@ export const CLI_MODELS = [
   { id: 'gemini-cli:gemini-2.5-flash', name: 'Gemini 2.5 Flash', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
   { id: 'gemini-cli:gemini-2.0-flash', name: 'Gemini 2.0 Flash', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
   { id: 'gemini-cli:gemini-exp', name: 'Gemini Experimental', context_length: 1000000, gemini: true, pricing: FREE_PRICING },
+  { id: 'ollama:paestro:gemma4:26b', name: '67 Paestro (Gemma 4 26B)', context_length: 262144, ollama: true, paestro: true, pricing: FREE_PRICING },
   { id: 'ollama:gemma4:26b', name: 'Gemma 4 26B (Google)', context_length: 131072, ollama: true, pricing: FREE_PRICING },
   { id: 'ollama:qwen3-coder:30b', name: 'Qwen 3 Coder 30B', context_length: 32768, ollama: true, pricing: FREE_PRICING },
   { id: 'ollama:qwen3.5:35b', name: '67 Paestro (Qwen 3.5 35B)', context_length: 676767, ollama: true, paestro: true, pricing: FREE_PRICING },
@@ -88,6 +89,8 @@ export function isPaestroModel(modelId) {
   if (!modelId) return false
   if (modelId === 'ollama:67' || modelId === 'ollama:67:8b') return true
   if (modelId === 'ollama:gen8' || modelId === 'ollama:gen8:8b') return true  // legacy compat
+  // Generic Paestro namespace: ollama:paestro:<ollama-model> — e.g. ollama:paestro:gemma4:26b
+  if (modelId.startsWith('ollama:paestro:')) return true
   // All qwen3.5 Paestro variants
   if (modelId.startsWith('ollama:qwen3.5:')) return true
   return false
@@ -101,6 +104,8 @@ export function getOllamaModelName(modelId) {
   if (modelId === 'ollama:hydra') return 'hydra'
   if (modelId === 'ollama:67' || modelId === 'ollama:67:8b') return '67'  // Paestro — model picked by bridge
   if (modelId === 'ollama:gen8' || modelId === 'ollama:gen8:8b') return '67'  // legacy compat
+  // Generic Paestro namespace: strip the 'ollama:paestro:' prefix to get the underlying ollama model
+  if (modelId?.startsWith('ollama:paestro:')) return modelId.replace(/^ollama:paestro:/, '')
   return modelId?.replace(/^ollama:/, '') || 'qwen2.5-coder:7b'
 }
 

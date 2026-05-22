@@ -1121,12 +1121,19 @@ async function main() {
             }
           })
 
-          // Pick model: if a specific qwen3.5 variant was selected, use it directly.
-          // Otherwise fall back to auto-selection (30B vs 8B)
+          // Pick model based on selected variant.
+          // 1. ollama:paestro:<model> — generic namespace, strip prefix to get ollama model name
+          // 2. ollama:qwen3.5:<size> — legacy qwen3.5 Paestro variants
+          // 3. ollama:67:8b / ollama:gen8:8b — small Paestro (Ark fallback)
+          // 4. fallback — _pickPaestroModel() picks best installed model
           const variant = msg.modelVariant || ''
           let paestroModel
           let paestroCtx = 676767
-          if (variant.startsWith('ollama:qwen3.5:')) {
+          if (variant.startsWith('ollama:paestro:')) {
+            paestroModel = variant.replace('ollama:paestro:', '')  // 'gemma4:26b' etc
+            // Gemma 4 26B native max is 262144 (256K per `ollama show`). Other models keep the symbolic Paestro ctx.
+            paestroCtx = paestroModel.startsWith('gemma4') ? 262144 : 676767
+          } else if (variant.startsWith('ollama:qwen3.5:')) {
             paestroModel = variant.replace('ollama:', '')  // 'qwen3.5:35b' etc
             paestroCtx = variant.includes('9b') ? 66667 : 676767
           } else if (variant === 'ollama:67:8b' || variant === 'ollama:gen8:8b') {
@@ -1212,14 +1219,16 @@ async function main() {
                         parentPillarId: 'paestro-direct',
                         singularityRole: 'accordion-head',
                         depth: 1,
-                        _arkExtra: { angelNumber }
+                        _arkExtra: { angelNumber },
+                        // Match angels to the Paestro's mind when Paestro is on Gemma 4
+                        ...(paestroModel.startsWith('gemma4') ? { model: paestroModel } : {})
                       }
                       const spawnResult = await pillarManager.spawn(childArgs)
                       const childPillarId = spawnResult.pillarId
                       if (!childPillarId) {
                         content = `Angel ${angelNumber} spawn failed: ${spawnResult.message || 'unknown error'}`
                       } else {
-                        log.info(`[67] Tha ${angelNames[angelNumber]} Angel alive — pillarId: ${childPillarId.slice(0, 8)}`)
+                        log.info(`[67] Tha ${angelNames[angelNumber]} Angel alive — pillarId: ${childPillarId.slice(0, 8)}, model: ${childArgs.model || '(auto)'}`)
                         content = `Tha ${angelNames[angelNumber]} Angel is alive and working.\n\npillarId: ${childPillarId}\n\nUse these tools to have a live conversation:\n- **message_angel** — send a message to direct or redirect the angel\n- **read_angel** — read the angel's latest output\n- **wait_angel** — block until the angel completes and get final output`
                       }
                     }
@@ -1271,7 +1280,9 @@ async function main() {
                       parentPillarId: 'paestro-direct',  // suppress Flow auto-notification
                       singularityRole: 'accordion-head',
                       depth: 1,
-                      _arkExtra: { angelNumber: angelNum }
+                      _arkExtra: { angelNumber: angelNum },
+                      // Match angels to the Paestro's mind when Paestro is on Gemma 4
+                      ...(paestroModel.startsWith('gemma4') ? { model: paestroModel } : {})
                     }
                     const spawnResult = await pillarManager.spawn(childArgs)
                     const childPillarId = spawnResult.pillarId

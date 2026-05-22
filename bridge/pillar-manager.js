@@ -3606,11 +3606,12 @@ This is informational — Adam is communicating directly with the pillar. Decide
 
   /**
    * Select the best model for the Paestro (676767).
-   * Prefers qwen3.5:35b (MLX-accelerated, 2x speed) > qwen3-coder Q8 > qwen3-coder > best available.
+   * Prefers Gemma 4 26B (Google — 256K ctx, native tools/thinking) > qwen3.5:35b (MLX) > qwen3-coder Q8 > qwen3-coder > best available.
    */
   _pickPaestroModel() {
     const models = this.health?.status?.ollama?.models || []
     const PREFERENCES = [
+      m => m.includes('gemma4') && m.includes('26b'),            // Gemma 4 26B — Adam's default Paestro (256K ctx, native tools+thinking)
       m => m.includes('qwen3.5') && m.includes('35b'),           // qwen3.5:35b MoE — MLX blazing speed
       m => m.includes('qwen3-coder') && (m.includes('q8') || m.includes('Q8')),  // Q8 highest quality
       m => m.includes('qwen3.5') && m.includes('27b'),           // qwen3.5:27b dense — MLX fast
