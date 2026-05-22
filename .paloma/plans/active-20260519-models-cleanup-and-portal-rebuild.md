@@ -14,6 +14,7 @@
 |--------|------------------|--------|
 | Model dropdown cleanup | Removed uninstalled entries, reordered Ollama-first, added `qwen3-coder:30b` + `qwen3:8b` | ✅ Shipped (paloma `8b08ddf`) |
 | Gemma 4 26B for Flow | In dropdown, bridge supports Ollama for any pillar. Adam to validate end-to-end. | ✅ Code wired — awaiting Adam's smoke test |
+| Gemma 4 26B as default Paestro | New `ollama:paestro:gemma4:26b` entry, default in `_pickPaestroModel`, angels match Paestro mind | ✅ Code wired — awaiting Adam's smoke test |
 | Demo portal rebuild | Re-Forged into `verifesto.com` — backend + frontend, verified via Vite proxy | ✅ Shipped (verifesto.com `67cd7a7` + `6be285e`) |
 
 ### Fadden seed credentials (dev only)
@@ -178,6 +179,51 @@ Adam's request: experiment with Gemma 4 26B for Flow sessions to see how long-ru
 - [x] Bridge supports Ollama backend for any pillar
 - [ ] Adam to manually validate a Flow session on Gemma 4 26B (open a new chat → pick "Gemma 4 26B (Google)" → spawn Flow → push it with tool-heavy work)
 - **Next on resume:** N/A — code-side done. Once Adam validates and decides if Gemma 4 is the new Flow default, this thread closes.
+
+---
+
+## Thread 4 — Gemma 4 26B as the default Paestro
+
+Adam's request (2026-05-22): hook the `PAESTRO_PROMPT` up to Gemma 4 26B as the new default mind, with angels matching the Paestro when it's on Gemma 4.
+
+### Why Gemma 4 for Paestro
+- 262,144-token native context (256K, per `ollama show gemma4:26b`) — biggest local choice cascade window we have
+- Native tool-use and thinking capabilities — no prompt scaffolding required
+- Q4_K_M quant fits alongside the other singularity workhorses
+
+### Decisions (Adam, 2026-05-22)
+1. **Lineup:** Add Gemma 4 as a new Paestro entry AND make it the auto-pick default in `_pickPaestroModel()`. Qwen 3.5 Paestro entries stay as alternates.
+2. **Angels:** When the Paestro is on Gemma 4, summoned angels also run on Gemma 4 26B. Qwen 3.5 Paestros keep current angel behavior (qwen3.5:9b).
+3. **Context:** 262,144 — Gemma's full native max.
+
+### Files changed
+- `src/services/claudeStream.js`
+  - Added entry at top of Ollama group: `{ id: 'ollama:paestro:gemma4:26b', name: '67 Paestro (Gemma 4 26B)', context_length: 262144, ollama: true, paestro: true, ... }`
+  - Extended `isPaestroModel()` to recognize the `ollama:paestro:` prefix
+  - Extended `getOllamaModelName()` to strip the `ollama:paestro:` prefix correctly
+- `bridge/index.js` (`paestro_chat` handler, ~line 1124-1144)
+  - New variant branch: `ollama:paestro:<model>` strips the prefix to get the Ollama model name
+  - Gemma 4 gets `paestroCtx = 262144`; other models keep `676767`
+  - `summon_angel` and `pillar_spawn` spread `model: paestroModel` into the angel spawn args when the Paestro is on Gemma 4
+- `bridge/pillar-manager.js` (`_pickPaestroModel()`, ~line 3611)
+  - Added Gemma 4 26B as the top preference, above qwen3.5:35b
+
+### Verification done
+- `node --check` passes on both bridge files
+- `npm test` — 64/64 tests pass
+- Module load test: `isPaestroModel('ollama:paestro:gemma4:26b')` → `true`; `getOllamaModelName('ollama:paestro:gemma4:26b')` → `'gemma4:26b'`; regular `ollama:gemma4:26b` still routes as plain Flow
+- `ollama show gemma4:26b` confirms the model supports `context length: 262144` natively, plus `tools` and `thinking` capabilities
+
+### Hardware consideration (worth noting)
+Each Gemma 4 26B session with a 256K context window allocates a sizable KV cache. With one Paestro + a few summoned angels all on Gemma 4 26B, GPU/RAM pressure goes up vs. the previous qwen3.5:9b angels. If Adam OOMs in practice, options: (a) reduce ctx in `paestro_chat` to 131072, (b) revert angels to qwen3.5:9b by removing the `paestroModel.startsWith('gemma4')` spread.
+
+### Status
+- [x] `claudeStream.js` updated (Paestro entry + isPaestroModel + getOllamaModelName)
+- [x] `bridge/index.js` variant parser + angel model match
+- [x] `bridge/pillar-manager.js` `_pickPaestroModel` preference order
+- [x] Syntax + unit tests verified
+- [ ] Adam smoke test: pick "67 Paestro (Gemma 4 26B)" in dropdown, spawn a session, ask it a tool-using question, verify angels summoned on Gemma 4
+- **Next on resume:** Adam validates the new entry end-to-end. If smooth → close thread. If GPU pressure / quality issues → revisit per "Hardware consideration" above.
 
 ---
 
