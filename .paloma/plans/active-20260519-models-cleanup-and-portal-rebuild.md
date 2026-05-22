@@ -12,9 +12,29 @@
 
 | Thread | What's happening | Status |
 |--------|------------------|--------|
-| Model dropdown cleanup | Remove uninstalled entries, reorder Ollama-first, add `qwen3-coder:30b` | ⏳ Pending |
-| Gemma 4 26B for Flow | Already in dropdown — just usable now. No code change needed beyond cleanup. | ✅ Already wired |
-| Demo portal rebuild | Re-Forge the MVP into `/Users/adam/Projects/verifesto.com/` (NOT `verifesto-studios`) | ⏳ Pending |
+| Model dropdown cleanup | Removed uninstalled entries, reordered Ollama-first, added `qwen3-coder:30b` + `qwen3:8b` | ✅ Shipped (paloma `8b08ddf`) |
+| Gemma 4 26B for Flow | In dropdown, bridge supports Ollama for any pillar. Adam to validate end-to-end. | ✅ Code wired — awaiting Adam's smoke test |
+| Demo portal rebuild | Re-Forged into `verifesto.com` — backend + frontend, verified via Vite proxy | ✅ Shipped (verifesto.com `67cd7a7` + `6be285e`) |
+
+### Fadden seed credentials (dev only)
+- Email: `client@fadden.com`
+- Password: `fadden-demo-2026`
+- Project: "Fadden Demo" → `https://demo.fadden.com` (placeholder URL — update via Django admin once real demo is hosted)
+- Reseed any time: `python manage.py seed_portal --demo-url <real-url>`
+
+### How to run the portal locally
+```
+# Terminal 1 — Django
+cd /Users/adam/Projects/verifesto.com/backend
+source .venv/bin/activate
+python manage.py runserver 8000
+
+# Terminal 2 — Vite (port 5173 by default, override if conflict)
+cd /Users/adam/Projects/verifesto.com/frontend
+npm run dev
+
+# Browse: http://localhost:5173/portal/login
+```
 
 ---
 
@@ -66,10 +86,10 @@ Current: Paloma (CLI) → Direct → Ollama → Codex → Copilot → Gemini →
 Rationale: free + local first, paid + cloud last. Surfaces Adam's preferred path.
 
 ### Status
-- [ ] Edit `CLI_MODELS` in `claudeStream.js`
-- [ ] Reorder template groups in `ModelSelector.vue`
-- [ ] Commit + push to `paloma` repo
-- **Next on resume:** Open `claudeStream.js`, apply CLI_MODELS edits above.
+- [x] Edit `CLI_MODELS` in `claudeStream.js`
+- [x] Reorder template groups in `ModelSelector.vue`
+- [x] Commit + push to `paloma` repo (commit `8b08ddf`)
+- **Next on resume:** N/A — shipped.
 
 ---
 
@@ -128,11 +148,17 @@ Three screens: **Login → Dashboard → Project View (iframe)**.
 If interrupted between checkpoints, the doc's "Next on resume" line tells me where to pick up.
 
 ### Status
-- [ ] Backend complete
-- [ ] Frontend complete
-- [ ] Manual smoke test passed
-- [ ] Pushed to `origin/main` of `verifesto.com`
-- **Next on resume:** Start with backend — `cd /Users/adam/Projects/verifesto.com/backend` and check Python venv works.
+- [x] Backend complete (commit `67cd7a7`)
+- [x] Frontend complete (commit `6be285e`)
+- [x] Smoke test passed — login 200, authed `/me/` 200, `/projects/` returns Fadden, logout 204 with CSRF
+- [x] Pushed to `origin/main` of `verifesto.com`
+- **Next on resume:** Open the running portal in a browser; replace the placeholder `demo_url` with the real Fadden demo URL via Django admin once it's hosted.
+
+### Known limitations / next steps if Adam wants more
+- `demo_url` is a placeholder (`https://demo.fadden.com`) — update via Django admin or re-seed.
+- No "forgot password" flow — Django admin can reset, or wire `PasswordResetView` later.
+- No CSRF cookie warmup endpoint — relies on the cookie being set on the first authed response. If a fresh-tab POST ever 403s on logout, add `@ensure_csrf_cookie` to `MeView`.
+- Production deploy: the Procfile already runs `collectstatic`. The frontend is deployed on Cloudflare Pages and the backend on Railway (per existing repo). The portal routes (`/portal/*`) are SPA paths, so Cloudflare Pages needs a `_redirects` file with `/* /index.html 200` if not already present.
 
 ---
 
@@ -148,10 +174,10 @@ Adam's request: experiment with Gemma 4 26B for Flow sessions to see how long-ru
 
 ### Status
 - [x] Gemma 4 26B installed
-- [x] Dropdown entry exists
+- [x] Dropdown entry exists, surfaced at top of Ollama group
 - [x] Bridge supports Ollama backend for any pillar
-- [ ] Adam to manually validate a Flow session on Gemma 4 26B
-- **Next on resume:** N/A — code-side already done. Validation is Adam's call.
+- [ ] Adam to manually validate a Flow session on Gemma 4 26B (open a new chat → pick "Gemma 4 26B (Google)" → spawn Flow → push it with tool-heavy work)
+- **Next on resume:** N/A — code-side done. Once Adam validates and decides if Gemma 4 is the new Flow default, this thread closes.
 
 ---
 
